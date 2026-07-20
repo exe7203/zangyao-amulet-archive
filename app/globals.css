@@ -208,7 +208,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .journal-art--case { background: #26261f; }
 .journal-art--case i { width: 35%; height: 55%; border: 8px double #bd9954; border-radius: 45% 45% 20% 20%; background: linear-gradient(145deg,#cdb675,#66502d); }
 .journal-art--stamp i { width: 130px; height: 130px; border: 3px double rgba(150,58,43,.7); border-radius: 50%; }
-.journal-art--stamp i::after { content: "藏曜\A 選物"; white-space: pre; position: absolute; inset: 0; display: grid; place-items: center; color: var(--vermilion); font-family: var(--serif); font-style: normal; font-size: 18px; line-height: 1.4; text-align: center; }
+.journal-art--stamp i::after { content: "泰聚\A 達"; white-space: pre; position: absolute; inset: 0; display: grid; place-items: center; color: var(--vermilion); font-family: var(--serif); font-style: normal; font-size: 18px; line-height: 1.4; text-align: center; }
 .journal-card > p { margin: 20px 0 8px; color: #8f703c; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
 .journal-card > p span { float: right; color: var(--muted); font-weight: 500; }
 .journal-card h3 { min-height: 62px; margin: 0 0 18px; font-family: var(--serif); font-size: 20px; font-weight: 600; line-height: 1.55; }

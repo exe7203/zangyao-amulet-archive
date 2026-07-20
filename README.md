@@ -1,4 +1,4 @@
-# 藏曜選物 ZANGYAO AMULET ARCHIVE
+# 泰聚達 THAI AMULET ARCHIVE
 
 泰國佛牌與聖物電商前台概念原型，重點包含來源履歷、文化導讀、商品篩選、商品詳情與購物袋互動。
 

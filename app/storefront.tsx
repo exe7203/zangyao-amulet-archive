@@ -84,9 +84,9 @@ export default function Storefront() {
       <div className="announcement"><p>原型展示｜每件聖物正式上架前皆須完成來源覆核</p><span>台灣現貨・安心配送</span></div>
 
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="藏曜選物首頁">
-          <span className="brand-mark">藏</span>
-          <span><b>藏曜選物</b><small>ZANGYAO AMULET ARCHIVE</small></span>
+        <a className="brand" href="#top" aria-label="泰聚達首頁">
+          <span className="brand-mark">泰</span>
+          <span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span>
         </a>
         <nav className="desktop-nav" aria-label="主要導覽">
           <a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a>
@@ -110,7 +110,7 @@ export default function Storefront() {
         <div className="hero-art" aria-label="佛牌視覺概念示意">
           <div className="hero-orbit hero-orbit--one" /><div className="hero-orbit hero-orbit--two" />
           <div className="hero-card hero-card--back"><span>2566</span></div>
-          <div className="hero-amulet"><span className="hero-loop" /><span className="hero-halo" /><span className="hero-figure"><i /><b /></span><span className="hero-inscription">藏 曜</span></div>
+          <div className="hero-amulet"><span className="hero-loop" /><span className="hero-halo" /><span className="hero-figure"><i /><b /></span><span className="hero-inscription">泰 聚 達</span></div>
           <div className="hero-caption"><small>COLLECTION 001</small><b>典藏系列</b></div>
         </div>
       </section>
@@ -147,7 +147,7 @@ export default function Storefront() {
       </section>
 
       <section className="archive-section" id="archive">
-        <div className="archive-visual"><div className="document-card document-card--back"><span>ZAA</span></div><div className="document-card document-card--front"><p>OBJECT RECORD</p><h3>藏品履歷卡</h3><dl><div><dt>編號</dt><dd>ZAA-2566-001</dd></div><div><dt>年份</dt><dd>佛曆 2566</dd></div><div><dt>材質</dt><dd>Sacred powder</dd></div><div><dt>狀態</dt><dd>待逐件覆核</dd></div></dl><span className="record-seal">藏曜<br />選物</span></div></div>
+        <div className="archive-visual"><div className="document-card document-card--back"><span>TJD</span></div><div className="document-card document-card--front"><p>OBJECT RECORD</p><h3>藏品履歷卡</h3><dl><div><dt>編號</dt><dd>TJD-2566-001</dd></div><div><dt>年份</dt><dd>佛曆 2566</dd></div><div><dt>材質</dt><dd>Sacred powder</dd></div><div><dt>狀態</dt><dd>待逐件覆核</dd></div></dl><span className="record-seal">泰聚<br />達</span></div></div>
         <div className="archive-copy"><p className="eyebrow eyebrow--dark">PROVENANCE MATTERS</p><h2>一件聖物，<br />應該有看得懂的履歷。</h2><p>正式商品頁不只放名稱與價格，也會整理寺廟或來源、師父或法會、佛曆年份、材質尺寸、取得方式、保存狀況與實拍日期。</p><ul><li><span>01</span>來源與法會資訊</li><li><span>02</span>尺寸、材質與保存狀況</li><li><span>03</span>正反面及細節實拍</li><li><span>04</span>單件庫存與典藏編號</li></ul><a className="button button--dark" href="#journal">了解我們的紀錄方式 →</a></div>
       </section>
 
@@ -158,7 +158,7 @@ export default function Storefront() {
 
       <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("已記下你的信箱（原型不會真的送出）"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>此為互動原型，不會儲存或送出個人資料。</small></form></section>
 
-      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">藏</span><span><b>藏曜選物</b><small>ZANGYAO AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a><a href="#journal">新手指南</a></div><div><b>服務</b><a href="#footer-note">配送與付款</a><a href="#footer-note">退換貨說明</a><a href="#footer-note">聯絡我們</a></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 藏曜選物｜前台概念原型</span><span>商品、品牌與來源資料皆為展示，正式上架前須覆核。</span></div></footer>
+      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a><a href="#journal">新手指南</a></div><div><b>服務</b><a href="#footer-note">配送與付款</a><a href="#footer-note">退換貨說明</a><a href="#footer-note">聯絡我們</a></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達｜前台概念原型</span><span>商品、品牌與來源資料皆為展示，正式上架前須覆核。</span></div></footer>
 
       <aside className={`mobile-menu ${menuOpen ? "open" : ""}`} aria-hidden={!menuOpen}><div className="drawer-head"><span>選單</span><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
 

@@ -19,7 +19,8 @@ test("server-renders the storefront and SEO content", async () => {
 
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="zh-Hant-TW"/i);
-  assert.match(html, /藏曜選物/);
+  assert.match(html, /泰聚達/);
+  assert.doesNotMatch(html, /藏曜選物|ZANGYAO|ZAA-2566/);
   assert.match(html, /把來源說清楚/);
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /本週新藏/);
