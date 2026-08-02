@@ -4,6 +4,7 @@ import Link from "@tiptap/extension-link";
 import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import NextLink from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./admin.module.css";
 
@@ -353,6 +354,8 @@ export default function AdminShell() {
           </div>
         </div>
         <div className={styles.topbarActions}>
+          <NextLink href="/admin/products/">商品與庫存</NextLink>
+          <NextLink href="/admin/orders/">訂單</NextLink>
           <a href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
           <button
             type="button"

@@ -39,8 +39,10 @@ next-env.d.ts
 /dist/
 /.wrangler/
 /.local-data/
+/.local-backups/
 /.local-runtime/
 /outputs/
 /work/
 /.pages-build-excluded/
+/.pages-build-work/
 *.tsbuildinfo

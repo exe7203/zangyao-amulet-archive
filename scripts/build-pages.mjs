@@ -1,19 +1,20 @@
-import { access, mkdir, rename, rm } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+const projectRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 const adminDir = path.resolve(projectRoot, "app", "admin");
-const excludedRoot = path.resolve(projectRoot, ".pages-build-excluded");
-const excludedAdminDir = path.resolve(excludedRoot, "admin");
+const buildRoot = path.resolve(projectRoot, ".pages-build-work");
+const buildOut = path.resolve(buildRoot, "out");
+const projectOut = path.resolve(projectRoot, "out");
 const nextCli = fileURLToPath(
   new URL("../node_modules/next/dist/bin/next", import.meta.url),
 );
 
-function assertInsideProject(target, expectedParent) {
-  if (path.dirname(target) !== expectedParent || !target.startsWith(projectRoot)) {
+function assertDirectChild(target, expectedParent) {
+  if (path.dirname(target) !== expectedParent || !target.startsWith(`${expectedParent}${path.sep}`)) {
     throw new Error(`Unsafe Pages build path: ${target}`);
   }
 }
@@ -27,11 +28,24 @@ async function exists(target) {
   }
 }
 
+async function copySourceDirectory(name, filter) {
+  const source = path.resolve(projectRoot, name);
+  if (!await exists(source)) return;
+  await cp(source, path.resolve(buildRoot, name), { recursive: true, filter });
+}
+
 async function runNextBuild() {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [nextCli, "build"], {
-      cwd: projectRoot,
-      env: process.env,
+      cwd: buildRoot,
+      env: {
+        ...process.env,
+        STATIC_EXPORT: "1",
+        NEXT_PUBLIC_STORE_MODE: "demo",
+        PAGES_BASE_PATH: process.env.PAGES_BASE_PATH || "/zangyao-amulet-archive",
+        NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL ||
+          "https://exe7203.github.io/zangyao-amulet-archive/",
+      },
       stdio: "inherit",
     });
     child.once("error", reject);
@@ -43,28 +57,50 @@ async function runNextBuild() {
   });
 }
 
-assertInsideProject(adminDir, path.resolve(projectRoot, "app"));
-assertInsideProject(excludedAdminDir, excludedRoot);
+assertDirectChild(buildRoot, projectRoot);
+assertDirectChild(projectOut, projectRoot);
 
-if (await exists(excludedAdminDir)) {
-  if (await exists(adminDir)) {
-    throw new Error("Both the live and excluded admin directories exist; refusing to guess which one to build");
-  }
-  await rename(excludedAdminDir, adminDir);
-}
-
-await mkdir(excludedRoot, { recursive: true });
-await rename(adminDir, excludedAdminDir);
+await rm(buildRoot, { recursive: true, force: true });
+await mkdir(buildRoot, { recursive: true });
 
 let buildSucceeded = false;
 try {
+  await copySourceDirectory("app", (source) => {
+    const resolved = path.resolve(source);
+    return resolved !== adminDir && !resolved.startsWith(`${adminDir}${path.sep}`);
+  });
+  await writeFile(
+    path.resolve(buildRoot, "app", "checkout-dialog.tsx"),
+    `"use client";
+
+type DemoCheckoutProps = {
+  lines: unknown[];
+  open: boolean;
+  subtotal: number;
+  onClose(): void;
+  onCompleted(order: { id: string; orderNumber: string; status: string; total: number }): void;
+};
+
+export default function CheckoutDialog(props: DemoCheckoutProps) {
+  void props;
+  return null;
+}
+`,
+    "utf8",
+  );
+  await copySourceDirectory("public");
+  await copySourceDirectory("shared");
+
+  for (const name of ["package.json", "next.config.ts", "postcss.config.mjs", "tsconfig.json"]) {
+    await copyFile(path.resolve(projectRoot, name), path.resolve(buildRoot, name));
+  }
+
   await runNextBuild();
+  await rm(projectOut, { recursive: true, force: true });
+  await cp(buildOut, projectOut, { recursive: true });
   buildSucceeded = true;
 } finally {
-  if (await exists(excludedAdminDir)) {
-    await rename(excludedAdminDir, adminDir);
-  }
-  await rm(excludedRoot, { recursive: true, force: true });
+  await rm(buildRoot, { recursive: true, force: true });
 }
 
 if (buildSucceeded) {

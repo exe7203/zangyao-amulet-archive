@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `inventory_movements_order_product_type_unique` ON `inventory_movements` (`order_id`,`product_id`,`movement_type`);

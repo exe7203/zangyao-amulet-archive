@@ -15,7 +15,7 @@
     "local:stop": "node scripts/local-site.mjs stop",
     "local:status": "node scripts/local-site.mjs status",
     "preview": "node scripts/preview-server.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/article-routes.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

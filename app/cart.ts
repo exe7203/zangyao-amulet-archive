@@ -4,7 +4,7 @@ export const CART_STORAGE_KEY = "taijuda-amulet-archive:cart:v1";
 const DEFAULT_PURCHASE_LIMIT = 10;
 
 export type CartItem = {
-  productId: number;
+  productId: string;
   quantity: number;
 };
 
@@ -12,8 +12,9 @@ export type CartLine = CartItem & {
   product: Product;
 };
 
-export function getPurchaseLimit(product: Pick<Product, "purchaseLimit">) {
-  return product.purchaseLimit ?? DEFAULT_PURCHASE_LIMIT;
+export function getPurchaseLimit(product: Pick<Product, "purchaseLimit" | "stock">) {
+  const configuredLimit = product.purchaseLimit ?? DEFAULT_PURCHASE_LIMIT;
+  return Math.max(0, Math.min(configuredLimit, product.stock));
 }
 
 export function normalizeCartItems(
@@ -23,21 +24,27 @@ export function normalizeCartItems(
   if (!Array.isArray(value)) return [];
 
   const productsById = new Map(catalog.map((product) => [product.id, product]));
-  const quantities = new Map<number, number>();
-  const order: number[] = [];
+  const quantities = new Map<string, number>();
+  const order: string[] = [];
 
   for (const candidate of value) {
     if (!candidate || typeof candidate !== "object") continue;
 
-    const { productId, quantity } = candidate as Partial<CartItem>;
-    if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity! <= 0) continue;
+    const rawProductId = (candidate as { productId?: unknown }).productId;
+    const quantity = (candidate as { quantity?: unknown }).quantity;
+    const productId = typeof rawProductId === "string"
+      ? rawProductId
+      : Number.isInteger(rawProductId)
+        ? `product_taijuda_${String(rawProductId).padStart(3, "0")}`
+        : "";
+    if (!productId || !Number.isInteger(quantity) || Number(quantity) <= 0) continue;
 
-    const product = productsById.get(productId!);
+    const product = productsById.get(productId);
     if (!product) continue;
 
-    if (!quantities.has(productId!)) order.push(productId!);
-    const nextQuantity = (quantities.get(productId!) ?? 0) + quantity!;
-    quantities.set(productId!, Math.min(nextQuantity, getPurchaseLimit(product)));
+    if (!quantities.has(productId)) order.push(productId);
+    const nextQuantity = (quantities.get(productId) ?? 0) + Number(quantity);
+    quantities.set(productId, Math.min(nextQuantity, getPurchaseLimit(product)));
   }
 
   return order.map((productId) => ({ productId, quantity: quantities.get(productId)! }));
@@ -75,7 +82,7 @@ export function addCartItem(
 
 export function changeCartItemQuantity(
   items: readonly CartItem[],
-  productId: number,
+  productId: string,
   amount: number,
   catalog: readonly Product[],
 ): CartItem[] {
@@ -89,7 +96,7 @@ export function changeCartItemQuantity(
     .filter((item) => item.quantity > 0);
 }
 
-export function removeCartItem(items: readonly CartItem[], productId: number) {
+export function removeCartItem(items: readonly CartItem[], productId: string) {
   return items.filter((item) => item.productId !== productId);
 }
 

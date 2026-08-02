@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CART_STORAGE_KEY,
   addCartItem,
@@ -12,28 +13,44 @@ import {
   serializeCartItems,
   type CartItem,
 } from "./cart";
+import CheckoutDialog from "./checkout-dialog";
 import { formatPrice, products, type Product } from "./data";
 import JournalSection from "./journal-section";
+import ProductArtwork from "./product-artwork";
+import ProductDialog from "./product-dialog";
+import { useModalFocus } from "./use-modal-focus";
 
 const filters = ["全部新藏", "佛牌", "神尊", "符印"] as const;
+const productShapes = new Set(["arch", "oval", "round", "statue"]);
 
-function AmuletArtwork({ product, large = false }: { product: Product; large?: boolean }) {
-  return (
-    <div className={`amulet-art tone-${product.tone} ${large ? "amulet-art--large" : ""}`} aria-label={`${product.shortName}商品視覺示意`}>
-      <span className={`amulet-piece shape-${product.shape}`}>
-        <span className="amulet-loop" />
-        <span className="amulet-aura" />
-        <span className="amulet-figure"><i /><b /></span>
-        <span className="amulet-line amulet-line--one" />
-        <span className="amulet-line amulet-line--two" />
-      </span>
-      <small>PROTOTYPE VISUAL</small>
-    </div>
-  );
+type OrderConfirmation = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+};
+
+function normalizePublicProduct(value: unknown): Product | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Partial<Product>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.slug !== "string" ||
+    typeof candidate.name !== "string" ||
+    typeof candidate.shortName !== "string" ||
+    typeof candidate.price !== "number" ||
+    !Number.isSafeInteger(candidate.price) ||
+    typeof candidate.stock !== "number" ||
+    !Number.isSafeInteger(candidate.stock)
+  ) return null;
+  if (!productShapes.has(String(candidate.shape))) return null;
+  return candidate as Product;
 }
 
 export default function Storefront() {
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>("全部新藏");
+  const [catalog, setCatalog] = useState<Product[]>(products);
+  const [catalogLive, setCatalogLive] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartReady, setCartReady] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -42,101 +59,154 @@ export default function Storefront() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [journalOpen, setJournalOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [orderApiEnabled, setOrderApiEnabled] = useState(process.env.NEXT_PUBLIC_STORE_MODE === "live");
+  const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null);
   const [notice, setNotice] = useState("");
+  const cartPanelRef = useRef<HTMLElement>(null);
+  const cartCloseRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLElement>(null);
+  const menuCloseRef = useRef<HTMLButtonElement>(null);
+  const orderPanelRef = useRef<HTMLDivElement>(null);
+  const orderCloseRef = useRef<HTMLButtonElement>(null);
+
+  useModalFocus(cartOpen, cartPanelRef, cartCloseRef, () => setCartOpen(false));
+  useModalFocus(menuOpen, menuPanelRef, menuCloseRef, () => setMenuOpen(false));
+  useModalFocus(Boolean(orderConfirmation), orderPanelRef, orderCloseRef, () => setOrderConfirmation(null));
 
   useEffect(() => {
-    document.body.classList.toggle("no-scroll", cartOpen || menuOpen || selected !== null || journalOpen);
-    return () => document.body.classList.remove("no-scroll");
-  }, [cartOpen, journalOpen, menuOpen, selected]);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setCartOpen(false); setMenuOpen(false); setSearchOpen(false); setSelected(null);
-      }
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        setCartItems(parseCartStorage(window.localStorage.getItem(CART_STORAGE_KEY), products));
-      } catch {
-        setCartItems([]);
-      } finally {
-        setCartReady(true);
-      }
-    }, 0);
+    const isLocal = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" || window.location.hostname === "::1";
+    if (!isLocal) return;
+    const timer = window.setTimeout(() => setOrderApiEnabled(true), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (!cartReady) return;
+    document.body.classList.toggle(
+      "no-scroll",
+      cartOpen || menuOpen || selected !== null || journalOpen || checkoutOpen || orderConfirmation !== null,
+    );
+    return () => document.body.classList.remove("no-scroll");
+  }, [cartOpen, checkoutOpen, journalOpen, menuOpen, orderConfirmation, selected]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    async function initializeStore() {
+      let nextCatalog = products;
+      let usingLiveCatalog = false;
+      try {
+        const response = await fetch("/api/store/products?site=taijuda", {
+          headers: { accept: "application/json" },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const payload = await response.json() as { products?: unknown[] };
+          if (Array.isArray(payload.products)) {
+            nextCatalog = payload.products.map(normalizePublicProduct).filter((product): product is Product => Boolean(product));
+            usingLiveCatalog = true;
+          }
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // GitHub Pages 沒有動態 API，保留建置時商品快照且不啟用下單。
+      }
+      if (controller.signal.aborted) return;
+      setCatalog(nextCatalog);
+      setCatalogLive(usingLiveCatalog);
+      try {
+        setCartItems(parseCartStorage(window.localStorage.getItem(CART_STORAGE_KEY), nextCatalog));
+      } catch {
+        setCartItems([]);
+      }
+      setCartReady(true);
+    }
+    void initializeStore();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!cartReady) return;
     try {
       window.localStorage.setItem(CART_STORAGE_KEY, serializeCartItems(cartItems));
     } catch {
-      // 購物車在停用瀏覽器儲存時仍可於本次瀏覽正常使用。
+      // 停用瀏覽器儲存時，購物車仍能在本次瀏覽使用。
     }
   }, [cartItems, cartReady]);
 
   useEffect(() => {
     const syncCart = (event: StorageEvent) => {
-      if (event.key === CART_STORAGE_KEY) {
-        setCartItems(parseCartStorage(event.newValue, products));
-      }
+      if (event.key === CART_STORAGE_KEY) setCartItems(parseCartStorage(event.newValue, catalog));
     };
     window.addEventListener("storage", syncCart);
     return () => window.removeEventListener("storage", syncCart);
+  }, [catalog]);
+
+  useEffect(() => {
+    const closeSearchOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSearchOpen(false);
+    };
+    window.addEventListener("keydown", closeSearchOnEscape);
+    return () => window.removeEventListener("keydown", closeSearchOnEscape);
   }, []);
 
   const visibleProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return products.filter((product) => {
+    return catalog.filter((product) => {
       const filterMatch = activeFilter === "全部新藏" || product.category === activeFilter;
-      const queryMatch = !normalized || [product.name, product.theme, product.origin, product.material].join(" ").toLowerCase().includes(normalized);
+      const queryMatch = !normalized || [product.name, product.theme, product.origin, product.material]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized);
       return filterMatch && queryMatch;
     });
-  }, [activeFilter, query]);
+  }, [activeFilter, catalog, query]);
 
-  const cart = useMemo(() => resolveCartLines(cartItems, products), [cartItems]);
+  const cart = useMemo(() => resolveCartLines(cartItems, catalog), [cartItems, catalog]);
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
+  const checkoutReady = orderApiEnabled && catalogLive;
 
   const showNotice = (message: string) => {
     setNotice(message);
-    window.setTimeout(() => setNotice(""), 2600);
+    window.setTimeout(() => setNotice(""), 3200);
   };
 
   const addToCart = (product: Product) => {
+    if (!cartReady) {
+      showNotice("收藏袋與即時庫存仍在同步，請稍候再試。");
+      return;
+    }
     const existing = cartItems.find((item) => item.productId === product.id);
     const limit = getPurchaseLimit(product);
+    if (product.status !== "active" || limit < 1) {
+      showNotice(`${product.shortName}目前暫不可訂購`);
+      return;
+    }
     setCartItems((current) => addCartItem(current, product));
     showNotice(existing && existing.quantity >= limit
-      ? product.purchaseLimit === 1
+      ? limit === 1
         ? `${product.shortName}為一物一拍商品，每件限購 1 件`
-        : `${product.shortName}已達收藏數量上限`
+        : `${product.shortName}已達可訂數量上限`
       : `${product.shortName}已加入收藏袋`);
   };
 
-  const updateQuantity = (productId: number, amount: number) => {
-    setCartItems((current) => changeCartItemQuantity(current, productId, amount, products));
+  const openCheckout = () => {
+    if (!checkoutReady) {
+      showNotice(orderApiEnabled ? "接單資料服務尚未就緒，現在不會收集個人資料。" : "目前公開展示版不收集個人資料；請在泰聚達本機版建立訂單。");
+      return;
+    }
+    setCartOpen(false);
+    setCheckoutOpen(true);
   };
 
   return (
     <main>
-      <div className="announcement"><p>原型展示｜每件聖物正式上架前皆須完成來源覆核</p><span>台灣現貨・安心配送</span></div>
+      <div className="announcement"><p>{catalogLive ? "本機營運測試版｜庫存與訂單由本機資料庫管理" : "公開展示版｜商品為建置時快照，暫不收集訂單資料"}</p><span>台灣現貨・來源透明</span></div>
 
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="泰聚達首頁">
-          <span className="brand-mark">泰</span>
-          <span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span>
-        </a>
-        <nav className="desktop-nav" aria-label="主要導覽">
-          <a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a>
-        </nav>
+        <a className="brand" href="#top" aria-label="泰聚達首頁"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a>
+        <nav className="desktop-nav" aria-label="主要導覽"><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a></nav>
         <div className="header-actions">
           <button className="icon-button desktop-search" onClick={() => setSearchOpen((value) => !value)} aria-label="搜尋商品" aria-expanded={searchOpen}>⌕</button>
           <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={cartReady ? `收藏袋，共 ${itemCount} 件商品` : "收藏袋"}><i className="bag-glyph" aria-hidden="true">◇</i><span>收藏袋</span>{cartReady && itemCount > 0 && <b>{itemCount}</b>}</button>
@@ -146,76 +216,54 @@ export default function Storefront() {
       </header>
 
       <section className="hero" id="top">
-        <div className="hero-copy">
-          <p className="eyebrow">AMULET ARCHIVE · TAIWAN</p>
-          <h1>把來源說清楚，<br />才值得長久收藏。</h1>
-          <p className="hero-lead">精選泰國佛牌與聖物，以實物影像、尺寸材質、法會年份與來源紀錄，陪你從理解文化開始選擇。</p>
-          <div className="hero-actions"><a className="button button--gold" href="#new">探索本週新藏 <span>→</span></a><a className="text-link" href="#journal">先讀選牌指南 ↗</a></div>
-          <div className="hero-note"><span>01</span><p>不以神奇功效作銷售話術<small>從文化、來源與工藝開始認識</small></p></div>
-        </div>
-        <div className="hero-art" aria-label="佛牌視覺概念示意">
-          <div className="hero-orbit hero-orbit--one" /><div className="hero-orbit hero-orbit--two" />
-          <div className="hero-card hero-card--back"><span>2566</span></div>
-          <div className="hero-amulet"><span className="hero-loop" /><span className="hero-halo" /><span className="hero-figure"><i /><b /></span><span className="hero-inscription">泰 聚 達</span></div>
-          <div className="hero-caption"><small>COLLECTION 001</small><b>典藏系列</b></div>
-        </div>
+        <div className="hero-copy"><p className="eyebrow">AMULET ARCHIVE · TAIWAN</p><h1><span>把來源說清楚，</span><span>才值得長久收藏。</span></h1><p className="hero-lead">精選泰國佛牌與聖物，以實物影像、尺寸材質、法會年份與來源紀錄，陪你從理解文化開始選擇。</p><div className="hero-actions"><a className="button button--gold" href="#new">探索本週新藏 <span>→</span></a><a className="text-link" href="#journal">先讀選牌指南 ↗</a></div><div className="hero-note"><span>01</span><p>不以神奇功效作銷售話術<small>從文化、來源與工藝開始認識</small></p></div></div>
+        <div className="hero-art" aria-label="佛牌視覺概念示意"><div className="hero-orbit hero-orbit--one" /><div className="hero-orbit hero-orbit--two" /><div className="hero-card hero-card--back"><span>2566</span></div><div className="hero-amulet"><span className="hero-loop" /><span className="hero-halo" /><span className="hero-figure"><i /><b /></span><span className="hero-inscription">泰 聚 達</span></div><div className="hero-caption"><small>COLLECTION 001</small><b>典藏系列</b></div></div>
       </section>
 
-      <section className="trust-strip" aria-label="服務特色">
-        {[["01", "資料透明", "年份、材質與來源欄位"], ["02", "一物一拍", "正反面與細節如實留存"], ["03", "安心結帳", "正式版串接台灣金物流"], ["04", "尊重信仰", "文化導讀，不保證功效"]].map(([number, title, text]) => <div key={number}><span>{number}</span><p><b>{title}</b><small>{text}</small></p></div>)}
-      </section>
+      <section className="trust-strip" aria-label="服務特色">{[["01", "資料透明", "年份、材質與來源欄位"], ["02", "一物一拍", "正反面與細節如實留存"], ["03", "保留訂單", "先確認庫存，再通知付款配送"], ["04", "尊重信仰", "文化導讀，不保證功效"]].map(([number, title, text]) => <div key={number}><span>{number}</span><p><b>{title}</b><small>{text}</small></p></div>)}</section>
 
-      <section className="collection-nav" id="collections">
-        <div className="section-heading"><div><p className="eyebrow eyebrow--dark">FIND YOUR COLLECTION</p><h2>從喜歡的形制開始</h2></div><p>不確定該怎麼選？先從外型、文化脈絡與收藏偏好認識，不必急著替自己套上答案。</p></div>
-        <div className="category-grid">
-          {[["佛牌", "崇迪・必打・坤平・龍婆托", "arch"], ["神尊", "四面神・象神・招財女神", "statue"], ["符印", "哈奴曼・符管・紀念章", "round"]].map(([name, detail, shape], index) => (
-            <a href="#new" className="category-card" key={name} onClick={() => setActiveFilter(name as "佛牌" | "神尊" | "符印")}><span className={`category-symbol category-symbol--${shape}`}><i /></span><span className="category-index">0{index + 1}</span><h3>{name}</h3><p>{detail}</p><b>查看系列 →</b></a>
-          ))}
-        </div>
-      </section>
+      <section className="collection-nav" id="collections"><div className="section-heading"><div><p className="eyebrow eyebrow--dark">FIND YOUR COLLECTION</p><h2>從喜歡的形制開始</h2></div><p>不確定該怎麼選？先從外型、文化脈絡與收藏偏好認識，不必急著替自己套上答案。</p></div><div className="category-grid">{[["佛牌", "崇迪・必打・坤平・龍婆托", "arch"], ["神尊", "四面神・象神・招財女神", "statue"], ["符印", "哈奴曼・符管・紀念章", "round"]].map(([name, detail, shape], index) => <a href="#new" className="category-card" key={name} onClick={() => setActiveFilter(name as "佛牌" | "神尊" | "符印")}><span className={`category-symbol category-symbol--${shape}`}><i /></span><span className="category-index">0{index + 1}</span><h3>{name}</h3><p>{detail}</p><b>查看系列 →</b></a>)}</div></section>
 
       <section className="products-section" id="new">
         <div className="section-heading section-heading--products"><div><p className="eyebrow eyebrow--dark">NEW ARRIVALS</p><h2>本週新藏</h2></div><div className="filters" role="group" aria-label="商品分類">{filters.map((filter) => <button key={filter} className={activeFilter === filter ? "active" : ""} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div></div>
-        {query && <p className="search-result-copy">搜尋「{query}」— 找到 {visibleProducts.length} 件展示商品</p>}
-        <div className="product-grid">
-          {visibleProducts.map((product) => <article className="product-card" key={product.id}>
-            <button className="product-visual" onClick={() => setSelected(product)} aria-label={`查看${product.name}詳情`}><span className="product-badge">{product.badge}</span><span className="favorite">♡</span><AmuletArtwork product={product} /><span className="quick-view">查看收藏履歷</span></button>
-            <div className="product-info"><p>{product.origin} · {product.buddhistYear}</p><h3><button onClick={() => setSelected(product)}>{product.name}</button></h3><div><b>{formatPrice(product.price)}</b><button className="add-button" onClick={() => addToCart(product)} aria-label={`將${product.shortName}加入收藏袋`}>＋</button></div></div>
-          </article>)}
-        </div>
-        {visibleProducts.length === 0 && <div className="empty-products"><p>目前沒有符合的展示商品。</p><button onClick={() => { setQuery(""); setActiveFilter("全部新藏"); }}>清除搜尋</button></div>}
+        {query && <p className="search-result-copy">搜尋「{query}」— 找到 {visibleProducts.length} 件商品</p>}
+        <div className="product-grid">{visibleProducts.map((product) => {
+          const canOrder = cartReady && product.status === "active" && product.stock > 0;
+          return <article className="product-card" key={product.id}>
+            <button className="product-visual" onClick={() => setSelected(product)} aria-label={`快速查看${product.name}`}><span className="product-badge">{product.badge}</span><ProductArtwork product={product} /><span className="quick-view">快速查看藏品履歷</span></button>
+            <div className="product-info"><p>{product.origin} · {product.buddhistYear}</p><h3><Link href={`/products/${product.slug}/`}>{product.name}</Link></h3><small className={canOrder ? "stock-state" : "stock-state stock-state--empty"}>{canOrder ? `現貨 ${product.stock} 件` : "目前不可訂購"}</small><div><b>{formatPrice(product.price)}</b><button className="add-button" onClick={() => addToCart(product)} aria-label={`將${product.shortName}加入收藏袋`} disabled={!canOrder}>＋</button></div></div>
+          </article>;
+        })}</div>
+        {visibleProducts.length === 0 && <div className="empty-products"><p>{catalogLive ? "目前尚無符合條件的可訂商品。" : "目前沒有符合的展示商品。"}</p><button onClick={() => { setQuery(""); setActiveFilter("全部新藏"); }}>清除搜尋</button></div>}
         <div className="section-footer"><a href="#collections">查看全部典藏 →</a></div>
       </section>
 
-      <section className="theme-section" id="themes">
-        <div className="theme-intro"><p className="eyebrow">CULTURAL CONTEXT</p><h2>想找的，不只是<br />一個「功效」標籤。</h2><p>我們以常見的信仰脈絡整理主題，保留每個人理解與感受的空間。</p><small>祈願主題為文化脈絡與民間信仰整理，不代表效果承諾。</small></div>
-        <div className="theme-list">{["守護與安心", "事業與行動", "財運與商務", "人緣與溝通", "學業與專注"].map((theme, index) => <a key={theme} href="#new" onClick={() => { setQuery(theme); setActiveFilter("全部新藏"); }}><span>0{index + 1}</span><b>{theme}</b><i>→</i></a>)}</div>
-      </section>
+      <section className="theme-section" id="themes"><div className="theme-intro"><p className="eyebrow">CULTURAL CONTEXT</p><h2>想找的，不只是<br />一個「功效」標籤。</h2><p>我們以常見的信仰脈絡整理主題，保留每個人理解與感受的空間。</p><small>祈願主題為文化脈絡與民間信仰整理，不代表效果承諾。</small></div><div className="theme-list">{["守護與安心", "事業與行動", "財運與商務", "人緣與溝通", "學業與專注"].map((theme, index) => <a key={theme} href="#new" onClick={() => { setQuery(theme); setActiveFilter("全部新藏"); }}><span>0{index + 1}</span><b>{theme}</b><i>→</i></a>)}</div></section>
 
-      <section className="archive-section" id="archive">
-        <div className="archive-visual"><div className="document-card document-card--back"><span>TJD</span></div><div className="document-card document-card--front"><p>OBJECT RECORD</p><h3>藏品履歷卡</h3><dl><div><dt>編號</dt><dd>TJD-2566-001</dd></div><div><dt>年份</dt><dd>佛曆 2566</dd></div><div><dt>材質</dt><dd>Sacred powder</dd></div><div><dt>狀態</dt><dd>待逐件覆核</dd></div></dl><span className="record-seal">泰聚<br />達</span></div></div>
-        <div className="archive-copy"><p className="eyebrow eyebrow--dark">PROVENANCE MATTERS</p><h2>一件聖物，<br />應該有看得懂的履歷。</h2><p>正式商品頁不只放名稱與價格，也會整理寺廟或來源、師父或法會、佛曆年份、材質尺寸、取得方式、保存狀況與實拍日期。</p><ul><li><span>01</span>來源與法會資訊</li><li><span>02</span>尺寸、材質與保存狀況</li><li><span>03</span>正反面及細節實拍</li><li><span>04</span>單件庫存與典藏編號</li></ul><a className="button button--dark" href="#journal">了解我們的紀錄方式 →</a></div>
-      </section>
+      <section className="archive-section" id="archive"><div className="archive-visual"><div className="document-card document-card--back"><span>TJD</span></div><div className="document-card document-card--front"><p>OBJECT RECORD</p><h3>藏品履歷卡</h3><dl><div><dt>編號</dt><dd>TJD-2566-001</dd></div><div><dt>年份</dt><dd>佛曆 2566</dd></div><div><dt>材質</dt><dd>Sacred powder</dd></div><div><dt>狀態</dt><dd>待逐件覆核</dd></div></dl><span className="record-seal">泰聚<br />達</span></div></div><div className="archive-copy"><p className="eyebrow eyebrow--dark">PROVENANCE MATTERS</p><h2>一件聖物，<br />應該有看得懂的履歷。</h2><p>商品頁不只放名稱與價格，也整理寺廟或來源、師父或法會、佛曆年份、材質尺寸、取得方式、保存狀況與實拍日期。</p><ul><li><span>01</span>來源與法會資訊</li><li><span>02</span>尺寸、材質與保存狀況</li><li><span>03</span>正反面及細節實拍</li><li><span>04</span>單件庫存與典藏編號</li></ul><a className="button button--dark" href="#journal">了解我們的紀錄方式 →</a></div></section>
 
       <JournalSection onOpenChange={setJournalOpen} />
 
-      <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("已記下你的信箱（原型不會真的送出）"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>此為互動原型，不會儲存或送出個人資料。</small></form></section>
+      <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("電子報服務尚未啟用，不會儲存你的信箱。"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>訂閱功能尚未啟用，此表單不會儲存或送出個人資料。</small></form></section>
 
-      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a><a href="#journal">新手指南</a></div><div><b>服務</b><a href="#footer-note">配送與付款</a><a href="#footer-note">退換貨說明</a><a href="#footer-note">聯絡我們</a></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達｜前台概念原型</span><span>商品、品牌與來源資料皆為展示，正式上架前須覆核。</span></div></footer>
+      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><Link href="/about/">關於泰聚達</Link><a href="#journal">收藏誌</a><a href="#archive">來源履歷</a></div><div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/contact/">聯絡我們</Link></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達</span><span>展示商品與來源資料正式上架前仍須逐件覆核。</span></div></footer>
 
-      <aside className={`mobile-menu ${menuOpen ? "open" : ""}`} aria-hidden={!menuOpen}><div className="drawer-head"><span>選單</span><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
+      <aside ref={menuPanelRef} className={`mobile-menu ${menuOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="網站選單" aria-hidden={!menuOpen} inert={!menuOpen} tabIndex={-1}><div className="drawer-head"><span>選單</span><button ref={menuCloseRef} className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
 
-      <aside className={`cart-drawer ${cartOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="收藏袋" aria-hidden={!cartOpen}>
-        <div className="drawer-head"><span>收藏袋 <small aria-live="polite">{cartReady ? `${itemCount} 件` : "讀取中"}</small></span><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="關閉收藏袋">×</button></div>
+      <aside ref={cartPanelRef} className={`cart-drawer ${cartOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="收藏袋" aria-hidden={!cartOpen} inert={!cartOpen} tabIndex={-1}>
+        <div className="drawer-head"><span>收藏袋 <small aria-live="polite">{cartReady ? `${itemCount} 件` : "讀取中"}</small></span><button ref={cartCloseRef} className="icon-button" onClick={() => setCartOpen(false)} aria-label="關閉收藏袋">×</button></div>
         <div className="cart-lines">{cart.length === 0 ? <div className="empty-cart"><span>◇</span><h3>{cartReady ? "收藏袋還是空的" : "正在讀取收藏袋"}</h3><p>{cartReady ? "從本週新藏挑一件喜歡的作品看看。" : "請稍候片刻。"}</p>{cartReady && <button className="button button--dark" onClick={() => setCartOpen(false)}>繼續逛逛</button>}</div> : cart.map((line) => {
           const purchaseLimit = getPurchaseLimit(line.product);
           const reachedLimit = line.quantity >= purchaseLimit;
-          return <div className="cart-line" key={line.product.id}><div className="cart-thumb"><AmuletArtwork product={line.product} /></div><div className="cart-line-info"><p>{line.product.buddhistYear}</p><h3>{line.product.shortName}</h3><b>{formatPrice(line.product.price)}</b>{purchaseLimit === 1 && <small className="cart-limit">一物一拍・每件限購 1 件</small>}<div className="cart-line-controls"><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)} aria-label={`減少${line.product.shortName}數量`}>−</button><span>{line.quantity}</span><button onClick={() => updateQuantity(line.product.id, 1)} aria-label={`增加${line.product.shortName}數量`} disabled={reachedLimit}>＋</button></div><button className="remove-cart-line" onClick={() => setCartItems((current) => removeCartItem(current, line.product.id))} aria-label={`從收藏袋移除${line.product.shortName}`}>移除</button></div></div></div>;
+          return <div className="cart-line" key={line.product.id}><div className="cart-thumb"><ProductArtwork product={line.product} /></div><div className="cart-line-info"><p>{line.product.buddhistYear}</p><h3>{line.product.shortName}</h3><b>{formatPrice(line.product.price)}</b>{purchaseLimit === 1 && <small className="cart-limit">一物一拍・每件限購 1 件</small>}<div className="cart-line-controls"><div className="quantity"><button onClick={() => setCartItems((current) => changeCartItemQuantity(current, line.product.id, -1, catalog))} aria-label={`減少${line.product.shortName}數量`}>−</button><span>{line.quantity}</span><button onClick={() => setCartItems((current) => changeCartItemQuantity(current, line.product.id, 1, catalog))} aria-label={`增加${line.product.shortName}數量`} disabled={reachedLimit}>＋</button></div><button className="remove-cart-line" onClick={() => setCartItems((current) => removeCartItem(current, line.product.id))} aria-label={`從收藏袋移除${line.product.shortName}`}>移除</button></div></div></div>;
         })}</div>
-        {cart.length > 0 && <div className="cart-summary"><div><span>小計</span><b>{formatPrice(subtotal)}</b></div><p>運費與付款方式將於正式結帳頁顯示。</p><div className="cart-summary-actions"><button className="clear-cart" onClick={() => setCartItems([])}>清空收藏袋</button><button className="button button--gold" onClick={() => showNotice("結帳流程將在下一階段串接")}>前往結帳 →</button></div></div>}
+        {cart.length > 0 && <div className="cart-summary"><div><span>商品小計</span><b>{formatPrice(subtotal)}</b></div><p>{checkoutReady ? "送出後由店家確認運費與付款方式。" : "接單服務未確認前，不會收集姓名、電話或地址。"}</p><div className="cart-summary-actions"><button className="clear-cart" onClick={() => setCartItems([])}>清空收藏袋</button><button className="button button--gold" onClick={openCheckout}>{checkoutReady ? "建立保留單 →" : "目前暫不接單"}</button></div></div>}
       </aside>
 
-      {selected && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title"><button className="modal-backdrop" onClick={() => setSelected(null)} aria-label="關閉商品詳情" /><div className="product-modal"><button className="modal-close icon-button" onClick={() => setSelected(null)} aria-label="關閉商品詳情">×</button><div className="modal-visual"><AmuletArtwork product={selected} large /></div><div className="modal-copy"><p className="eyebrow eyebrow--dark">OBJECT RECORD · {selected.badge}</p><h2 id="product-modal-title">{selected.name}</h2><p className="modal-price">{formatPrice(selected.price)}</p><p className="modal-description">此頁為前台原型展示。正式商品會逐件拍攝，並附上可閱讀的來源與保存資料。</p><dl><div><dt>地區／來源</dt><dd>{selected.origin}・{selected.temple}</dd></div><div><dt>年份</dt><dd>{selected.buddhistYear}（{selected.westernYear}）</dd></div><div><dt>材質</dt><dd>{selected.material}</dd></div><div><dt>尺寸</dt><dd>{selected.dimensions}</dd></div><div><dt>典藏狀態</dt><dd>展示資料・待逐件覆核</dd></div></dl><div className="modal-actions"><button className="button button--dark" onClick={() => { addToCart(selected); setSelected(null); setCartOpen(true); }}>加入收藏袋</button><button className="text-link" onClick={() => setSelected(null)}>繼續瀏覽</button></div><small className="faith-note">佛牌與聖物屬宗教文化及收藏商品，其意涵與感受因個人信仰而異，本店不作功效或結果保證。</small></div></div></div>}
+      <ProductDialog product={selected} onClose={() => setSelected(null)} onAdd={(product) => { addToCart(product); setSelected(null); setCartOpen(true); }} />
+      <CheckoutDialog lines={cart} open={checkoutOpen} subtotal={subtotal} onClose={() => setCheckoutOpen(false)} onCompleted={(order) => { setCheckoutOpen(false); setCartItems([]); setOrderConfirmation(order); }} />
+
+      {orderConfirmation && <div className="order-success-modal" role="dialog" aria-modal="true" aria-labelledby="order-success-title"><button className="checkout-backdrop" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果" tabIndex={-1} /><div className="order-success-card" ref={orderPanelRef} tabIndex={-1}><button ref={orderCloseRef} className="order-success-close" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果">×</button><span>✓</span><p>RESERVATION RECEIVED</p><h2 id="order-success-title">訂單資料已收到</h2><b>{orderConfirmation.orderNumber}</b><p>商品已進入待確認狀態。付款尚未完成，店家確認來源、庫存與配送後才會通知下一步。</p><button className="button button--dark" onClick={() => setOrderConfirmation(null)}>繼續瀏覽</button></div></div>}
 
       {(cartOpen || menuOpen) && <button className="drawer-backdrop" onClick={() => { setCartOpen(false); setMenuOpen(false); }} aria-label="關閉側邊欄" />}
       {notice && <div className="toast" role="status">{notice}</div>}

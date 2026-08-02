@@ -30,6 +30,8 @@ const host = "127.0.0.1";
 const port = 3000;
 const siteUrl = `http://${host}:${port}/`;
 const adminUrl = `${siteUrl}admin/`;
+const productAdminUrl = `${siteUrl}admin/products/`;
+const orderAdminUrl = `${siteUrl}admin/orders/`;
 const healthUrl = `${siteUrl}api/admin/articles?site=taijuda`;
 
 const sourceTargets = [
@@ -38,6 +40,7 @@ const sourceTargets = [
   "db",
   "drizzle",
   "public",
+  "shared",
   "worker",
   ".openai/hosting.json",
   "next.config.ts",
@@ -174,7 +177,9 @@ async function validateBuild() {
       config.assets?.directory === "../client" &&
       clientFiles.length > 0 &&
       worker.includes("/api/admin/articles") &&
-      worker.includes("/api/content/articles");
+      worker.includes("/api/content/articles") &&
+      worker.includes("/api/admin/products") &&
+      worker.includes("/api/store/orders");
   } catch {
     return false;
   }
@@ -267,6 +272,8 @@ async function startSite() {
   if (current && managedProcessIsRunning(current) && await checkHealth()) {
     console.log(`泰聚達本機版已經在運行：${siteUrl}`);
     console.log(`文章管理後台：${adminUrl}`);
+    console.log(`商品與庫存：${productAdminUrl}`);
+    console.log(`訂單管理：${orderAdminUrl}`);
     openSiteInBrowser();
     return;
   }
@@ -332,10 +339,17 @@ async function startSite() {
   process.stdout.write("正在啟動泰聚達本機版");
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (await checkHealth()) {
+      // D1 schema upgrades can briefly restart the local Worker after the first
+      // successful request. Give that one-time reload time to settle, then warm
+      // the new isolate before opening the site.
+      await wait(12_000);
+      if (!await checkHealth()) continue;
       process.stdout.write("\n");
       console.log(`網站已啟動：${siteUrl}`);
       console.log(`文章管理後台：${adminUrl}`);
-      console.log("文章資料會保存在本機專案的 .local-data 資料夾中。");
+      console.log(`商品與庫存：${productAdminUrl}`);
+      console.log(`訂單管理：${orderAdminUrl}`);
+      console.log("文章、商品、庫存與訂單資料會保存在本機專案的 .local-data 資料夾中。");
       openSiteInBrowser();
       return;
     }
@@ -374,6 +388,8 @@ async function showStatus() {
   if (healthy) {
     console.log(`運行中：${siteUrl}`);
     console.log(`文章管理後台：${adminUrl}`);
+    console.log(`商品與庫存：${productAdminUrl}`);
+    console.log(`訂單管理：${orderAdminUrl}`);
     console.log(current && managedProcessIsRunning(current)
       ? `本機程序編號：${current.pid}`
       : "網站正在運行，但不是由本啟動器開啟。");

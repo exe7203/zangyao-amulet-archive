@@ -15,6 +15,20 @@
       "when": 1785658850264,
       "tag": "0001_wooden_invisible_woman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785677710535,
+      "tag": "0002_heavy_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785677941913,
+      "tag": "0003_yummy_bug",
+      "breakpoints": true
     }
   ]
 }

@@ -31,14 +31,14 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /本週新藏/);
   assert.match(html, /第一次接觸泰國佛牌：先看懂年份、材質與來源/);
-  assert.match(html, /aria-haspopup="dialog"/);
+  assert.match(html, /href="[^"]*\/articles\/guide-first-amulet\//);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
 test("cart storage keeps only product ids and safe quantities", () => {
   const catalog = [
-    { id: 1, purchaseLimit: 1 },
-    { id: 2 },
+    { id: "product_taijuda_001", purchaseLimit: 1, stock: 1 },
+    { id: "product_taijuda_002", purchaseLimit: 10, stock: 10 },
   ];
   const normalized = normalizeCartItems([
     { productId: 1, quantity: 3, stalePrice: 1 },
@@ -49,20 +49,20 @@ test("cart storage keeps only product ids and safe quantities", () => {
   ], catalog);
 
   assert.deepEqual(normalized, [
-    { productId: 1, quantity: 1 },
-    { productId: 2, quantity: 2 },
+    { productId: "product_taijuda_001", quantity: 1 },
+    { productId: "product_taijuda_002", quantity: 2 },
   ]);
   assert.equal(
     serializeCartItems(normalized),
-    '[{"productId":1,"quantity":1},{"productId":2,"quantity":2}]',
+    '[{"productId":"product_taijuda_001","quantity":1},{"productId":"product_taijuda_002","quantity":2}]',
   );
 });
 
 test("cart changes respect one-of-one limits and remove zero quantities", () => {
-  const uniqueProduct = { id: 1, purchaseLimit: 1 };
+  const uniqueProduct = { id: "product_taijuda_001", purchaseLimit: 1, stock: 1 };
   const catalog = [uniqueProduct];
 
   const firstAdd = addCartItem([], uniqueProduct);
   assert.deepEqual(addCartItem(firstAdd, uniqueProduct), firstAdd);
-  assert.deepEqual(changeCartItemQuantity(firstAdd, 1, -1, catalog), []);
+  assert.deepEqual(changeCartItemQuantity(firstAdd, "product_taijuda_001", -1, catalog), []);
 });
