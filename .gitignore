@@ -38,6 +38,8 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /.wrangler/
+/.local-data/
+/.local-runtime/
 /outputs/
 /work/
 /.pages-build-excluded/

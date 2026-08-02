@@ -17,6 +17,15 @@ npm ci
 npm run dev
 ```
 
+## Windows 本機部署版
+
+一般使用請直接雙擊 `啟動泰聚達本機版.cmd`。啟動器會準備最新版網站，使用本機 Worker 與獨立的 `.local-data` 資料庫，並在背景持續運行：
+
+- 前台：`http://127.0.0.1:3000/`
+- 文章管理後台：`http://127.0.0.1:3000/admin/`
+
+另提供 `停止泰聚達本機版.cmd` 與 `查看泰聚達本機版狀態.cmd`。完整操作與備份方式請見 `本機版使用說明.md`。
+
 ## GitHub Pages
 
 推送到 `main` 後，GitHub Actions 會建立靜態前台並發布至 GitHub Pages。建置流程會明確排除 `/admin/`，因為 GitHub Pages 無法提供安全登入、D1 或寫入 API；管理後台必須部署在可執行 Worker 與 D1 的環境。

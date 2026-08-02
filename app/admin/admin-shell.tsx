@@ -224,11 +224,10 @@ export default function AdminShell() {
   }, [createArticle, selectArticle]);
 
   useEffect(() => {
-    if (initialLoadStarted.current) return;
+    if (!editor || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    const timer = window.setTimeout(() => void loadArticles(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadArticles]);
+    void loadArticles();
+  }, [editor, loadArticles]);
 
   useEffect(() => {
     if (editor && !draft.id && editor.isEmpty) {
@@ -355,7 +354,16 @@ export default function AdminShell() {
         </div>
         <div className={styles.topbarActions}>
           <a href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
-          <button type="button" onClick={() => void loadArticles()} disabled={loading}>重新整理</button>
+          <button
+            type="button"
+            onClick={() => {
+              if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
+              void loadArticles(draft.id || undefined);
+            }}
+            disabled={loading}
+          >
+            重新整理
+          </button>
         </div>
       </header>
 

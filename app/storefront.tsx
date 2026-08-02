@@ -13,6 +13,7 @@ import {
   type CartItem,
 } from "./cart";
 import { formatPrice, products, type Product } from "./data";
+import JournalSection from "./journal-section";
 
 const filters = ["全部新藏", "佛牌", "神尊", "符印"] as const;
 
@@ -40,12 +41,13 @@ export default function Storefront() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
+  const [journalOpen, setJournalOpen] = useState(false);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    document.body.classList.toggle("no-scroll", cartOpen || menuOpen || selected !== null);
+    document.body.classList.toggle("no-scroll", cartOpen || menuOpen || selected !== null || journalOpen);
     return () => document.body.classList.remove("no-scroll");
-  }, [cartOpen, menuOpen, selected]);
+  }, [cartOpen, journalOpen, menuOpen, selected]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -195,10 +197,7 @@ export default function Storefront() {
         <div className="archive-copy"><p className="eyebrow eyebrow--dark">PROVENANCE MATTERS</p><h2>一件聖物，<br />應該有看得懂的履歷。</h2><p>正式商品頁不只放名稱與價格，也會整理寺廟或來源、師父或法會、佛曆年份、材質尺寸、取得方式、保存狀況與實拍日期。</p><ul><li><span>01</span>來源與法會資訊</li><li><span>02</span>尺寸、材質與保存狀況</li><li><span>03</span>正反面及細節實拍</li><li><span>04</span>單件庫存與典藏編號</li></ul><a className="button button--dark" href="#journal">了解我們的紀錄方式 →</a></div>
       </section>
 
-      <section className="journal-section" id="journal">
-        <div className="section-heading"><div><p className="eyebrow eyebrow--dark">THE JOURNAL</p><h2>收藏誌</h2></div><a className="heading-link" href="#journal">閱讀全部文章 →</a></div>
-        <div className="journal-grid">{[["新手指南", "第一次接觸泰國佛牌：先看懂年份、材質與來源", "07 MIN READ", "paper"], ["收藏保養", "佛牌外殼只是保護嗎？常見材質與收藏方式", "05 MIN READ", "case"], ["來源紀錄", "從寺廟到收藏櫃：一件聖物的履歷應包含什麼？", "08 MIN READ", "stamp"]].map(([tag, title, time, art], index) => <article className="journal-card" key={title}><div className={`journal-art journal-art--${art}`}><span>0{index + 1}</span><i /></div><p>{tag} <span>{time}</span></p><h3>{title}</h3><a href="#archive">閱讀文章 →</a></article>)}</div>
-      </section>
+      <JournalSection onOpenChange={setJournalOpen} />
 
       <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("已記下你的信箱（原型不會真的送出）"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>此為互動原型，不會儲存或送出個人資料。</small></form></section>
 

@@ -209,10 +209,37 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .journal-art--case i { width: 35%; height: 55%; border: 8px double #bd9954; border-radius: 45% 45% 20% 20%; background: linear-gradient(145deg,#cdb675,#66502d); }
 .journal-art--stamp i { width: 130px; height: 130px; border: 3px double rgba(150,58,43,.7); border-radius: 50%; }
 .journal-art--stamp i::after { content: "泰聚\A 達"; white-space: pre; position: absolute; inset: 0; display: grid; place-items: center; color: var(--vermilion); font-family: var(--serif); font-style: normal; font-size: 18px; line-height: 1.4; text-align: center; }
-.journal-card > p { margin: 20px 0 8px; color: #8f703c; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
-.journal-card > p span { float: right; color: var(--muted); font-weight: 500; }
+.journal-card-button { width: 100%; padding: 0; display: block; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.journal-card-button:hover .journal-art i { transform: translate(-50%,-50%) rotate(0); }
+.journal-card-button:hover .journal-read-link { color: var(--vermilion); }
+.journal-card-meta { margin: 20px 0 8px; color: #8f703c; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.journal-card-meta span { float: right; color: var(--muted); font-weight: 500; }
 .journal-card h3 { min-height: 62px; margin: 0 0 18px; font-family: var(--serif); font-size: 20px; font-weight: 600; line-height: 1.55; }
-.journal-card > a { font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.journal-read-link { font-size: 10px; font-weight: 800; letter-spacing: .1em; transition: color .2s ease; }
+
+.journal-modal { position: fixed; inset: 0; z-index: 110; padding: 30px; display: grid; place-items: center; }
+.journal-modal-backdrop { position: absolute; inset: 0; border: 0; background: rgba(12,12,10,.75); backdrop-filter: blur(4px); cursor: pointer; }
+.journal-reader { position: relative; z-index: 1; width: min(850px, 100%); max-height: calc(100vh - 60px); overflow-y: auto; background: var(--paper); box-shadow: 0 30px 90px rgba(0,0,0,.35); outline: 0; }
+.journal-reader-close { position: sticky; z-index: 2; top: 16px; width: 42px; height: 42px; margin: 16px 16px -58px auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: rgba(251,249,242,.94); cursor: pointer; font-size: 23px; line-height: 1; }
+.journal-reader-header { padding: clamp(62px, 8vw, 92px) clamp(28px, 8vw, 90px) 45px; border-bottom: 1px solid var(--line); }
+.journal-reader-header > p:first-child { margin: 0 0 18px; color: #8f703c; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.journal-reader-header h2 { margin: 0; font-family: var(--serif); font-size: clamp(32px, 5vw, 52px); font-weight: 500; line-height: 1.35; }
+.journal-reader-excerpt { margin: 22px 0 0; color: var(--muted); font-size: 15px; line-height: 1.9; }
+.journal-reader-header small { margin-top: 20px; display: block; color: #8b7464; font-size: 10px; letter-spacing: .05em; }
+.journal-reader-content { padding: 48px clamp(28px, 8vw, 90px) 75px; color: #39362f; font-size: 16px; line-height: 2; }
+.journal-reader-content h2, .journal-reader-content h3, .journal-reader-content h4 { margin: 1.7em 0 .6em; color: var(--ink); font-family: var(--serif); font-weight: 600; line-height: 1.45; }
+.journal-reader-content h2:first-child, .journal-reader-content h3:first-child, .journal-reader-content h4:first-child { margin-top: 0; }
+.journal-reader-content h2 { font-size: 29px; }.journal-reader-content h3 { font-size: 23px; }.journal-reader-content h4 { font-size: 19px; }
+.journal-reader-content p { margin: 0 0 1.35em; }
+.journal-reader-content ul, .journal-reader-content ol { margin: 0 0 1.5em; padding-left: 1.5em; }
+.journal-reader-content li > p { margin-bottom: .35em; }
+.journal-reader-content blockquote { margin: 2em 0; padding: 18px 24px; border-left: 3px solid var(--gold); background: var(--ivory); color: #5c5142; }
+.journal-reader-content blockquote p:last-child { margin-bottom: 0; }
+.journal-reader-content hr { margin: 2.5em 0; border: 0; border-top: 1px solid var(--line); }
+.journal-reader-content pre { margin: 2em 0; padding: 20px; overflow-x: auto; background: var(--ink); color: #f5efe2; font-size: 13px; line-height: 1.7; }
+.journal-reader-content :not(pre) > code { padding: 2px 5px; background: #e9e0d1; font-size: .9em; }
+.journal-reader-content a { color: var(--vermilion); text-decoration: underline; text-underline-offset: 3px; }
+.journal-underline { text-decoration: underline; text-underline-offset: 3px; }
 
 .newsletter { padding: 82px clamp(24px, 8vw, 128px); display: grid; grid-template-columns: 1fr 1fr; gap: 100px; align-items: center; background: var(--vermilion); color: white; }
 .newsletter h2 { margin: 0; font-family: var(--serif); font-size: clamp(34px, 4vw, 52px); font-weight: 500; line-height: 1.35; }
@@ -286,6 +313,7 @@ footer { padding: 80px clamp(24px, 7vw, 112px) 28px; display: grid; grid-templat
   .theme-section { padding: 78px 24px; grid-template-columns: 1fr; gap: 50px; }.theme-intro h2 { font-size: 43px; }
   .archive-section { padding: 78px 22px; grid-template-columns: 1fr; }.archive-visual { min-height: 500px; }.document-card { padding: 27px; }.document-card h3 { font-size: 22px; }.archive-copy { order: -1; }
   .journal-grid { grid-template-columns: 1fr; gap: 50px; }.journal-card h3 { min-height: auto; }
+  .journal-modal { padding: 15px; }.journal-reader { max-height: calc(100vh - 30px); }.journal-reader-header { padding: 68px 24px 34px; }.journal-reader-content { padding: 36px 24px 56px; font-size: 15px; }.journal-reader-close { top: 10px; margin: 10px 10px -52px auto; }
   .newsletter { padding: 68px 24px; grid-template-columns: 1fr; gap: 45px; }
   footer { padding: 65px 24px 90px; grid-template-columns: 1fr; gap: 55px; }.footer-links { gap: 18px; }.footer-bottom { flex-direction: column; }
   .product-modal { grid-template-columns: 1fr; max-height: calc(100vh - 30px); }.modal { padding: 15px; }.modal-visual { min-height: 400px; }.modal-copy { padding: 38px 24px; }.modal-actions { align-items: stretch; flex-direction: column; }.modal-actions .button { width: 100%; }.modal-close { position: fixed; right: 24px; top: 24px; }

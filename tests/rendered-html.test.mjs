@@ -30,6 +30,8 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /把來源說清楚/);
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /本週新藏/);
+  assert.match(html, /第一次接觸泰國佛牌：先看懂年份、材質與來源/);
+  assert.match(html, /aria-haspopup="dialog"/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
