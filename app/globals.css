@@ -248,8 +248,12 @@ footer { padding: 80px clamp(24px, 7vw, 112px) 28px; display: grid; grid-templat
 .cart-thumb { position: relative; aspect-ratio: .85; overflow: hidden; }
 .cart-thumb .amulet-piece { border-width: 3px; }.cart-thumb .amulet-art > small { display: none; }
 .cart-line-info > p { margin: 2px 0 4px; color: #8b6b34; font-size: 8px; font-weight: 800; }.cart-line-info h3 { margin: 0 0 7px; font-family: var(--serif); font-size: 16px; }.cart-line-info > b { font-size: 12px; }
-.quantity { width: 94px; height: 30px; margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1px solid var(--line); }.quantity button { border: 0; background: transparent; cursor: pointer; }.quantity span { display: grid; place-items: center; font-size: 11px; }
-.cart-summary { padding: 24px 25px 28px; border-top: 1px solid var(--line); }.cart-summary > div { display: flex; justify-content: space-between; font-size: 15px; }.cart-summary > p { margin: 7px 0 18px; color: var(--muted); font-size: 9px; }.cart-summary .button { width: 100%; }
+.cart-limit { margin-top: 7px; display: block; color: var(--vermilion); font-size: 9px; }
+.cart-line-controls { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.quantity { width: 94px; height: 30px; display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1px solid var(--line); }.quantity button { border: 0; background: transparent; cursor: pointer; }.quantity button:disabled { color: #b9b1a3; cursor: not-allowed; }.quantity span { display: grid; place-items: center; font-size: 11px; }
+.remove-cart-line, .clear-cart { padding: 4px 0; border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
+.remove-cart-line:hover, .clear-cart:hover { color: var(--vermilion); }
+.cart-summary { padding: 24px 25px 28px; border-top: 1px solid var(--line); }.cart-summary > div:first-child { display: flex; justify-content: space-between; font-size: 15px; }.cart-summary > p { margin: 7px 0 18px; color: var(--muted); font-size: 9px; }.cart-summary-actions { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 18px; }.cart-summary .button { width: 100%; }
 
 .modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 30px; }
 .modal-backdrop { position: absolute; inset: 0; border: 0; background: rgba(12,12,10,.72); backdrop-filter: blur(4px); cursor: pointer; }

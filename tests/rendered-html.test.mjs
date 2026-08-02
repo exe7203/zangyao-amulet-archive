@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  addCartItem,
+  changeCartItemQuantity,
+  normalizeCartItems,
+  serializeCartItems,
+} from "../app/cart.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -25,4 +31,36 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /本週新藏/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("cart storage keeps only product ids and safe quantities", () => {
+  const catalog = [
+    { id: 1, purchaseLimit: 1 },
+    { id: 2 },
+  ];
+  const normalized = normalizeCartItems([
+    { productId: 1, quantity: 3, stalePrice: 1 },
+    { productId: 1, quantity: 1 },
+    { productId: 2, quantity: 2, product: { price: 1 } },
+    { productId: 999, quantity: 1 },
+    { productId: 2, quantity: 0 },
+  ], catalog);
+
+  assert.deepEqual(normalized, [
+    { productId: 1, quantity: 1 },
+    { productId: 2, quantity: 2 },
+  ]);
+  assert.equal(
+    serializeCartItems(normalized),
+    '[{"productId":1,"quantity":1},{"productId":2,"quantity":2}]',
+  );
+});
+
+test("cart changes respect one-of-one limits and remove zero quantities", () => {
+  const uniqueProduct = { id: 1, purchaseLimit: 1 };
+  const catalog = [uniqueProduct];
+
+  const firstAdd = addCartItem([], uniqueProduct);
+  assert.deepEqual(addCartItem(firstAdd, uniqueProduct), firstAdd);
+  assert.deepEqual(changeCartItemQuantity(firstAdd, 1, -1, catalog), []);
 });

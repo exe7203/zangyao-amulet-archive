@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  CART_STORAGE_KEY,
+  addCartItem,
+  changeCartItemQuantity,
+  getPurchaseLimit,
+  parseCartStorage,
+  removeCartItem,
+  resolveCartLines,
+  serializeCartItems,
+  type CartItem,
+} from "./cart";
 import { formatPrice, products, type Product } from "./data";
 
-type CartLine = { product: Product; quantity: number };
 const filters = ["全部新藏", "佛牌", "神尊", "符印"] as const;
 
 function AmuletArtwork({ product, large = false }: { product: Product; large?: boolean }) {
@@ -23,7 +33,8 @@ function AmuletArtwork({ product, large = false }: { product: Product; large?: b
 
 export default function Storefront() {
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>("全部新藏");
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartReady, setCartReady] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -46,6 +57,39 @@ export default function Storefront() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        setCartItems(parseCartStorage(window.localStorage.getItem(CART_STORAGE_KEY), products));
+      } catch {
+        setCartItems([]);
+      } finally {
+        setCartReady(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!cartReady) return;
+
+    try {
+      window.localStorage.setItem(CART_STORAGE_KEY, serializeCartItems(cartItems));
+    } catch {
+      // 購物車在停用瀏覽器儲存時仍可於本次瀏覽正常使用。
+    }
+  }, [cartItems, cartReady]);
+
+  useEffect(() => {
+    const syncCart = (event: StorageEvent) => {
+      if (event.key === CART_STORAGE_KEY) {
+        setCartItems(parseCartStorage(event.newValue, products));
+      }
+    };
+    window.addEventListener("storage", syncCart);
+    return () => window.removeEventListener("storage", syncCart);
+  }, []);
+
   const visibleProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return products.filter((product) => {
@@ -55,6 +99,7 @@ export default function Storefront() {
     });
   }, [activeFilter, query]);
 
+  const cart = useMemo(() => resolveCartLines(cartItems, products), [cartItems]);
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
 
@@ -64,19 +109,18 @@ export default function Storefront() {
   };
 
   const addToCart = (product: Product) => {
-    setCart((current) => {
-      const exists = current.find((line) => line.product.id === product.id);
-      return exists
-        ? current.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + 1 } : line)
-        : [...current, { product, quantity: 1 }];
-    });
-    showNotice(`${product.shortName}已加入收藏袋`);
+    const existing = cartItems.find((item) => item.productId === product.id);
+    const limit = getPurchaseLimit(product);
+    setCartItems((current) => addCartItem(current, product));
+    showNotice(existing && existing.quantity >= limit
+      ? product.purchaseLimit === 1
+        ? `${product.shortName}為一物一拍商品，每件限購 1 件`
+        : `${product.shortName}已達收藏數量上限`
+      : `${product.shortName}已加入收藏袋`);
   };
 
   const updateQuantity = (productId: number, amount: number) => {
-    setCart((current) => current
-      .map((line) => line.product.id === productId ? { ...line, quantity: line.quantity + amount } : line)
-      .filter((line) => line.quantity > 0));
+    setCartItems((current) => changeCartItemQuantity(current, productId, amount, products));
   };
 
   return (
@@ -93,7 +137,7 @@ export default function Storefront() {
         </nav>
         <div className="header-actions">
           <button className="icon-button desktop-search" onClick={() => setSearchOpen((value) => !value)} aria-label="搜尋商品" aria-expanded={searchOpen}>⌕</button>
-          <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`收藏袋，共 ${itemCount} 件商品`}><i className="bag-glyph" aria-hidden="true">◇</i><span>收藏袋</span>{itemCount > 0 && <b>{itemCount}</b>}</button>
+          <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={cartReady ? `收藏袋，共 ${itemCount} 件商品` : "收藏袋"}><i className="bag-glyph" aria-hidden="true">◇</i><span>收藏袋</span>{cartReady && itemCount > 0 && <b>{itemCount}</b>}</button>
           <button className="icon-button mobile-menu-button" onClick={() => setMenuOpen(true)} aria-label="開啟選單">☰</button>
         </div>
         {searchOpen && <div className="search-panel"><label htmlFor="site-search">搜尋</label><input id="site-search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋佛牌、材質、地區或祈願主題" /><a href="#new" onClick={() => setSearchOpen(false)}>查看結果 →</a></div>}
@@ -162,13 +206,21 @@ export default function Storefront() {
 
       <aside className={`mobile-menu ${menuOpen ? "open" : ""}`} aria-hidden={!menuOpen}><div className="drawer-head"><span>選單</span><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
 
-      <aside className={`cart-drawer ${cartOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="收藏袋" aria-hidden={!cartOpen}><div className="drawer-head"><span>收藏袋 <small>{itemCount} 件</small></span><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="關閉收藏袋">×</button></div><div className="cart-lines">{cart.length === 0 ? <div className="empty-cart"><span>◇</span><h3>收藏袋還是空的</h3><p>從本週新藏挑一件喜歡的作品看看。</p><button className="button button--dark" onClick={() => setCartOpen(false)}>繼續逛逛</button></div> : cart.map((line) => <div className="cart-line" key={line.product.id}><div className="cart-thumb"><AmuletArtwork product={line.product} /></div><div className="cart-line-info"><p>{line.product.buddhistYear}</p><h3>{line.product.shortName}</h3><b>{formatPrice(line.product.price)}</b><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)} aria-label="減少數量">−</button><span>{line.quantity}</span><button onClick={() => updateQuantity(line.product.id, 1)} aria-label="增加數量">＋</button></div></div></div>)}</div>{cart.length > 0 && <div className="cart-summary"><div><span>小計</span><b>{formatPrice(subtotal)}</b></div><p>運費與付款方式將於正式結帳頁顯示。</p><button className="button button--gold" onClick={() => showNotice("結帳流程將在下一階段串接")}>前往結帳 →</button></div>}</aside>
+      <aside className={`cart-drawer ${cartOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="收藏袋" aria-hidden={!cartOpen}>
+        <div className="drawer-head"><span>收藏袋 <small aria-live="polite">{cartReady ? `${itemCount} 件` : "讀取中"}</small></span><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="關閉收藏袋">×</button></div>
+        <div className="cart-lines">{cart.length === 0 ? <div className="empty-cart"><span>◇</span><h3>{cartReady ? "收藏袋還是空的" : "正在讀取收藏袋"}</h3><p>{cartReady ? "從本週新藏挑一件喜歡的作品看看。" : "請稍候片刻。"}</p>{cartReady && <button className="button button--dark" onClick={() => setCartOpen(false)}>繼續逛逛</button>}</div> : cart.map((line) => {
+          const purchaseLimit = getPurchaseLimit(line.product);
+          const reachedLimit = line.quantity >= purchaseLimit;
+          return <div className="cart-line" key={line.product.id}><div className="cart-thumb"><AmuletArtwork product={line.product} /></div><div className="cart-line-info"><p>{line.product.buddhistYear}</p><h3>{line.product.shortName}</h3><b>{formatPrice(line.product.price)}</b>{purchaseLimit === 1 && <small className="cart-limit">一物一拍・每件限購 1 件</small>}<div className="cart-line-controls"><div className="quantity"><button onClick={() => updateQuantity(line.product.id, -1)} aria-label={`減少${line.product.shortName}數量`}>−</button><span>{line.quantity}</span><button onClick={() => updateQuantity(line.product.id, 1)} aria-label={`增加${line.product.shortName}數量`} disabled={reachedLimit}>＋</button></div><button className="remove-cart-line" onClick={() => setCartItems((current) => removeCartItem(current, line.product.id))} aria-label={`從收藏袋移除${line.product.shortName}`}>移除</button></div></div></div>;
+        })}</div>
+        {cart.length > 0 && <div className="cart-summary"><div><span>小計</span><b>{formatPrice(subtotal)}</b></div><p>運費與付款方式將於正式結帳頁顯示。</p><div className="cart-summary-actions"><button className="clear-cart" onClick={() => setCartItems([])}>清空收藏袋</button><button className="button button--gold" onClick={() => showNotice("結帳流程將在下一階段串接")}>前往結帳 →</button></div></div>}
+      </aside>
 
       {selected && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title"><button className="modal-backdrop" onClick={() => setSelected(null)} aria-label="關閉商品詳情" /><div className="product-modal"><button className="modal-close icon-button" onClick={() => setSelected(null)} aria-label="關閉商品詳情">×</button><div className="modal-visual"><AmuletArtwork product={selected} large /></div><div className="modal-copy"><p className="eyebrow eyebrow--dark">OBJECT RECORD · {selected.badge}</p><h2 id="product-modal-title">{selected.name}</h2><p className="modal-price">{formatPrice(selected.price)}</p><p className="modal-description">此頁為前台原型展示。正式商品會逐件拍攝，並附上可閱讀的來源與保存資料。</p><dl><div><dt>地區／來源</dt><dd>{selected.origin}・{selected.temple}</dd></div><div><dt>年份</dt><dd>{selected.buddhistYear}（{selected.westernYear}）</dd></div><div><dt>材質</dt><dd>{selected.material}</dd></div><div><dt>尺寸</dt><dd>{selected.dimensions}</dd></div><div><dt>典藏狀態</dt><dd>展示資料・待逐件覆核</dd></div></dl><div className="modal-actions"><button className="button button--dark" onClick={() => { addToCart(selected); setSelected(null); setCartOpen(true); }}>加入收藏袋</button><button className="text-link" onClick={() => setSelected(null)}>繼續瀏覽</button></div><small className="faith-note">佛牌與聖物屬宗教文化及收藏商品，其意涵與感受因個人信仰而異，本店不作功效或結果保證。</small></div></div></div>}
 
       {(cartOpen || menuOpen) && <button className="drawer-backdrop" onClick={() => { setCartOpen(false); setMenuOpen(false); }} aria-label="關閉側邊欄" />}
       {notice && <div className="toast" role="status">{notice}</div>}
-      <nav className="mobile-bottom-nav" aria-label="手機快速導覽"><a href="#top"><b>⌂</b><span>首頁</span></a><a href="#collections"><b>▦</b><span>分類</span></a><a href="#journal"><b>▤</b><span>收藏誌</span></a><button onClick={() => setCartOpen(true)}><b>◇</b><span>收藏袋</span>{itemCount > 0 && <i>{itemCount}</i>}</button></nav>
+      <nav className="mobile-bottom-nav" aria-label="手機快速導覽"><a href="#top"><b>⌂</b><span>首頁</span></a><a href="#collections"><b>▦</b><span>分類</span></a><a href="#journal"><b>▤</b><span>收藏誌</span></a><button onClick={() => setCartOpen(true)}><b>◇</b><span>收藏袋</span>{cartReady && itemCount > 0 && <i>{itemCount}</i>}</button></nav>
     </main>
   );
 }
