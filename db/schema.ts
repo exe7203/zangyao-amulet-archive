@@ -11,6 +11,67 @@ export const sites = sqliteTable("sites", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const siteSettings = sqliteTable("site_settings", {
+  siteId: text("site_id")
+    .primaryKey()
+    .references(() => sites.id, { onDelete: "cascade" }),
+  settingsJson: text("settings_json").notNull().default("{}"),
+  themeJson: text("theme_json").notNull().default("{}"),
+  version: integer("version").notNull().default(1),
+  updatedBy: text("updated_by").notNull().default("system"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const sitePages = sqliteTable(
+  "site_pages",
+  {
+    id: text("id").primaryKey(),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    dataJson: text("data_json").notNull(),
+    status: text("status", { enum: ["draft", "published", "archived"] }).notNull().default("draft"),
+    seoTitle: text("seo_title").notNull().default(""),
+    seoDescription: text("seo_description").notNull().default(""),
+    canonicalUrl: text("canonical_url").notNull().default(""),
+    ogImageUrl: text("og_image_url").notNull().default(""),
+    noindex: integer("noindex", { mode: "boolean" }).notNull().default(false),
+    version: integer("version").notNull().default(1),
+    publishedAt: text("published_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("site_pages_site_slug_unique").on(table.siteId, table.slug),
+    index("site_pages_site_status_updated_idx").on(table.siteId, table.status, table.updatedAt),
+  ],
+);
+
+export const sitePageRevisions = sqliteTable(
+  "site_page_revisions",
+  {
+    id: text("id").primaryKey(),
+    pageId: text("page_id")
+      .notNull()
+      .references(() => sitePages.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    dataJson: text("data_json").notNull(),
+    status: text("status").notNull(),
+    seoTitle: text("seo_title").notNull().default(""),
+    seoDescription: text("seo_description").notNull().default(""),
+    canonicalUrl: text("canonical_url").notNull().default(""),
+    ogImageUrl: text("og_image_url").notNull().default(""),
+    noindex: integer("noindex", { mode: "boolean" }).notNull().default(false),
+    version: integer("version").notNull(),
+    savedBy: text("saved_by").notNull().default("local-preview"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("site_page_revisions_page_created_idx").on(table.pageId, table.createdAt)],
+);
+
 export const categories = sqliteTable(
   "categories",
   {
@@ -64,6 +125,10 @@ export const products = sqliteTable(
     status: text("status", { enum: ["draft", "active", "sold_out", "archived"] }).notNull().default("draft"),
     seoTitle: text("seo_title").notNull().default(""),
     seoDescription: text("seo_description").notNull().default(""),
+    imageUrl: text("image_url").notNull().default(""),
+    imageAlt: text("image_alt").notNull().default(""),
+    seoReady: integer("seo_ready", { mode: "boolean" }).notNull().default(false),
+    version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
@@ -106,6 +171,7 @@ export const orders = sqliteTable(
       .references(() => sites.id, { onDelete: "restrict" }),
     orderNumber: text("order_number").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull().default(""),
     customerName: text("customer_name").notNull(),
     customerPhone: text("customer_phone").notNull(),
     customerEmail: text("customer_email").notNull().default(""),
@@ -123,6 +189,9 @@ export const orders = sqliteTable(
     orderStatus: text("order_status", {
       enum: ["new", "confirmed", "processing", "shipped", "completed", "cancelled"],
     }).notNull().default("new"),
+    reservedUntil: text("reserved_until"),
+    expiredAt: text("expired_at"),
+    consentVersion: text("consent_version").notNull().default("local-reservation-v1"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
@@ -131,6 +200,9 @@ export const orders = sqliteTable(
     uniqueIndex("orders_site_idempotency_unique").on(table.siteId, table.idempotencyKey),
     index("orders_site_created_idx").on(table.siteId, table.createdAt),
     index("orders_site_status_idx").on(table.siteId, table.orderStatus, table.paymentStatus),
+    index("orders_reservation_expiry_idx")
+      .on(table.orderStatus, table.paymentStatus, table.reservedUntil)
+      .where(sql`${table.reservedUntil} IS NOT NULL`),
   ],
 );
 
@@ -187,6 +259,26 @@ export const inventoryMovements = sqliteTable(
   ],
 );
 
+export const orderEvents = sqliteTable(
+  "order_events",
+  {
+    id: text("id").primaryKey(),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    fromValue: text("from_value").notNull().default(""),
+    toValue: text("to_value").notNull().default(""),
+    note: text("note").notNull().default(""),
+    actor: text("actor").notNull().default("system"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("order_events_order_created_idx").on(table.orderId, table.createdAt)],
+);
+
 export const articles = sqliteTable(
   "articles",
   {
@@ -205,13 +297,19 @@ export const articles = sqliteTable(
     seoDescription: text("seo_description").notNull().default(""),
     canonicalUrl: text("canonical_url").notNull().default(""),
     ogImageUrl: text("og_image_url").notNull().default(""),
+    tag: text("tag").notNull().default("收藏誌"),
+    keywordsJson: text("keywords_json").notNull().default("[]"),
+    heroImageUrl: text("hero_image_url").notNull().default(""),
+    heroImageAlt: text("hero_image_alt").notNull().default(""),
     noindex: integer("noindex", { mode: "boolean" }).notNull().default(false),
+    version: integer("version").notNull().default(1),
     publishedAt: text("published_at"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     uniqueIndex("articles_site_slug_unique").on(table.siteId, table.slug),
+    index("articles_site_status_updated_idx").on(table.siteId, table.status, table.updatedAt),
   ],
 );
 
@@ -228,7 +326,12 @@ export const articleRevisions = sqliteTable("article_revisions", {
   seoDescription: text("seo_description").notNull().default(""),
   canonicalUrl: text("canonical_url").notNull().default(""),
   ogImageUrl: text("og_image_url").notNull().default(""),
+  tag: text("tag").notNull().default("收藏誌"),
+  keywordsJson: text("keywords_json").notNull().default("[]"),
+  heroImageUrl: text("hero_image_url").notNull().default(""),
+  heroImageAlt: text("hero_image_alt").notNull().default(""),
   noindex: integer("noindex", { mode: "boolean" }).notNull().default(false),
+  version: integer("version").notNull().default(1),
   status: text("status").notNull(),
   savedBy: text("saved_by").notNull().default("local-preview"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

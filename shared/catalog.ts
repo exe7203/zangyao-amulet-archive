@@ -35,6 +35,11 @@ export type Product = {
   status: ProductStatus;
   seoTitle: string;
   seoDescription: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  seoReady?: boolean;
+  version?: number;
+  updatedAt?: string;
 };
 
 export const catalogCategories: CatalogCategory[] = [

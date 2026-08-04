@@ -193,6 +193,8 @@
 .panelTitle { display: flex; align-items: center; justify-content: space-between; }
 .panelTitle span { font-weight: 800; font-size: 13px; }
 .panelTitle small { color: var(--admin-muted); font-size: 9px; letter-spacing: .12em; }
+.panelAction { padding: 4px 7px; color: var(--admin-green); background: transparent; border: 0; font-size: 10px; cursor: pointer; }
+.panelAction:disabled { color: var(--admin-muted); cursor: default; }
 .slugField { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; overflow: hidden; background: #fff; border: 1px solid #d8dfd9; border-radius: 8px; }
 .slugField small { padding-left: 10px; color: var(--admin-muted); font-size: 10px; }
 .slugField input { padding-left: 3px; border: 0; box-shadow: none !important; }
@@ -211,6 +213,13 @@
 .seoChecks li::before { content: "○"; position: absolute; left: 0; }
 .seoChecks .checkPass { color: #217549; }
 .seoChecks .checkPass::before { content: "✓"; }
+.revisionList { display: grid; gap: 7px; }
+.revisionList > button { padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; color: var(--admin-ink); background: #fbfcfa; border: 1px solid #e5eae5; border-radius: 8px; cursor: pointer; }
+.revisionList > button:hover:not(:disabled) { border-color: #9db5a7; background: #f1f6f2; }
+.revisionList > button:disabled { opacity: .55; cursor: default; }
+.revisionList span { display: grid; gap: 3px; }
+.revisionList b { font-size: 11px; }
+.revisionList small, .revisionList time { color: var(--admin-muted); font-size: 9px; }
 
 @media (max-width: 1080px) {
   .workspace { grid-template-columns: 230px 1fr; }

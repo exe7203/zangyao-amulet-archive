@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   addCartItem,
@@ -6,6 +7,11 @@ import {
   normalizeCartItems,
   serializeCartItems,
 } from "../app/cart.ts";
+
+const publishedSnapshot = JSON.parse(await readFile(
+  new URL("../content/published-site.json", import.meta.url),
+  "utf8",
+));
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -30,8 +36,9 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /把來源說清楚/);
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /本週新藏/);
-  assert.match(html, /第一次接觸泰國佛牌：先看懂年份、材質與來源/);
-  assert.match(html, /href="[^"]*\/articles\/guide-first-amulet\//);
+  assert.ok(publishedSnapshot.articles.length > 0, "the public snapshot has no articles");
+  assert.ok(html.includes(publishedSnapshot.articles[0].title));
+  assert.ok(html.includes(`/articles/${publishedSnapshot.articles[0].slug}/`));
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 

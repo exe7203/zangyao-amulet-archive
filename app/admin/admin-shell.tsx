@@ -23,7 +23,12 @@ type Article = {
   seoDescription: string;
   canonicalUrl: string;
   ogImageUrl: string;
+  tag: string;
+  keywords: string[];
+  heroImageUrl: string;
+  heroImageAlt: string;
   noindex: boolean;
+  version: number;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -31,6 +36,15 @@ type Article = {
 
 type Draft = Omit<Article, "id" | "publishedAt" | "createdAt" | "updatedAt"> & {
   id: string | null;
+};
+
+type ArticleRevision = {
+  revisionId: string;
+  articleId: string;
+  title: string;
+  status: ArticleStatus;
+  version: number;
+  createdAt: string;
 };
 
 const SITE_CODE = "taijuda";
@@ -52,7 +66,12 @@ function emptyDraft(): Draft {
     seoDescription: "",
     canonicalUrl: "",
     ogImageUrl: "",
+    tag: "收藏誌",
+    keywords: [],
+    heroImageUrl: "",
+    heroImageAlt: "",
     noindex: false,
+    version: 0,
   };
 }
 
@@ -85,6 +104,11 @@ function normalizeArticle(value: Article): Article {
     ...value,
     contentJson: value.contentJson || EMPTY_DOCUMENT,
     status: value.status || "draft",
+    tag: value.tag || "收藏誌",
+    keywords: Array.isArray(value.keywords) ? value.keywords : [],
+    heroImageUrl: value.heroImageUrl || "",
+    heroImageAlt: value.heroImageAlt || "",
+    version: Number.isSafeInteger(value.version) ? value.version : 1,
   };
 }
 
@@ -122,6 +146,8 @@ export default function AdminShell() {
   const [authRequired, setAuthRequired] = useState(false);
   const [editorVersion, setEditorVersion] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [revisions, setRevisions] = useState<ArticleRevision[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const editRevision = useRef(0);
   const initialLoadStarted = useRef(false);
 
@@ -174,9 +200,15 @@ export default function AdminShell() {
       seoDescription: normalized.seoDescription,
       canonicalUrl: normalized.canonicalUrl,
       ogImageUrl: normalized.ogImageUrl,
+      tag: normalized.tag || "收藏誌",
+      keywords: normalized.keywords || [],
+      heroImageUrl: normalized.heroImageUrl || "",
+      heroImageAlt: normalized.heroImageAlt || "",
       noindex: normalized.noindex,
+      version: normalized.version || 1,
     });
     editor?.commands.setContent(normalized.contentJson, { emitUpdate: false });
+    setRevisions([]);
     setDirty(false);
     setError("");
     setNotice("");
@@ -189,6 +221,7 @@ export default function AdminShell() {
     const next = emptyDraft();
     setDraft(next);
     editor?.commands.setContent(next.contentJson, { emitUpdate: false });
+    setRevisions([]);
     setDirty(false);
     setError("");
     setNotice("");
@@ -251,6 +284,31 @@ export default function AdminShell() {
     markDirty();
   };
 
+  const loadRevisions = useCallback(async (articleId: string) => {
+    setRevisionsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/articles/${encodeURIComponent(articleId)}/revisions?site=${SITE_CODE}`, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({})) as { revisions?: ArticleRevision[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "文章版本讀取失敗");
+      setRevisions(Array.isArray(payload.revisions) ? payload.revisions : []);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "文章版本讀取失敗");
+      setRevisions([]);
+    } finally {
+      setRevisionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draft.id) return;
+    const articleId = draft.id;
+    const timer = window.setTimeout(() => void loadRevisions(articleId), 0);
+    return () => window.clearTimeout(timer);
+  }, [draft.id, loadRevisions]);
+
   const save = async (status: ArticleStatus) => {
     const title = draft.title.trim();
     const slug = slugify(draft.slug || title);
@@ -289,12 +347,61 @@ export default function AdminShell() {
       }
 
       const saved = normalizeArticle(payload.article);
-      setDraft((current) => ({ ...current, id: saved.id, slug: saved.slug, status: saved.status }));
+      setDraft((current) => ({ ...current, id: saved.id, slug: saved.slug, status: saved.status, version: saved.version }));
       setArticles((current) => [saved, ...current.filter((article) => article.id !== saved.id)]);
       if (editRevision.current === savingRevision) setDirty(false);
       setNotice(status === "published" ? "文章已發布並建立版本紀錄" : "草稿已儲存並建立版本紀錄");
+      await loadRevisions(saved.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文章儲存失敗");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restoreRevision = async (revision: ArticleRevision) => {
+    if (!draft.id || saving) return;
+    if (dirty && !window.confirm("目前文章有未儲存變更。還原版本會以所選版本建立一份新草稿，確定繼續嗎？")) return;
+    if (!window.confirm(`確定要把文章還原到第 ${revision.version} 版嗎？原有紀錄不會被刪除。`)) return;
+
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/articles/${encodeURIComponent(draft.id)}/revisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ siteCode: SITE_CODE, revisionId: revision.revisionId, version: draft.version }),
+      });
+      const payload = await response.json().catch(() => ({})) as { article?: Article; error?: string };
+      if (!response.ok || !payload.article) throw new Error(payload.error || "文章版本還原失敗");
+
+      const restored = normalizeArticle(payload.article);
+      setDraft({
+        id: restored.id,
+        slug: restored.slug,
+        title: restored.title,
+        excerpt: restored.excerpt,
+        contentJson: restored.contentJson,
+        status: restored.status,
+        seoTitle: restored.seoTitle,
+        seoDescription: restored.seoDescription,
+        canonicalUrl: restored.canonicalUrl,
+        ogImageUrl: restored.ogImageUrl,
+        tag: restored.tag,
+        keywords: restored.keywords,
+        heroImageUrl: restored.heroImageUrl,
+        heroImageAlt: restored.heroImageAlt,
+        noindex: restored.noindex,
+        version: restored.version,
+      });
+      editor?.commands.setContent(restored.contentJson, { emitUpdate: false });
+      setArticles((current) => [restored, ...current.filter((article) => article.id !== restored.id)]);
+      setDirty(false);
+      setNotice(`已還原第 ${revision.version} 版並建立新的草稿版本；尚未重新發布。`);
+      await loadRevisions(restored.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "文章版本還原失敗");
     } finally {
       setSaving(false);
     }
@@ -354,6 +461,7 @@ export default function AdminShell() {
           </div>
         </div>
         <div className={styles.topbarActions}>
+          <NextLink href="/admin/site/">網站編輯</NextLink>
           <NextLink href="/admin/products/">商品與庫存</NextLink>
           <NextLink href="/admin/orders/">訂單</NextLink>
           <a href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
@@ -498,12 +606,28 @@ export default function AdminShell() {
                   <textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder="搜尋結果中顯示的文章摘要" />
                 </label>
                 <label className={styles.field}>
+                  <span>文章分類</span>
+                  <input value={draft.tag} onChange={(event) => updateDraft("tag", event.target.value)} placeholder="例如：新手指南" />
+                </label>
+                <label className={styles.field}>
+                  <span>關鍵字（逗號分隔）</span>
+                  <input value={draft.keywords.join(", ")} onChange={(event) => updateDraft("keywords", event.target.value.split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 12))} placeholder="泰國佛牌入門, 佛牌年份" />
+                </label>
+                <label className={styles.field}>
                   <span>Canonical URL</span>
                   <input type="url" value={draft.canonicalUrl} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/articles/..." />
                 </label>
                 <label className={styles.field}>
                   <span>社群分享圖 URL</span>
                   <input type="url" value={draft.ogImageUrl} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/article.jpg" />
+                </label>
+                <label className={styles.field}>
+                  <span>文章首圖 URL</span>
+                  <input type="url" value={draft.heroImageUrl} onChange={(event) => updateDraft("heroImageUrl", event.target.value)} placeholder="https://example.com/articles/photo.jpg" />
+                </label>
+                <label className={styles.field}>
+                  <span>首圖替代文字</span>
+                  <input value={draft.heroImageAlt} onChange={(event) => updateDraft("heroImageAlt", event.target.value)} placeholder="描述圖片內容與角度" />
                 </label>
                 <label className={styles.checkField}>
                   <input type="checkbox" checked={draft.noindex} onChange={(event) => updateDraft("noindex", event.target.checked)} />
@@ -522,8 +646,33 @@ export default function AdminShell() {
                   <li className={draft.title ? styles.checkPass : ""}>文章標題已填寫</li>
                   <li className={draft.slug ? styles.checkPass : ""}>文章網址已設定</li>
                   <li className={draft.seoDescription.length >= 50 && draft.seoDescription.length <= 160 ? styles.checkPass : ""}>Meta 描述建議 50–160 字</li>
+                  <li className={!draft.heroImageUrl || Boolean(draft.heroImageAlt) ? styles.checkPass : ""}>首圖已填替代文字</li>
                   <li className={wordCount >= 300 ? styles.checkPass : ""}>內容建議至少 300 字</li>
                 </ul>
+                <p className={styles.savedHint}>「發布文章」會寫入 D1；要讓獨立網址、sitemap 與 SEO 同步，仍需執行公開內容同步與重新建置。</p>
+              </section>
+
+              <section className={styles.panel}>
+                <div className={styles.panelTitle}>
+                  <span>版本紀錄</span>
+                  <button type="button" className={styles.panelAction} onClick={() => draft.id && void loadRevisions(draft.id)} disabled={!draft.id || revisionsLoading}>
+                    {revisionsLoading ? "讀取中…" : "重新整理"}
+                  </button>
+                </div>
+                {!draft.id && <p className={styles.savedHint}>第一次儲存後會開始建立版本。</p>}
+                {draft.id && !revisionsLoading && revisions.length === 0 && <p className={styles.savedHint}>目前沒有可用的版本紀錄。</p>}
+                <div className={styles.revisionList}>
+                  {revisions.map((revision) => <button
+                    type="button"
+                    key={revision.revisionId}
+                    onClick={() => void restoreRevision(revision)}
+                    disabled={saving || revision.version === draft.version}
+                  >
+                    <span><b>第 {revision.version} 版</b><small>{revision.status === "published" ? "已發布" : revision.status === "archived" ? "已封存" : "草稿"}</small></span>
+                    <time dateTime={revision.createdAt}>{formatUpdatedAt(revision.createdAt)}</time>
+                  </button>)}
+                </div>
+                <p className={styles.savedHint}>還原會建立一個新的草稿版本，不會刪除現在或過去的紀錄。</p>
               </section>
             </aside>
           </div>

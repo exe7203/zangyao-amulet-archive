@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleContentApi } from "./content-api";
+import { handleSiteApi } from "./site-api";
 import { handleStoreApi } from "./store-api";
 
 interface Env {
@@ -34,6 +35,9 @@ const worker = {
 
     const contentResponse = await handleContentApi(request, env);
     if (contentResponse) return contentResponse;
+
+    const siteResponse = await handleSiteApi(request, env);
+    if (siteResponse) return siteResponse;
 
     const storeResponse = await handleStoreApi(request, env);
     if (storeResponse) return storeResponse;

@@ -90,6 +90,7 @@ export default function CheckoutDialog(props: DemoCheckoutProps) {
   );
   await copySourceDirectory("public");
   await copySourceDirectory("shared");
+  await copySourceDirectory("content");
 
   for (const name of ["package.json", "next.config.ts", "postcss.config.mjs", "tsconfig.json"]) {
     await copyFile(path.resolve(projectRoot, name), path.resolve(buildRoot, name));

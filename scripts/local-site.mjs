@@ -22,7 +22,9 @@ const stdoutLog = path.join(runtimeDir, "server.stdout.log");
 const stderrLog = path.join(runtimeDir, "server.stderr.log");
 const buildLog = path.join(runtimeDir, "build.log");
 const vinextCli = path.join(projectRoot, "node_modules", "vinext", "dist", "cli.js");
-const wranglerCli = path.join(projectRoot, "node_modules", "wrangler", "bin", "wrangler.js");
+// Launch Wrangler's real CLI directly. The small bin wrapper starts a second
+// detached Node process that can stall before Workerd is spawned on Windows.
+const wranglerCli = path.join(projectRoot, "node_modules", "wrangler", "wrangler-dist", "cli.js");
 const workerEntry = path.join(projectRoot, "dist", "server", "index.js");
 const wranglerConfig = path.join(projectRoot, "dist", "server", "wrangler.json");
 const clientOutput = path.join(projectRoot, "dist", "client");
@@ -32,11 +34,13 @@ const siteUrl = `http://${host}:${port}/`;
 const adminUrl = `${siteUrl}admin/`;
 const productAdminUrl = `${siteUrl}admin/products/`;
 const orderAdminUrl = `${siteUrl}admin/orders/`;
+const siteAdminUrl = `${siteUrl}admin/site/`;
 const healthUrl = `${siteUrl}api/admin/articles?site=taijuda`;
 
 const sourceTargets = [
   "app",
   "build",
+  "content",
   "db",
   "drizzle",
   "public",
@@ -179,7 +183,9 @@ async function validateBuild() {
       worker.includes("/api/admin/articles") &&
       worker.includes("/api/content/articles") &&
       worker.includes("/api/admin/products") &&
-      worker.includes("/api/store/orders");
+      worker.includes("/api/store/orders") &&
+      worker.includes("/api/admin/pages") &&
+      worker.includes("/api/admin/site-export");
   } catch {
     return false;
   }
@@ -269,16 +275,22 @@ async function startSite() {
   await ensureDependencies();
 
   const current = await readPidRecord();
-  if (current && managedProcessIsRunning(current) && await checkHealth()) {
-    console.log(`泰聚達本機版已經在運行：${siteUrl}`);
-    console.log(`文章管理後台：${adminUrl}`);
-    console.log(`商品與庫存：${productAdminUrl}`);
-    console.log(`訂單管理：${orderAdminUrl}`);
-    openSiteInBrowser();
-    return;
+  const managedHealthy = Boolean(current && managedProcessIsRunning(current) && await checkHealth());
+  if (managedHealthy) {
+    const currentBuild = !await buildIsRequired() && await validateBuild();
+    if (currentBuild) {
+      console.log(`泰聚達本機版已經在運行：${siteUrl}`);
+      console.log(`文章管理後台：${adminUrl}`);
+      console.log(`商品與庫存：${productAdminUrl}`);
+      console.log(`訂單管理：${orderAdminUrl}`);
+      console.log(`網站編輯器：${siteAdminUrl}`);
+      openSiteInBrowser();
+      return;
+    }
+    console.log("偵測到網站程式已有更新，正在安全重啟本機版……");
   }
 
-  if (await checkHealth()) {
+  if (!managedHealthy && await checkHealth()) {
     console.log(`泰聚達本機版已經在運行：${siteUrl}`);
     console.log("目前的網站不是由本啟動器開啟，因此停止器不會結束它。");
     openSiteInBrowser();
@@ -288,6 +300,7 @@ async function startSite() {
   if (current && managedProcessIsRunning(current) && !await stopProcessTree(current)) {
     throw new Error("舊的泰聚達本機程序無法安全停止，請稍後再試。");
   }
+  if (current) await wait(1_250);
   await rm(pidFile, { force: true });
   await buildLocal();
   await migrateLegacyData();
@@ -349,6 +362,7 @@ async function startSite() {
       console.log(`文章管理後台：${adminUrl}`);
       console.log(`商品與庫存：${productAdminUrl}`);
       console.log(`訂單管理：${orderAdminUrl}`);
+      console.log(`網站編輯器：${siteAdminUrl}`);
       console.log("文章、商品、庫存與訂單資料會保存在本機專案的 .local-data 資料夾中。");
       openSiteInBrowser();
       return;
@@ -390,6 +404,7 @@ async function showStatus() {
     console.log(`文章管理後台：${adminUrl}`);
     console.log(`商品與庫存：${productAdminUrl}`);
     console.log(`訂單管理：${orderAdminUrl}`);
+    console.log(`網站編輯器：${siteAdminUrl}`);
     console.log(current && managedProcessIsRunning(current)
       ? `本機程序編號：${current.pid}`
       : "網站正在運行，但不是由本啟動器開啟。");

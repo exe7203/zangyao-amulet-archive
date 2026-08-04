@@ -28,7 +28,21 @@ type OrderConfirmation = {
   orderNumber: string;
   status: string;
   total: number;
+  reservedUntil?: string | null;
 };
+
+function formatReservationDeadline(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
 
 function normalizePublicProduct(value: unknown): Product | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -103,7 +117,22 @@ export default function Storefront() {
         if (response.ok) {
           const payload = await response.json() as { products?: unknown[] };
           if (Array.isArray(payload.products)) {
-            nextCatalog = payload.products.map(normalizePublicProduct).filter((product): product is Product => Boolean(product));
+            const liveProducts = payload.products
+              .map(normalizePublicProduct)
+              .filter((product): product is Product => Boolean(product));
+            const liveById = new Map(liveProducts.map((product) => [product.id, product]));
+            nextCatalog = products.map((snapshotProduct) => {
+              const live = liveById.get(snapshotProduct.id);
+              return live
+                ? {
+                    ...snapshotProduct,
+                    price: live.price,
+                    stock: live.stock,
+                    status: live.status,
+                    purchaseLimit: live.purchaseLimit,
+                  }
+                : snapshotProduct;
+            });
             usingLiveCatalog = true;
           }
         }
@@ -246,7 +275,7 @@ export default function Storefront() {
 
       <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("電子報服務尚未啟用，不會儲存你的信箱。"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>訂閱功能尚未啟用，此表單不會儲存或送出個人資料。</small></form></section>
 
-      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><Link href="/about/">關於泰聚達</Link><a href="#journal">收藏誌</a><a href="#archive">來源履歷</a></div><div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/contact/">聯絡我們</Link></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達</span><span>展示商品與來源資料正式上架前仍須逐件覆核。</span></div></footer>
+      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><Link href="/about/">關於泰聚達</Link><Link href="/articles/">收藏誌</Link><a href="#archive">來源履歷</a></div><div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/privacy/">隱私說明</Link><Link href="/service/contact/">聯絡我們</Link></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達</span><span>展示商品與來源資料正式上架前仍須逐件覆核。</span></div></footer>
 
       <aside ref={menuPanelRef} className={`mobile-menu ${menuOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="網站選單" aria-hidden={!menuOpen} inert={!menuOpen} tabIndex={-1}><div className="drawer-head"><span>選單</span><button ref={menuCloseRef} className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
 
@@ -263,7 +292,7 @@ export default function Storefront() {
       <ProductDialog product={selected} onClose={() => setSelected(null)} onAdd={(product) => { addToCart(product); setSelected(null); setCartOpen(true); }} />
       <CheckoutDialog lines={cart} open={checkoutOpen} subtotal={subtotal} onClose={() => setCheckoutOpen(false)} onCompleted={(order) => { setCheckoutOpen(false); setCartItems([]); setOrderConfirmation(order); }} />
 
-      {orderConfirmation && <div className="order-success-modal" role="dialog" aria-modal="true" aria-labelledby="order-success-title"><button className="checkout-backdrop" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果" tabIndex={-1} /><div className="order-success-card" ref={orderPanelRef} tabIndex={-1}><button ref={orderCloseRef} className="order-success-close" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果">×</button><span>✓</span><p>RESERVATION RECEIVED</p><h2 id="order-success-title">訂單資料已收到</h2><b>{orderConfirmation.orderNumber}</b><p>商品已進入待確認狀態。付款尚未完成，店家確認來源、庫存與配送後才會通知下一步。</p><button className="button button--dark" onClick={() => setOrderConfirmation(null)}>繼續瀏覽</button></div></div>}
+      {orderConfirmation && <div className="order-success-modal" role="dialog" aria-modal="true" aria-labelledby="order-success-title"><button className="checkout-backdrop" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果" tabIndex={-1} /><div className="order-success-card" ref={orderPanelRef} tabIndex={-1}><button ref={orderCloseRef} className="order-success-close" onClick={() => setOrderConfirmation(null)} aria-label="關閉訂單結果">×</button><span>✓</span><p>RESERVATION RECEIVED</p><h2 id="order-success-title">訂單資料已收到</h2><b>{orderConfirmation.orderNumber}</b><p>商品已進入待確認狀態。付款尚未完成，店家確認來源、庫存與配送後才會通知下一步。</p>{formatReservationDeadline(orderConfirmation.reservedUntil) && <small>保留期限：{formatReservationDeadline(orderConfirmation.reservedUntil)}</small>}<button className="button button--dark" onClick={() => setOrderConfirmation(null)}>繼續瀏覽</button></div></div>}
 
       {(cartOpen || menuOpen) && <button className="drawer-backdrop" onClick={() => { setCartOpen(false); setMenuOpen(false); }} aria-label="關閉側邊欄" />}
       {notice && <div className="toast" role="status">{notice}</div>}

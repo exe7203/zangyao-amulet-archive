@@ -7,6 +7,7 @@ import {
   adminIdentity,
   cleanSlug,
   cleanText,
+  cleanUrl,
   isRecord,
   json,
   publicJson,
@@ -26,6 +27,10 @@ const PRODUCT_STATUSES = new Set<ProductStatus>(["draft", "active", "sold_out", 
 const DELIVERY_METHODS = new Set(["home_delivery", "convenience_store", "appointment"]);
 const ORDER_STATUSES = new Set(["new", "confirmed", "processing", "shipped", "completed", "cancelled"]);
 const PAYMENT_STATUSES = new Set(["uncollected", "pending", "paid", "failed", "refunded"]);
+export const RESERVATION_HOLD_HOURS = 72;
+export const ORDER_CONSENT_VERSION = "local-reservation-v1";
+const EXPIRY_BATCH_LIMIT = 50;
+const EXPIRY_NOTE = `系統：商品保留逾 ${RESERVATION_HOLD_HOURS} 小時，已自動取消並釋放庫存。`;
 const ORDER_TRANSITIONS: Record<string, ReadonlySet<string>> = {
   new: new Set(["new", "confirmed", "cancelled"]),
   confirmed: new Set(["confirmed", "processing", "cancelled"]),
@@ -34,10 +39,108 @@ const ORDER_TRANSITIONS: Record<string, ReadonlySet<string>> = {
   completed: new Set(["completed"]),
   cancelled: new Set(["cancelled"]),
 };
+export const PAYMENT_TRANSITIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  uncollected: new Set(["uncollected", "pending", "paid", "failed"]),
+  pending: new Set(["pending", "paid", "failed"]),
+  failed: new Set(["failed", "pending", "paid"]),
+  paid: new Set(["paid", "refunded"]),
+  refunded: new Set(["refunded"]),
+};
+
+type FingerprintItem = { productId: string; quantity: number };
+type OrderFingerprintInput = {
+  siteId: string;
+  customer: { name: string; phone: string; email: string; lineId: string };
+  deliveryMethod: string;
+  address: string;
+  note: string;
+  items: readonly FingerprintItem[];
+};
+
+export function reservationDeadline(from: Date | string | number = new Date()) {
+  const startedAt = from instanceof Date ? from : new Date(from);
+  if (Number.isNaN(startedAt.getTime())) throw new Error("保留起始時間不正確");
+  return new Date(startedAt.getTime() + RESERVATION_HOLD_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+export function canonicalOrderFingerprint(input: OrderFingerprintInput) {
+  const items = [...input.items].sort((left, right) => left.productId < right.productId ? -1 : left.productId > right.productId ? 1 : 0);
+  return JSON.stringify({
+    version: 2,
+    consentVersion: ORDER_CONSENT_VERSION,
+    siteId: input.siteId,
+    customer: input.customer,
+    deliveryMethod: input.deliveryMethod,
+    address: input.address,
+    note: input.note,
+    items,
+  });
+}
+
+export async function orderRequestFingerprint(input: OrderFingerprintInput) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalOrderFingerprint(input)),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function idempotencyReplayDecision(existingFingerprint: unknown, requestFingerprint: string) {
+  return typeof existingFingerprint === "string" && existingFingerprint === requestFingerprint
+    ? "replay" as const
+    : "conflict" as const;
+}
+
+export function paymentTransitionAllowed(currentStatus: string, nextStatus: string) {
+  return Boolean(PAYMENT_TRANSITIONS[currentStatus]?.has(nextStatus));
+}
+
+function safeOrderEventActor(actor: string) {
+  return actor === "local-preview" || actor === "store-api" || actor === "system-expiry"
+    ? actor
+    : "authenticated-admin";
+}
+
+type OrderEventInput = {
+  siteId: string;
+  orderId: string;
+  eventType: "order_created" | "order_status_changed" | "payment_status_changed" | "reservation_expired";
+  fromValue: string;
+  toValue: string;
+  note: string;
+  actor: string;
+  createdAt: string;
+  expectedOrderStatus: string;
+  expectedPaymentStatus: string;
+};
+
+function orderEventStatement(db: D1Database, input: OrderEventInput) {
+  return db.prepare(`INSERT INTO order_events (
+    id, site_id, order_id, event_type, from_value, to_value, note, actor, created_at
+  ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+  WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND site_id = ?
+    AND order_status = ? AND payment_status = ? AND updated_at = ?)`)
+    .bind(
+      `order_event_${crypto.randomUUID()}`,
+      input.siteId,
+      input.orderId,
+      input.eventType,
+      input.fromValue,
+      input.toValue,
+      input.note,
+      safeOrderEventActor(input.actor),
+      input.createdAt,
+      input.orderId,
+      input.siteId,
+      input.expectedOrderStatus,
+      input.expectedPaymentStatus,
+      input.createdAt,
+    );
+}
 
 const productSelect = `SELECT
   p.*, c.name AS category_name,
-  i.on_hand, i.reserved, i.version,
+  i.on_hand, i.reserved, i.version AS inventory_version,
   (i.on_hand - i.reserved) AS available_stock
 FROM products p
 JOIN categories c ON c.id = p.category_id AND c.site_id = p.site_id
@@ -72,11 +175,15 @@ function parseProductRow(row: Record<string, unknown>) {
     status: String(row.status) as ProductStatus,
     seoTitle: String(row.seo_title || ""),
     seoDescription: String(row.seo_description || ""),
+    imageUrl: String(row.image_url || ""),
+    imageAlt: String(row.image_alt || ""),
+    seoReady: Boolean(row.seo_ready),
+    version: numberValue(row.version || 1),
     inventory: {
       onHand: numberValue(row.on_hand),
       reserved: numberValue(row.reserved),
       available: numberValue(row.available_stock),
-      version: numberValue(row.version),
+      version: numberValue(row.inventory_version),
     },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -88,6 +195,7 @@ function parseOrderRow(row: Record<string, unknown>) {
     id: String(row.id),
     orderNumber: String(row.order_number),
     idempotencyKey: String(row.idempotency_key),
+    requestFingerprint: String(row.request_fingerprint || ""),
     customer: {
       name: String(row.customer_name),
       phone: String(row.customer_phone),
@@ -101,6 +209,8 @@ function parseOrderRow(row: Record<string, unknown>) {
     currency: String(row.currency || "TWD"),
     paymentStatus: String(row.payment_status),
     orderStatus: String(row.order_status),
+    reservedUntil: row.reserved_until ? String(row.reserved_until) : null,
+    expiredAt: row.expired_at ? String(row.expired_at) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -158,6 +268,8 @@ function publicOrderReceipt(order: NonNullable<Awaited<ReturnType<typeof orderWi
     total: order.subtotal,
     currency: order.currency,
     paymentStatus: order.paymentStatus,
+    reservedUntil: order.reservedUntil,
+    expiredAt: order.expiredAt,
     items: order.items.map((item) => ({
       productId: item.productId,
       sku: item.sku,
@@ -177,7 +289,7 @@ async function listPublicProducts(request: Request, db: D1Database, slug?: strin
   if (slug) {
     const row = await db.prepare(`${productSelect}
       WHERE p.site_id = ? AND p.slug = ? AND p.status = 'active'
-        AND c.status = 'active' AND (i.on_hand - i.reserved) > 0
+        AND c.status = 'active'
       LIMIT 1`)
       .bind(site.id, cleanSlug(slug))
       .first<Record<string, unknown>>();
@@ -267,8 +379,22 @@ async function createOrder(request: Request, db: D1Database) {
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
 
+  const requestFingerprint = await orderRequestFingerprint({
+    siteId: String(site.id),
+    customer: { name, phone, email, lineId },
+    deliveryMethod,
+    address,
+    note,
+    items: normalizedItems.items,
+  });
+
   const existing = await orderWithItems(db, site.id, "idempotency_key", idempotencyKey);
-  if (existing) return json({ order: publicOrderReceipt(existing), replayed: true });
+  if (existing) {
+    if (idempotencyReplayDecision(existing.requestFingerprint, requestFingerprint) === "conflict") {
+      return json({ error: "這個送單識別碼已用於不同的訂單內容，請重新整理購物車後再送出" }, { status: 409 });
+    }
+    return json({ order: publicOrderReceipt(existing), replayed: true });
+  }
 
   const items = normalizedItems.items;
   const placeholders = items.map(() => "?").join(", ");
@@ -303,6 +429,7 @@ async function createOrder(request: Request, db: D1Database) {
   const id = `order_${crypto.randomUUID()}`;
   const number = orderNumber();
   const now = new Date().toISOString();
+  const reservedUntil = reservationDeadline(now);
   const availabilityClauses = items.map(() =>
     "(p.id = ? AND p.price = ? AND p.purchase_limit >= ? AND (i.on_hand - i.reserved) >= ?)").join(" OR ");
   const availabilityBindings = items.flatMap((item) => {
@@ -312,12 +439,12 @@ async function createOrder(request: Request, db: D1Database) {
 
   const statements = [
     db.prepare(`INSERT INTO orders (
-      id, site_id, order_number, idempotency_key,
+      id, site_id, order_number, idempotency_key, request_fingerprint,
       customer_name, customer_phone, customer_email, customer_line_id,
       delivery_method, address, note, subtotal, currency,
-      payment_status, order_status, created_at, updated_at
-    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      'uncollected', 'new', ?, ?
+      payment_status, order_status, reserved_until, expired_at, consent_version, created_at, updated_at
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      'uncollected', 'new', ?, NULL, ?, ?, ?
     WHERE (SELECT COUNT(*) FROM products p
       JOIN inventory i ON i.product_id = p.id AND i.site_id = p.site_id
       JOIN categories c ON c.id = p.category_id AND c.site_id = p.site_id
@@ -325,10 +452,10 @@ async function createOrder(request: Request, db: D1Database) {
         AND (${availabilityClauses})
     ) = ?`)
       .bind(
-        id, site.id, number, idempotencyKey,
+        id, site.id, number, idempotencyKey, requestFingerprint,
         name, phone, email, lineId,
         deliveryMethod, address, note, subtotal, String(site.currency || "TWD"),
-        now, now,
+        reservedUntil, ORDER_CONSENT_VERSION, now, now,
         site.id, ...availabilityBindings, items.length,
       ),
   ];
@@ -382,6 +509,18 @@ async function createOrder(request: Request, db: D1Database) {
         ),
     );
   }
+  statements.push(orderEventStatement(db, {
+    siteId: String(site.id),
+    orderId: id,
+    eventType: "order_created",
+    fromValue: "",
+    toValue: "new",
+    note: `建立 ${RESERVATION_HOLD_HOURS} 小時商品保留單`,
+    actor: "store-api",
+    createdAt: now,
+    expectedOrderStatus: "new",
+    expectedPaymentStatus: "uncollected",
+  }));
 
   try {
     await db.batch(statements);
@@ -389,7 +528,12 @@ async function createOrder(request: Request, db: D1Database) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("orders_site_idempotency_unique") || message.includes("UNIQUE")) {
       const replay = await orderWithItems(db, site.id, "idempotency_key", idempotencyKey);
-      if (replay) return json({ order: publicOrderReceipt(replay), replayed: true });
+      if (replay) {
+        if (idempotencyReplayDecision(replay.requestFingerprint, requestFingerprint) === "conflict") {
+          return json({ error: "這個送單識別碼已用於不同的訂單內容，請重新整理購物車後再送出" }, { status: 409 });
+        }
+        return json({ order: publicOrderReceipt(replay), replayed: true });
+      }
     }
     throw error;
   }
@@ -398,6 +542,122 @@ async function createOrder(request: Request, db: D1Database) {
   return order
     ? json({ order: publicOrderReceipt(order), replayed: false }, { status: 201 })
     : json({ error: "商品庫存已變更，請重新整理購物車" }, { status: 409 });
+}
+
+export async function expireStaleReservations(
+  db: D1Database,
+  currentTime: Date | string | number = new Date(),
+) {
+  const now = currentTime instanceof Date ? currentTime : new Date(currentTime);
+  if (Number.isNaN(now.getTime())) throw new Error("過期清理時間不正確");
+  const nowIso = now.toISOString();
+  const staleOrders = await db.prepare(`SELECT id, site_id, order_number, payment_status
+    FROM orders
+    WHERE order_status = 'new' AND payment_status IN ('uncollected', 'failed')
+      AND reserved_until IS NOT NULL AND reserved_until <= ?
+    ORDER BY reserved_until, id
+    LIMIT ?`)
+    .bind(nowIso, EXPIRY_BATCH_LIMIT)
+    .all<Record<string, unknown>>();
+  if (staleOrders.results.length === 0) return { expired: 0, skipped: 0 };
+
+  const placeholders = staleOrders.results.map(() => "?").join(", ");
+  const itemRows = await db.prepare(`SELECT order_id, product_id, quantity
+    FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id`)
+    .bind(...staleOrders.results.map((order) => order.id))
+    .all<Record<string, unknown>>();
+  const itemsByOrder = new Map<string, Record<string, unknown>[]>();
+  for (const item of itemRows.results) {
+    const orderId = String(item.order_id);
+    const items = itemsByOrder.get(orderId) || [];
+    items.push(item);
+    itemsByOrder.set(orderId, items);
+  }
+
+  let expired = 0;
+  let skipped = 0;
+  for (const order of staleOrders.results) {
+    const orderId = String(order.id);
+    const siteId = String(order.site_id);
+    const items = itemsByOrder.get(orderId) || [];
+    if (items.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    const statements = [
+      db.prepare(`UPDATE orders SET
+        order_status = 'cancelled', expired_at = ?,
+        note = substr(CASE WHEN note = '' THEN ? ELSE note || char(10) || ? END, 1, 1000),
+        updated_at = ?
+      WHERE id = ? AND site_id = ? AND order_status = 'new'
+        AND payment_status IN ('uncollected', 'failed')
+        AND reserved_until IS NOT NULL AND reserved_until <= ?
+        AND NOT EXISTS (
+          SELECT 1 FROM order_items oi
+          LEFT JOIN inventory i ON i.product_id = oi.product_id AND i.site_id = ?
+          WHERE oi.order_id = ? AND (i.product_id IS NULL OR i.reserved < oi.quantity)
+        )`)
+        .bind(nowIso, EXPIRY_NOTE, EXPIRY_NOTE, nowIso, orderId, siteId, nowIso, siteId, orderId),
+    ];
+    for (const item of items) {
+      const productId = String(item.product_id);
+      const quantity = numberValue(item.quantity);
+      statements.push(
+        db.prepare(`UPDATE inventory SET reserved = reserved - ?, version = version + 1, updated_at = ?
+          WHERE product_id = ? AND site_id = ? AND reserved >= ?
+            AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND site_id = ?
+              AND order_status = 'cancelled' AND expired_at = ?)`)
+          .bind(quantity, nowIso, productId, siteId, quantity, orderId, siteId, nowIso),
+        db.prepare(`INSERT INTO inventory_movements (
+          id, site_id, product_id, order_id, movement_type, quantity,
+          on_hand_after, reserved_after, reason, actor, created_at
+        ) SELECT ?, ?, i.product_id, ?, 'release', ?, i.on_hand, i.reserved, ?, 'system-expiry', ?
+        FROM inventory i WHERE i.product_id = ? AND i.site_id = ?
+          AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND site_id = ?
+            AND order_status = 'cancelled' AND expired_at = ?)`)
+          .bind(
+            `movement_${crypto.randomUUID()}`,
+            siteId,
+            orderId,
+            -quantity,
+            `訂單 ${String(order.order_number)} 保留逾期，自動釋放庫存`,
+            nowIso,
+            productId,
+            siteId,
+            orderId,
+            siteId,
+            nowIso,
+          ),
+      );
+    }
+    statements.push(orderEventStatement(db, {
+      siteId,
+      orderId,
+      eventType: "reservation_expired",
+      fromValue: "new",
+      toValue: "cancelled",
+      note: `商品保留逾 ${RESERVATION_HOLD_HOURS} 小時，系統自動取消`,
+      actor: "system-expiry",
+      createdAt: nowIso,
+      expectedOrderStatus: "cancelled",
+      expectedPaymentStatus: String(order.payment_status),
+    }));
+
+    try {
+      const results = await db.batch(statements);
+      if (Number(results[0]?.meta.changes || 0) === 1) expired += 1;
+      else skipped += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("inventory_movements_order_product_type_unique") || message.includes("UNIQUE")) {
+        skipped += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { expired, skipped };
 }
 
 async function listAdminProducts(request: Request, db: D1Database) {
@@ -438,12 +698,18 @@ function normalizeProductPayload(payload: Record<string, unknown>) {
   const status = cleanText(payload.status, 30) as ProductStatus;
   const seoTitle = cleanText(payload.seoTitle, 180);
   const seoDescription = cleanText(payload.seoDescription, 500);
+  const imageUrl = cleanUrl(payload.imageUrl);
+  const imageAlt = cleanText(payload.imageAlt, 300);
+  const seoReady = payload.seoReady === true;
 
   if ((payload.id !== undefined && !id) || !/^[A-Z0-9][A-Z0-9_-]{2,59}$/.test(sku) ||
       !slug || !name || !shortName || !PRODUCT_CATEGORIES.has(category) ||
       price === null || !PRODUCT_SHAPES.has(shape) || purchaseLimit === null ||
       stock === null || (payload.inventoryVersion !== undefined && inventoryVersion === null) ||
-      !PRODUCT_STATUSES.has(status)) {
+      !PRODUCT_STATUSES.has(status) ||
+      (cleanText(payload.imageUrl, 1000) && !imageUrl) ||
+      (imageUrl && !imageAlt) ||
+      (seoReady && (status === "draft" || seoTitle.length < 8 || seoDescription.length < 50 || !imageUrl || !imageAlt))) {
     return { error: "商品欄位不完整或格式不正確" } as const;
   }
 
@@ -452,7 +718,7 @@ function normalizeProductPayload(payload: Record<string, unknown>) {
       id, sku, slug, name, shortName, description, category,
       origin, temple, buddhistYear, westernYear, material, dimensions,
       price, badge, tone, shape, theme, purchaseLimit, stock, status,
-      seoTitle, seoDescription, inventoryVersion,
+      seoTitle, seoDescription, imageUrl, imageAlt, seoReady, inventoryVersion,
     },
   };
 }
@@ -492,7 +758,7 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
         origin = ?, temple = ?, buddhist_year = ?, western_year = ?, material = ?,
         dimensions = ?, price = ?, badge = ?, tone = ?, shape = ?, theme = ?,
         purchase_limit = ?, stock = ?, status = ?, seo_title = ?, seo_description = ?,
-        updated_at = ?
+        image_url = ?, image_alt = ?, seo_ready = ?, version = version + 1, updated_at = ?
       WHERE id = ? AND site_id = ?
         AND EXISTS (
           SELECT 1 FROM inventory i
@@ -503,19 +769,21 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
         input.origin, input.temple, input.buddhistYear, input.westernYear, input.material,
         input.dimensions, input.price, input.badge, input.tone, input.shape, input.theme,
         input.purchaseLimit, input.stock, input.status, input.seoTitle, input.seoDescription,
+        input.imageUrl, input.imageAlt, input.seoReady ? 1 : 0,
         now, id, site.id, input.inventoryVersion,
       )
     : db.prepare(`INSERT INTO products (
         id, site_id, category_id, sku, slug, name, short_name, description,
         origin, temple, buddhist_year, western_year, material, dimensions,
         price, badge, tone, shape, theme, purchase_limit, stock, status,
-        seo_title, seo_description, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        seo_title, seo_description, image_url, image_alt, seo_ready, version, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
       .bind(
         id, site.id, category.id, input.sku, input.slug, input.name, input.shortName, input.description,
         input.origin, input.temple, input.buddhistYear, input.westernYear, input.material,
         input.dimensions, input.price, input.badge, input.tone, input.shape, input.theme,
         input.purchaseLimit, input.stock, input.status, input.seoTitle, input.seoDescription,
+        input.imageUrl, input.imageAlt, input.seoReady ? 1 : 0,
         now, now,
       );
   const inventoryStatement = current
@@ -641,6 +909,21 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
       !ORDER_STATUSES.has(nextOrderStatus) || !PAYMENT_STATUSES.has(nextPaymentStatus)) {
     return json({ error: "沒有可更新的訂單欄位，或狀態不正確" }, { status: 400 });
   }
+  if (!paymentTransitionAllowed(current.paymentStatus, nextPaymentStatus)) {
+    return json({ error: `付款狀態不可從 ${current.paymentStatus} 直接變更為 ${nextPaymentStatus}` }, { status: 409 });
+  }
+  if (nextOrderStatus === "cancelled" && current.paymentStatus === "paid" && nextPaymentStatus !== "refunded") {
+    return json({ error: "已付款訂單取消時，必須同時將付款狀態標記為 refunded" }, { status: 409 });
+  }
+  if (nextOrderStatus === "cancelled" && nextPaymentStatus === "paid") {
+    return json({ error: "已取消的訂單不可標記為已付款" }, { status: 409 });
+  }
+  if (current.orderStatus === "cancelled" && nextPaymentStatus === "paid") {
+    return json({ error: "已取消的訂單不可再標記為已付款" }, { status: 409 });
+  }
+  if (nextPaymentStatus === "refunded" && nextOrderStatus !== "cancelled" && nextOrderStatus !== "completed") {
+    return json({ error: "未完成訂單退款時，必須同時取消訂單以釋放保留庫存" }, { status: 409 });
+  }
   if (current.orderStatus === "cancelled" && nextOrderStatus !== "cancelled") {
     return json({ error: "已取消的訂單不可重新開啟" }, { status: 409 });
   }
@@ -654,12 +937,43 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
   const now = new Date().toISOString();
   const shouldRelease = current.orderStatus !== "cancelled" && nextOrderStatus === "cancelled";
   const shouldConsume = current.orderStatus !== "completed" && nextOrderStatus === "completed";
+  const eventStatements = [];
+  if (nextOrderStatus !== current.orderStatus) {
+    eventStatements.push(orderEventStatement(db, {
+      siteId: String(site.id),
+      orderId: id,
+      eventType: "order_status_changed",
+      fromValue: current.orderStatus,
+      toValue: nextOrderStatus,
+      note: "後台更新訂單狀態",
+      actor,
+      createdAt: now,
+      expectedOrderStatus: nextOrderStatus,
+      expectedPaymentStatus: nextPaymentStatus,
+    }));
+  }
+  if (nextPaymentStatus !== current.paymentStatus) {
+    eventStatements.push(orderEventStatement(db, {
+      siteId: String(site.id),
+      orderId: id,
+      eventType: "payment_status_changed",
+      fromValue: current.paymentStatus,
+      toValue: nextPaymentStatus,
+      note: "後台更新付款狀態",
+      actor,
+      createdAt: now,
+      expectedOrderStatus: nextOrderStatus,
+      expectedPaymentStatus: nextPaymentStatus,
+    }));
+  }
   if (!shouldRelease && !shouldConsume) {
-    const result = await db.prepare(`UPDATE orders SET order_status = ?, payment_status = ?, note = ?, updated_at = ?
-      WHERE id = ? AND site_id = ? AND order_status = ?`)
-      .bind(nextOrderStatus, nextPaymentStatus, nextNote, now, id, site.id, current.orderStatus)
-      .run();
-    if (Number(result.meta.changes || 0) !== 1) {
+    const results = await db.batch([
+      db.prepare(`UPDATE orders SET order_status = ?, payment_status = ?, note = ?, updated_at = ?
+        WHERE id = ? AND site_id = ? AND order_status = ? AND payment_status = ?`)
+        .bind(nextOrderStatus, nextPaymentStatus, nextNote, now, id, site.id, current.orderStatus, current.paymentStatus),
+      ...eventStatements,
+    ]);
+    if (Number(results[0]?.meta.changes || 0) !== 1) {
       return json({ error: "訂單已被其他操作更新，請重新整理" }, { status: 409 });
     }
   } else {
@@ -688,7 +1002,7 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
     const movementType = shouldRelease ? "release" : "sale";
     const statements = [
       db.prepare(`UPDATE orders SET order_status = ?, payment_status = ?, note = ?, updated_at = ?
-        WHERE id = ? AND site_id = ? AND order_status = ?
+        WHERE id = ? AND site_id = ? AND order_status = ? AND payment_status = ?
           AND NOT EXISTS (
             SELECT 1 FROM order_items oi
             LEFT JOIN inventory i ON i.product_id = oi.product_id AND i.site_id = ?
@@ -705,6 +1019,7 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
           id,
           site.id,
           current.orderStatus,
+          current.paymentStatus,
           site.id,
           id,
         ),
@@ -748,6 +1063,7 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
           ),
       );
     }
+    statements.push(...eventStatements);
     try {
       const results = await db.batch(statements);
       if (Number(results[0]?.meta.changes || 0) !== 1) {
@@ -757,14 +1073,16 @@ async function updateAdminOrder(request: Request, db: D1Database, orderId: strin
       const message = error instanceof Error ? error.message : "";
       if (message.includes("inventory_movements_order_product_type_unique") || message.includes("UNIQUE")) {
         const replay = await orderWithItems(db, site.id, "id", id);
-        if (replay?.orderStatus === nextOrderStatus) return json({ order: replay, replayed: true });
+        if (replay?.orderStatus === nextOrderStatus && replay.paymentStatus === nextPaymentStatus) {
+          return json({ order: replay, replayed: true });
+        }
       }
       throw error;
     }
   }
 
   const order = await orderWithItems(db, site.id, "id", id);
-  if (order && order.orderStatus !== nextOrderStatus) {
+  if (order && (order.orderStatus !== nextOrderStatus || order.paymentStatus !== nextPaymentStatus)) {
     return json({ error: "訂單狀態已被其他操作更新，請重新整理" }, { status: 409 });
   }
   return json({ order });
@@ -801,7 +1119,9 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     }
     if (isPublicOrders && request.method === "POST") {
       const invalidWrite = validateWriteRequest(request);
-      return invalidWrite || createOrder(request, env.DB);
+      if (invalidWrite) return invalidWrite;
+      await expireStaleReservations(env.DB);
+      return createOrder(request, env.DB);
     }
     if (isPublicProducts || isPublicOrders) {
       return json({ error: "不支援的操作" }, { status: 405, headers: { allow: isPublicProducts ? "GET" : "POST" } });
@@ -811,6 +1131,10 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     if (!identity) return adminDenied(request);
     const invalidWrite = validateWriteRequest(request);
     if (invalidWrite) return invalidWrite;
+
+    if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+      await expireStaleReservations(env.DB);
+    }
 
     if (url.pathname === "/api/admin/products" && request.method === "GET") {
       return listAdminProducts(request, env.DB);

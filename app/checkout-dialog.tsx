@@ -9,6 +9,7 @@ type CheckoutResult = {
   orderNumber: string;
   status: string;
   total: number;
+  reservedUntil?: string | null;
 };
 
 type CheckoutDialogProps = {
@@ -194,7 +195,7 @@ export default function CheckoutDialog({
           <button className="button button--gold checkout-submit" type="submit" disabled={submitting}>
             {submitting ? "正在建立保留單…" : "送出訂單資料 →"}
           </button>
-          <small className="checkout-consent">送出即表示同意店家僅為訂單聯繫、配送與售後處理使用上述資料。</small>
+          <small className="checkout-consent">送出即表示同意店家依<a href="/service/privacy/" target="_blank" rel="noreferrer">隱私與保留單資料說明</a>，僅為訂單聯繫、配送與售後處理使用上述資料。</small>
         </form>
       </div>
     </div>

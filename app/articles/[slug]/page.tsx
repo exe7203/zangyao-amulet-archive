@@ -155,7 +155,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         "@id": `${canonicalUrl}#breadcrumb`,
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
-          { "@type": "ListItem", position: 2, name: "收藏誌", item: new URL("#journal", siteUrl).toString() },
+          { "@type": "ListItem", position: 2, name: "收藏誌", item: new URL("articles/", siteUrl).toString() },
           { "@type": "ListItem", position: 3, name: article.title, item: canonicalUrl },
         ],
       },
@@ -173,7 +173,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <Link className={styles.brand} href="/" aria-label="泰聚達首頁">
           <span aria-hidden="true">泰</span><b>泰聚達</b>
         </Link>
-        <Link className={styles.homeLink} href="/#journal">返回收藏誌 →</Link>
+        <Link className={styles.homeLink} href="/articles/">返回收藏誌 →</Link>
       </header>
 
       <main className={styles.shell} id="article-content">
@@ -181,7 +181,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
           <ol>
             <li><Link href="/">首頁</Link></li>
             <li aria-hidden="true">/</li>
-            <li><Link href="/#journal">收藏誌</Link></li>
+            <li><Link href="/articles/">收藏誌</Link></li>
             <li aria-hidden="true">/</li>
             <li><span aria-current="page">{article.title}</span></li>
           </ol>
@@ -204,7 +204,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
           <div className={styles.returnBlock}>
             <p>從來源、材質與保存紀錄開始認識每一件藏品。</p>
-            <Link href="/#journal">← 返回泰聚達收藏誌</Link>
+            <Link href="/articles/">← 返回泰聚達收藏誌</Link>
           </div>
         </article>
       </main>

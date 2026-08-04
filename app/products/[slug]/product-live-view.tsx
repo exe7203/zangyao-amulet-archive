@@ -29,7 +29,16 @@ export default function ProductLiveView({ slug, initialProduct }: { slug: string
         if (!response.ok) { setState(initialProduct ? "ready" : "unavailable"); return; }
         const payload = await response.json() as { product?: unknown };
         if (!validProduct(payload.product)) { setState(initialProduct ? "ready" : "unavailable"); return; }
-        setProduct(payload.product);
+        const liveProduct = payload.product;
+        setProduct(initialProduct
+          ? {
+              ...initialProduct,
+              price: liveProduct.price,
+              stock: liveProduct.stock,
+              status: liveProduct.status,
+              purchaseLimit: liveProduct.purchaseLimit,
+            }
+          : liveProduct);
         setState("ready");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;

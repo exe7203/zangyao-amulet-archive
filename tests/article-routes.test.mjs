@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import {
-  fallbackArticles,
-  resolveJournalApiResult,
-} from "../app/article-data.ts";
+
+const snapshot = JSON.parse(await readFile(
+  new URL("../content/published-site.json", import.meta.url),
+  "utf8",
+));
+const publishedArticles = snapshot.articles;
 
 let workerPromise;
 
@@ -17,10 +19,10 @@ async function getWorker() {
   return workerPromise;
 }
 
-async function renderArticle(slug) {
+async function renderRoute(pathname) {
   const worker = await getWorker();
   return worker.fetch(
-    new Request(`http://localhost/articles/${slug}/`, {
+    new Request(`http://localhost${pathname}`, {
       headers: { accept: "text/html" },
     }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
@@ -28,64 +30,44 @@ async function renderArticle(slug) {
   );
 }
 
-test("the fallback snapshot defines three unique, indexable SEO articles", () => {
-  assert.equal(fallbackArticles.length, 3);
-  assert.equal(new Set(fallbackArticles.map((article) => article.slug)).size, 3);
+test("the published snapshot defines unique SEO article routes", () => {
+  assert.ok(publishedArticles.length > 0);
+  assert.equal(
+    new Set(publishedArticles.map((article) => article.slug)).size,
+    publishedArticles.length,
+  );
 
-  for (const article of fallbackArticles) {
-    assert.match(article.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  for (const article of publishedArticles) {
+    assert.match(article.slug, /^[\p{Letter}\p{Number}]+(?:-[\p{Letter}\p{Number}]+)*$/u);
     assert.ok(article.title.length > 0);
-    assert.ok(article.seoTitle.length > 0);
+    assert.ok(article.seoTitle.length >= 8);
     assert.ok(article.seoDescription.length >= 50);
-    assert.equal(article.noindex, false);
+    assert.equal(typeof article.noindex, "boolean");
     assert.equal(article.status, "published");
     assert.equal(article.contentJson.type, "doc");
+    assert.ok(Number.isFinite(Date.parse(article.publishedAt)));
+    assert.ok(Number.isFinite(Date.parse(article.updatedAt)));
   }
 });
 
-test("journal API fallback is limited to 404 and 503", () => {
-  for (const status of [404, 503]) {
-    const result = resolveJournalApiResult(status);
-    assert.equal(result.state, "fallback");
-    assert.equal(result.articles.length, fallbackArticles.length);
+test("the article index renders a crawlable collection and links every snapshot article", async () => {
+  const response = await renderRoute("/articles/");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<h1[^>]*>泰聚達收藏誌<\/h1>/);
+  assert.match(html, /"@type":"CollectionPage"/);
+  assert.match(html, /"@type":"ItemList"/);
+  assert.match(html, /"@type":"BreadcrumbList"/);
+  assert.match(html, /aria-label="麵包屑"/);
+  for (const article of publishedArticles) {
+    assert.ok(html.includes(article.title), `${article.slug} is missing from the article index`);
+    assert.match(html, new RegExp(`href="[^"]*\/articles\/${article.slug}\/?"`));
   }
-
-  for (const status of [400, 401, 500, 502]) {
-    const result = resolveJournalApiResult(status, { articles: fallbackArticles });
-    assert.deepEqual(result, { state: "error", articles: [] });
-  }
 });
 
-test("a successful empty journal response produces an explicit empty state", () => {
-  assert.deepEqual(
-    resolveJournalApiResult(200, { articles: [] }),
-    { state: "empty", articles: [] },
-  );
-  assert.deepEqual(
-    resolveJournalApiResult(200, { articles: [{ status: "draft" }] }),
-    { state: "empty", articles: [] },
-  );
-});
-
-test("published API articles are normalized while unsafe slugs are excluded", () => {
-  const contentJson = {
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text: "可閱讀內容" }] }],
-  };
-  const result = resolveJournalApiResult(200, {
-    articles: [
-      { id: "safe", slug: "safe-article", title: "安全文章", status: "published", contentJson },
-      { id: "unsafe", slug: "../service/contact", title: "錯誤路徑", status: "published", contentJson },
-    ],
-  });
-
-  assert.equal(result.state, "published");
-  assert.deepEqual(result.articles.map((article) => article.slug), ["safe-article"]);
-});
-
-test("every fallback article route renders independent SEO and structured data", async () => {
-  for (const article of fallbackArticles) {
-    const response = await renderArticle(article.slug);
+test("every published article route renders independent SEO and structured data", async () => {
+  for (const article of publishedArticles) {
+    const response = await renderRoute(`/articles/${encodeURIComponent(article.slug)}/`);
     assert.equal(response.status, 200, article.slug);
     assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
@@ -93,13 +75,25 @@ test("every fallback article route renders independent SEO and structured data",
     assert.ok(html.includes(article.title), `${article.slug} title is missing`);
     assert.ok(html.includes(article.seoDescription), `${article.slug} description is missing`);
     assert.match(html, new RegExp(`rel="canonical"[^>]+articles/${article.slug}/`));
-    assert.match(html, /<meta[^>]+name="robots"[^>]+content="index, follow"/i);
+    assert.match(
+      html,
+      article.noindex
+        ? /<meta[^>]+name="robots"[^>]+content="noindex, follow"/i
+        : /<meta[^>]+name="robots"[^>]+content="index, follow"/i,
+    );
     assert.match(html, /<meta[^>]+property="og:type"[^>]+content="article"/i);
     assert.match(html, /"@type":"Article"/);
     assert.match(html, /"@type":"BreadcrumbList"/);
+    assert.ok(html.includes(`"datePublished":"${article.publishedAt}"`));
+    assert.ok(html.includes(`"dateModified":"${article.updatedAt}"`));
     assert.match(html, /aria-label="麵包屑"/);
-    assert.match(html, /返回泰聚達收藏誌/);
+    assert.match(html, /href="[^"]*\/articles\/"[^>]*>← 返回泰聚達收藏誌/);
   }
+});
+
+test("an unknown article slug returns a real 404", async () => {
+  const response = await renderRoute("/articles/not-a-published-article/");
+  assert.equal(response.status, 404);
 });
 
 test("Tiptap renderer never inserts editor HTML directly", async () => {

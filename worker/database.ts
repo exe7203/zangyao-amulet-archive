@@ -1,9 +1,12 @@
+import { fallbackArticles } from "../app/article-data";
 import { catalogCategories, products } from "../shared/catalog";
+import { DEFAULT_BRAND_PAGE } from "../shared/default-page";
 import type { DatabaseEnv } from "./api-utils";
 
 export const DEFAULT_SITE_CODE = "taijuda";
 export const DEFAULT_SITE_ID = "site_taijuda";
-const CURRENT_SCHEMA_VERSION = 3;
+const SEED_TIMESTAMP = "2026-08-04T00:00:00.000Z";
+const CURRENT_SCHEMA_VERSION = 6;
 
 export type { DatabaseEnv };
 
@@ -28,6 +31,47 @@ function schemaStatements(db: D1Database) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS site_settings (
+      site_id TEXT PRIMARY KEY NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL DEFAULT '{}',
+      theme_json TEXT NOT NULL DEFAULT '{}',
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT NOT NULL DEFAULT 'system',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS site_pages (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      seo_title TEXT NOT NULL DEFAULT '',
+      seo_description TEXT NOT NULL DEFAULT '',
+      canonical_url TEXT NOT NULL DEFAULT '',
+      og_image_url TEXT NOT NULL DEFAULT '',
+      noindex INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 1,
+      published_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS site_page_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      page_id TEXT NOT NULL REFERENCES site_pages(id) ON DELETE CASCADE,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      seo_title TEXT NOT NULL DEFAULT '',
+      seo_description TEXT NOT NULL DEFAULT '',
+      canonical_url TEXT NOT NULL DEFAULT '',
+      og_image_url TEXT NOT NULL DEFAULT '',
+      noindex INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL,
+      saved_by TEXT NOT NULL DEFAULT 'local-preview',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS articles (
       id TEXT PRIMARY KEY NOT NULL,
       site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -40,7 +84,12 @@ function schemaStatements(db: D1Database) {
       seo_description TEXT NOT NULL DEFAULT '',
       canonical_url TEXT NOT NULL DEFAULT '',
       og_image_url TEXT NOT NULL DEFAULT '',
+      tag TEXT NOT NULL DEFAULT '收藏誌',
+      keywords_json TEXT NOT NULL DEFAULT '[]',
+      hero_image_url TEXT NOT NULL DEFAULT '',
+      hero_image_alt TEXT NOT NULL DEFAULT '',
       noindex INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 1,
       published_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -56,7 +105,12 @@ function schemaStatements(db: D1Database) {
       seo_description TEXT NOT NULL DEFAULT '',
       canonical_url TEXT NOT NULL DEFAULT '',
       og_image_url TEXT NOT NULL DEFAULT '',
+      tag TEXT NOT NULL DEFAULT '收藏誌',
+      keywords_json TEXT NOT NULL DEFAULT '[]',
+      hero_image_url TEXT NOT NULL DEFAULT '',
+      hero_image_alt TEXT NOT NULL DEFAULT '',
       noindex INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
       saved_by TEXT NOT NULL DEFAULT 'local-preview',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -97,6 +151,10 @@ function schemaStatements(db: D1Database) {
       status TEXT NOT NULL DEFAULT 'draft',
       seo_title TEXT NOT NULL DEFAULT '',
       seo_description TEXT NOT NULL DEFAULT '',
+      image_url TEXT NOT NULL DEFAULT '',
+      image_alt TEXT NOT NULL DEFAULT '',
+      seo_ready INTEGER NOT NULL DEFAULT 0,
+      version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
@@ -113,6 +171,7 @@ function schemaStatements(db: D1Database) {
       site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
       order_number TEXT NOT NULL,
       idempotency_key TEXT NOT NULL,
+      request_fingerprint TEXT NOT NULL DEFAULT '',
       customer_name TEXT NOT NULL,
       customer_phone TEXT NOT NULL,
       customer_email TEXT NOT NULL DEFAULT '',
@@ -124,6 +183,9 @@ function schemaStatements(db: D1Database) {
       currency TEXT NOT NULL DEFAULT 'TWD',
       payment_status TEXT NOT NULL DEFAULT 'uncollected',
       order_status TEXT NOT NULL DEFAULT 'new',
+      reserved_until TEXT,
+      expired_at TEXT,
+      consent_version TEXT NOT NULL DEFAULT 'local-reservation-v1',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
@@ -151,7 +213,22 @@ function schemaStatements(db: D1Database) {
       actor TEXT NOT NULL DEFAULT 'system',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS order_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      from_value TEXT NOT NULL DEFAULT '',
+      to_value TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS site_pages_site_slug_unique ON site_pages (site_id, slug)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS site_pages_site_status_updated_idx ON site_pages (site_id, status, updated_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS site_page_revisions_page_created_idx ON site_page_revisions (page_id, created_at DESC)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS articles_site_slug_unique ON articles (site_id, slug)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS articles_site_status_updated_idx ON articles (site_id, status, updated_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS article_revisions_article_idx ON article_revisions (article_id, created_at DESC)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS categories_site_slug_unique ON categories (site_id, slug)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS categories_site_name_unique ON categories (site_id, name)"),
@@ -172,26 +249,152 @@ function schemaStatements(db: D1Database) {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS inventory_movements_order_product_type_unique ON inventory_movements (order_id, product_id, movement_type)"),
     db.prepare("CREATE INDEX IF NOT EXISTS inventory_movements_product_created_idx ON inventory_movements (product_id, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS inventory_movements_order_idx ON inventory_movements (order_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS order_events_order_created_idx ON order_events (order_id, created_at DESC)"),
   ];
 }
 
-async function addLegacyArticleColumns(db: D1Database) {
-  const revisionColumns = await db
-    .prepare("PRAGMA table_info(article_revisions)")
-    .all<{ name: string }>();
-  const names = new Set(revisionColumns.results.map((column) => column.name));
-  if (!names.has("slug")) {
-    await db.prepare("ALTER TABLE article_revisions ADD COLUMN slug TEXT NOT NULL DEFAULT ''").run();
+async function tableColumnNames(db: D1Database, table: string) {
+  const result = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+  return new Set(result.results.map((column) => column.name));
+}
+
+async function addMissingColumns(
+  db: D1Database,
+  table: string,
+  definitions: readonly [name: string, sql: string][],
+) {
+  const names = await tableColumnNames(db, table);
+  for (const [name, definition] of definitions) {
+    if (!names.has(name)) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${definition}`).run();
   }
-  if (!names.has("noindex")) {
-    await db.prepare("ALTER TABLE article_revisions ADD COLUMN noindex INTEGER NOT NULL DEFAULT 0").run();
-  }
+}
+
+async function upgradeLegacySchema(db: D1Database) {
+  await addMissingColumns(db, "articles", [
+    ["tag", "tag TEXT NOT NULL DEFAULT '收藏誌'"],
+    ["keywords_json", "keywords_json TEXT NOT NULL DEFAULT '[]'"],
+    ["hero_image_url", "hero_image_url TEXT NOT NULL DEFAULT ''"],
+    ["hero_image_alt", "hero_image_alt TEXT NOT NULL DEFAULT ''"],
+    ["version", "version INTEGER NOT NULL DEFAULT 1"],
+  ]);
+  await addMissingColumns(db, "article_revisions", [
+    ["slug", "slug TEXT NOT NULL DEFAULT ''"],
+    ["noindex", "noindex INTEGER NOT NULL DEFAULT 0"],
+    ["tag", "tag TEXT NOT NULL DEFAULT '收藏誌'"],
+    ["keywords_json", "keywords_json TEXT NOT NULL DEFAULT '[]'"],
+    ["hero_image_url", "hero_image_url TEXT NOT NULL DEFAULT ''"],
+    ["hero_image_alt", "hero_image_alt TEXT NOT NULL DEFAULT ''"],
+    ["version", "version INTEGER NOT NULL DEFAULT 1"],
+  ]);
+  await addMissingColumns(db, "products", [
+    ["image_url", "image_url TEXT NOT NULL DEFAULT ''"],
+    ["image_alt", "image_alt TEXT NOT NULL DEFAULT ''"],
+    ["seo_ready", "seo_ready INTEGER NOT NULL DEFAULT 0"],
+    ["version", "version INTEGER NOT NULL DEFAULT 1"],
+  ]);
+  await addMissingColumns(db, "orders", [
+    ["request_fingerprint", "request_fingerprint TEXT NOT NULL DEFAULT ''"],
+    ["reserved_until", "reserved_until TEXT"],
+    ["expired_at", "expired_at TEXT"],
+    ["consent_version", "consent_version TEXT NOT NULL DEFAULT 'local-reservation-v1'"],
+  ]);
+  await db.batch([
+    db.prepare(`UPDATE site_settings SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
+      WHERE updated_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE site_pages SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at)
+      WHERE created_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE site_pages SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
+      WHERE updated_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE site_pages SET published_at = strftime('%Y-%m-%dT%H:%M:%fZ', published_at)
+      WHERE published_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE articles SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at)
+      WHERE created_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE articles SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
+      WHERE updated_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE articles SET published_at = strftime('%Y-%m-%dT%H:%M:%fZ', published_at)
+      WHERE published_at GLOB '????-??-?? ??:??:??*'`),
+    db.prepare(`UPDATE products SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
+      WHERE updated_at GLOB '????-??-?? ??:??:??*'`),
+  ]);
+  await db.prepare(`UPDATE orders
+    SET reserved_until = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+72 hours')
+    WHERE reserved_until IS NULL AND order_status = 'new'
+      AND payment_status IN ('uncollected', 'failed')`).run();
+  await db.prepare("DROP INDEX IF EXISTS orders_site_reservation_expiry_idx").run();
+  await db.prepare(
+    `CREATE INDEX IF NOT EXISTS orders_reservation_expiry_idx
+      ON orders (order_status, payment_status, reserved_until)
+      WHERE reserved_until IS NOT NULL`,
+  ).run();
 }
 
 async function seedCatalog(db: D1Database) {
   await db.prepare("INSERT OR IGNORE INTO sites (id, code, name) VALUES (?, ?, ?)")
     .bind(DEFAULT_SITE_ID, DEFAULT_SITE_CODE, "泰聚達")
     .run();
+
+  await db.prepare(`INSERT OR IGNORE INTO site_settings (
+    site_id, settings_json, theme_json, version, updated_by, updated_at
+  ) VALUES (?, ?, ?, 1, 'catalog-seed', ?)`)
+    .bind(
+      DEFAULT_SITE_ID,
+      JSON.stringify({
+        announcement: "台灣現貨・來源透明",
+        brandName: "泰聚達",
+        brandSubtitle: "THAI AMULET ARCHIVE",
+        footerNote: "展示商品與來源資料正式上架前仍須逐件覆核。",
+      }),
+      JSON.stringify({
+        preset: "archive",
+        accent: "#b89048",
+        surface: "#f4efe4",
+        ink: "#171713",
+      }),
+      SEED_TIMESTAMP,
+    )
+    .run();
+
+  await db.prepare(`INSERT OR IGNORE INTO site_pages (
+    id, site_id, slug, title, data_json, status, seo_title, seo_description,
+    canonical_url, og_image_url, noindex, version, published_at, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, 'published', ?, ?, '', '', 0, 1, ?, ?, ?)`)
+    .bind(
+      DEFAULT_BRAND_PAGE.id,
+      DEFAULT_SITE_ID,
+      DEFAULT_BRAND_PAGE.slug,
+      DEFAULT_BRAND_PAGE.title,
+      JSON.stringify(DEFAULT_BRAND_PAGE.data),
+      DEFAULT_BRAND_PAGE.seoTitle,
+      DEFAULT_BRAND_PAGE.seoDescription,
+      SEED_TIMESTAMP,
+      SEED_TIMESTAMP,
+      SEED_TIMESTAMP,
+    )
+    .run();
+
+  await db.batch(fallbackArticles.map((article) => db.prepare(`INSERT OR IGNORE INTO articles (
+    id, site_id, slug, title, excerpt, content_json, status, seo_title,
+    seo_description, canonical_url, og_image_url, tag, keywords_json,
+    hero_image_url, hero_image_alt, noindex, version, published_at, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, '', '', ?, 1, ?, ?, ?)`)
+    .bind(
+      article.id,
+      DEFAULT_SITE_ID,
+      article.slug,
+      article.title,
+      article.excerpt,
+      JSON.stringify(article.contentJson),
+      article.seoTitle,
+      article.seoDescription,
+      article.canonicalUrl,
+      article.ogImageUrl,
+      article.tag,
+      JSON.stringify(article.keywords),
+      article.noindex ? 1 : 0,
+      article.publishedAt || "2026-08-04T00:00:00.000Z",
+      article.publishedAt || SEED_TIMESTAMP,
+      article.updatedAt || SEED_TIMESTAMP,
+    )));
 
   await db.batch(catalogCategories.map((category) => db.prepare(`INSERT OR IGNORE INTO categories (
     id, site_id, slug, name, description, sort_order, status
@@ -211,8 +414,8 @@ async function seedCatalog(db: D1Database) {
     id, site_id, category_id, sku, slug, name, short_name, description,
     origin, temple, buddhist_year, western_year, material, dimensions,
     price, badge, tone, shape, theme, purchase_limit, stock, status,
-    seo_title, seo_description
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    seo_title, seo_description, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(
       product.id,
       DEFAULT_SITE_ID,
@@ -238,6 +441,7 @@ async function seedCatalog(db: D1Database) {
       product.status,
       product.seoTitle,
       product.seoDescription,
+      product.updatedAt || SEED_TIMESTAMP,
     )));
 
   await db.batch(products.flatMap((product) => [
@@ -272,8 +476,9 @@ async function initializeDatabase(db: D1Database) {
   }
 
   await db.batch(schemaStatements(db));
-  await addLegacyArticleColumns(db);
+  await upgradeLegacySchema(db);
   await seedCatalog(db);
+  await db.prepare("PRAGMA optimize").run();
   await db.prepare(`INSERT INTO schema_metadata (key, value, updated_at)
     VALUES ('schema_version', ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
