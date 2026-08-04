@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  ARTICLE_HEADING_LEVELS,
+  ARTICLE_MAX_DOCUMENT_DEPTH,
+  ARTICLE_MAX_NODE_COUNT,
+  ARTICLE_MARK_TYPES,
+  ARTICLE_NODE_TYPES,
+  safeArticleLinkHref,
+  validateArticleDocument,
+} from "../lib/article-content-contract.ts";
 
 const snapshotSource = await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -20,27 +29,8 @@ const allowedPageBlocks = new Set([
   "ProductShowcase",
   "ArticleShowcase",
 ]);
-const allowedTiptapNodes = new Set([
-  "doc",
-  "paragraph",
-  "text",
-  "heading",
-  "bulletList",
-  "orderedList",
-  "listItem",
-  "blockquote",
-  "hardBreak",
-  "horizontalRule",
-  "codeBlock",
-]);
-const allowedTiptapMarks = new Set([
-  "bold",
-  "italic",
-  "underline",
-  "strike",
-  "code",
-  "link",
-]);
+const allowedTiptapNodes = new Set(ARTICLE_NODE_TYPES);
+const allowedTiptapMarks = new Set(ARTICLE_MARK_TYPES);
 const privateSnapshotKeys = new Set([
   "updatedby",
   "savedby",
@@ -173,18 +163,38 @@ function tiptapTextLength(node) {
 
 function assertTiptapNode(node, path = "contentJson", depth = 0, state = { count: 0 }) {
   assertRecord(node, path);
-  assert.ok(depth <= 30, `${path} is nested too deeply`);
+  assert.ok(depth <= ARTICLE_MAX_DOCUMENT_DEPTH, `${path} is nested too deeply`);
   state.count += 1;
-  assert.ok(state.count <= 5000, `${path} contains too many nodes`);
+  assert.ok(state.count <= ARTICLE_MAX_NODE_COUNT, `${path} contains too many nodes`);
   assert.ok(allowedTiptapNodes.has(node.type), `${path} uses unsupported node type: ${String(node.type)}`);
 
-  if (node.text !== undefined) assert.equal(typeof node.text, "string", `${path}.text must be a string`);
+  if (node.type === "heading") {
+    assertRecord(node.attrs, `${path}.attrs`);
+    assert.deepEqual(Object.keys(node.attrs), ["level"], `${path}.attrs must contain only level`);
+    assert.ok(ARTICLE_HEADING_LEVELS.includes(node.attrs.level), `${path}.attrs.level must be H2, H3, or H4`);
+  } else if (node.type === "orderedList" && node.attrs !== undefined) {
+    assertRecord(node.attrs, `${path}.attrs`);
+    assert.deepEqual(Object.keys(node.attrs).sort(), ["start", "type"], `${path}.attrs must contain default ordered-list attributes`);
+    assert.equal(node.attrs.start, 1, `${path}.attrs.start must remain at the supported default`);
+    assert.equal(node.attrs.type, null, `${path}.attrs.type must remain at the supported default`);
+  } else if (node.type !== "codeBlock" && node.attrs !== undefined) {
+    assertRecord(node.attrs, `${path}.attrs`);
+    assert.deepEqual(Object.keys(node.attrs), [], `${path}.attrs must be empty`);
+  }
+
+  if (node.type === "text") {
+    assert.equal(typeof node.text, "string", `${path}.text must be a string`);
+    assert.equal(node.content, undefined, `${path}.text nodes must not have content`);
+  } else {
+    assert.equal(node.text, undefined, `${path} non-text nodes must not have text`);
+  }
   if (node.attrs !== undefined) assertRecord(node.attrs, `${path}.attrs`);
   if (node.content !== undefined) {
     assert.ok(Array.isArray(node.content), `${path}.content must be an array`);
     node.content.forEach((child, index) => assertTiptapNode(child, `${path}.content[${index}]`, depth + 1, state));
   }
   if (node.marks !== undefined) {
+    assert.equal(node.type, "text", `${path}.marks are only valid on text nodes`);
     assert.ok(Array.isArray(node.marks), `${path}.marks must be an array`);
     for (const [index, mark] of node.marks.entries()) {
       assertRecord(mark, `${path}.marks[${index}]`);
@@ -193,8 +203,7 @@ function assertTiptapNode(node, path = "contentJson", depth = 0, state = { count
       if (mark.type === "link") {
         const href = mark.attrs?.href;
         assert.equal(typeof href, "string", `${path}.marks[${index}] link needs href`);
-        assert.match(href, /^(?:https?:|mailto:|\/|#)/i, `${path}.marks[${index}] has unsafe href`);
-        assert.doesNotMatch(href, /^\/\//, `${path}.marks[${index}] must not use a protocol-relative href`);
+        assert.ok(safeArticleLinkHref(href), `${path}.marks[${index}] has unsafe href`);
       }
     }
   }
@@ -300,6 +309,7 @@ test("published article snapshots are crawlable, dated, and safe to render", () 
     assert.equal(new Set(article.keywords).size, article.keywords.length, `article ${article.slug} repeats keywords`);
     article.keywords.forEach((keyword, index) => assertNonEmptyString(keyword, `article ${article.slug} keyword ${index}`, 100));
 
+    assert.ok(validateArticleDocument(article.contentJson), `article ${article.slug} violates the shared editor contract`);
     assertTiptapNode(article.contentJson, `article ${article.slug} contentJson`);
     assert.equal(article.contentJson.type, "doc", `article ${article.slug} root node must be doc`);
     assert.ok(tiptapTextLength(article.contentJson) >= 80, `article ${article.slug} has too little indexable text`);

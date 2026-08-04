@@ -129,3 +129,58 @@ test("article editor saves, detects stale versions, lists history, and restores 
     { version: 3, status: "draft" },
   ]);
 });
+
+test("article API accepts the editor whitelist and rejects hidden public-renderer drift", async () => {
+  const richDocument = {
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "來源整理" }] },
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "可查證來源", marks: [{ type: "bold" }, { type: "link", attrs: { href: "https://example.com/source", target: null, rel: null, class: null, title: null } }] },
+          { type: "hardBreak" },
+          { type: "text", text: "補充說明", marks: [{ type: "underline" }] },
+        ],
+      },
+      { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "項目" }] }] }] },
+      { type: "orderedList", attrs: { start: 1, type: null }, content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "步驟" }] }] }] },
+      { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "引用" }] }] },
+      { type: "codeBlock", attrs: { language: null }, content: [{ type: "text", text: "source: verified" }] },
+      { type: "horizontalRule" },
+    ],
+  };
+  const accepted = await saveArticle({ siteCode: "taijuda", slug: "rich-editor-contract", title: "完整格式測試", contentJson: richDocument, status: "draft", version: 0 });
+  assert.equal(accepted.response.status, 201);
+  assert.deepEqual(accepted.payload.article.contentJson, richDocument);
+
+  const invalidHeading = await saveArticle({
+    siteCode: "taijuda",
+    slug: "invalid-heading",
+    title: "錯誤標題層級",
+    contentJson: { type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "不可使用 H1" }] }] },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(invalidHeading.response.status, 400);
+
+  const unsafeLink = await saveArticle({
+    siteCode: "taijuda",
+    slug: "unsafe-link",
+    title: "不安全連結",
+    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "連結", marks: [{ type: "link", attrs: { href: "//evil.example" } }] }] }] },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(unsafeLink.response.status, 400);
+
+  const unsupportedImage = await saveArticle({
+    siteCode: "taijuda",
+    slug: "unsupported-image",
+    title: "尚未支援的圖片節點",
+    contentJson: { type: "doc", content: [{ type: "image", attrs: { src: "https://example.com/photo.jpg" } }] },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(unsupportedImage.response.status, 400);
+});

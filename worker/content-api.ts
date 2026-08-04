@@ -15,23 +15,13 @@ import {
   findSite,
   type DatabaseEnv,
 } from "./database";
+import {
+  ARTICLE_MAX_DOCUMENT_DEPTH,
+  validateArticleDocument,
+} from "../lib/article-content-contract";
 
 const MAX_CONTENT_BYTES = 1_000_000;
 const ARTICLE_STATUSES = new Set(["draft", "published", "archived"]);
-const TIPTAP_NODE_TYPES = new Set([
-  "doc",
-  "paragraph",
-  "text",
-  "heading",
-  "bulletList",
-  "orderedList",
-  "listItem",
-  "blockquote",
-  "hardBreak",
-  "horizontalRule",
-  "codeBlock",
-]);
-const TIPTAP_MARK_TYPES = new Set(["bold", "italic", "underline", "strike", "code", "link"]);
 
 type ArticlePayload = {
   id?: string;
@@ -53,37 +43,10 @@ type ArticlePayload = {
   version?: number;
 };
 
-function validateTiptapNode(value: unknown, depth: number, state: { count: number }) {
-  if (!isRecord(value) || typeof value.type !== "string" || !TIPTAP_NODE_TYPES.has(value.type)) {
-    return false;
-  }
-  if (depth > 30 || ++state.count > 5000) return false;
-  if (value.text !== undefined && typeof value.text !== "string") return false;
-  if (value.attrs !== undefined && !isRecord(value.attrs)) return false;
-  if (value.content !== undefined) {
-    if (!Array.isArray(value.content)) return false;
-    if (!value.content.every((child) => validateTiptapNode(child, depth + 1, state))) return false;
-  }
-  if (value.marks !== undefined) {
-    if (!Array.isArray(value.marks)) return false;
-    for (const mark of value.marks) {
-      if (!isRecord(mark) || typeof mark.type !== "string" || !TIPTAP_MARK_TYPES.has(mark.type)) {
-        return false;
-      }
-      if (mark.attrs !== undefined && !isRecord(mark.attrs)) return false;
-      if (mark.type === "link") {
-        const href = isRecord(mark.attrs) ? mark.attrs.href : "";
-        if (typeof href !== "string" || !/^(?:https?:|mailto:|\/|#)/i.test(href)) return false;
-      }
-    }
-  }
-  return true;
-}
-
 function normalizeContentJson(value: unknown) {
   const fallback = { type: "doc", content: [{ type: "paragraph" }] };
   const content = value ?? fallback;
-  if (!validateTiptapNode(content, 0, { count: 0 }) || !isRecord(content) || content.type !== "doc") {
+  if (!validateArticleDocument(content)) {
     throw new Error("文章內容不是有效的 Tiptap 文件");
   }
   const serialized = JSON.stringify(content);
@@ -94,7 +57,7 @@ function normalizeContentJson(value: unknown) {
 }
 
 function contentTextLength(value: unknown, depth = 0): number {
-  if (depth > 30 || !isRecord(value)) return 0;
+  if (depth > ARTICLE_MAX_DOCUMENT_DEPTH || !isRecord(value)) return 0;
   const own = typeof value.text === "string" ? value.text.replace(/\s/gu, "").length : 0;
   return own + (Array.isArray(value.content)
     ? value.content.reduce((sum, child) => sum + contentTextLength(child, depth + 1), 0)

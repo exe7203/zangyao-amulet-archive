@@ -1,23 +1,11 @@
 import { Fragment, type ReactNode } from "react";
+import {
+  ARTICLE_MAX_DOCUMENT_DEPTH,
+  articleHrefForPublicSite,
+} from "../lib/article-content-contract";
 import { extractTiptapText, isRecord, type TiptapNode } from "./article-data";
 
-const MAX_DOCUMENT_DEPTH = 24;
-
-export function safeArticleLinkHref(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const href = value.trim();
-  if (!href) return null;
-  if (href.startsWith("#") || (href.startsWith("/") && !href.startsWith("//"))) return href;
-  if (/^mailto:[^\s@]+@[^\s@]+$/i.test(href)) return href;
-  if (/^tel:\+?[0-9()\-\s]{6,24}$/i.test(href)) return href;
-
-  try {
-    const url = new URL(href);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
+export { safeArticleLinkHref } from "../lib/article-content-contract";
 
 function renderTextNode(node: Record<string, unknown>, path: string): ReactNode {
   let rendered: ReactNode = typeof node.text === "string" ? node.text : "";
@@ -44,7 +32,9 @@ function renderTextNode(node: Record<string, unknown>, path: string): ReactNode 
         rendered = <code key={key}>{rendered}</code>;
         break;
       case "link": {
-        const href = isRecord(mark.attrs) ? safeArticleLinkHref(mark.attrs.href) : null;
+        const href = isRecord(mark.attrs)
+          ? articleHrefForPublicSite(mark.attrs.href, process.env.PAGES_BASE_PATH || "")
+          : null;
         if (!href) break;
         const external = href.startsWith("http://") || href.startsWith("https://");
         rendered = (
@@ -68,7 +58,7 @@ function renderTextNode(node: Record<string, unknown>, path: string): ReactNode 
 }
 
 export function renderTiptapNode(value: unknown, path: string, depth = 0): ReactNode {
-  if (depth > MAX_DOCUMENT_DEPTH || !isRecord(value) || typeof value.type !== "string") {
+  if (depth > ARTICLE_MAX_DOCUMENT_DEPTH || !isRecord(value) || typeof value.type !== "string") {
     return null;
   }
   if (value.type === "text") return renderTextNode(value, path);

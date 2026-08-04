@@ -1,16 +1,32 @@
 "use client";
 
-import Link from "@tiptap/extension-link";
+import TiptapLink from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import {
+  Archive,
+  ExternalLink,
+  FileText,
+  Globe2,
+  History,
+  Image as ImageIcon,
+  Plus,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import NextLink from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import ArticleEditorToolbar from "./article-editor-toolbar";
 import styles from "./admin.module.css";
 
 type ArticleDocument = JSONContent;
 
 type ArticleStatus = "draft" | "published" | "archived";
+type ArticleFilter = "all" | ArticleStatus;
+type InspectorTab = "publish" | "seo" | "media" | "history";
 
 type Article = {
   id: string;
@@ -48,6 +64,7 @@ type ArticleRevision = {
 };
 
 const SITE_CODE = "taijuda";
+const INSPECTOR_TABS: InspectorTab[] = ["publish", "seo", "media", "history"];
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
 const EMPTY_DOCUMENT: ArticleDocument = {
   type: "doc",
@@ -112,30 +129,6 @@ function normalizeArticle(value: Article): Article {
   };
 }
 
-function ToolbarButton({
-  active = false,
-  disabled = false,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  disabled?: boolean;
-  label: string;
-  onClick(): void;
-}) {
-  return (
-    <button
-      type="button"
-      className={active ? styles.toolbarActive : ""}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
 export default function AdminShell() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -148,6 +141,9 @@ export default function AdminShell() {
   const [dirty, setDirty] = useState(false);
   const [revisions, setRevisions] = useState<ArticleRevision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [articleQuery, setArticleQuery] = useState("");
+  const [articleFilter, setArticleFilter] = useState<ArticleFilter>("all");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("publish");
   const editRevision = useRef(0);
   const initialLoadStarted = useRef(false);
 
@@ -159,13 +155,15 @@ export default function AdminShell() {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ link: false }),
-      Link.configure({
+      StarterKit.configure({ link: false, heading: { levels: [2, 3, 4] } }),
+      TiptapLink.configure({
         autolink: true,
         defaultProtocol: "https",
         openOnClick: false,
-        protocols: ["http", "https", "mailto"],
+        protocols: ["http", "https", "mailto", "tel"],
+        HTMLAttributes: { target: null, rel: null, class: null },
       }),
+      Placeholder.configure({ placeholder: "開始撰寫正文…" }),
     ],
     content: EMPTY_DOCUMENT,
     editorProps: {
@@ -427,18 +425,6 @@ export default function AdminShell() {
     }
   };
 
-  const setLink = () => {
-    if (!editor) return;
-    const previous = editor.getAttributes("link").href as string | undefined;
-    const href = window.prompt("請輸入完整網址", previous || "https://");
-    if (href === null) return;
-    if (!href.trim()) {
-      editor.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: href.trim() }).run();
-  };
-
   const textContent = editor?.getText().trim() || "";
   const wordCount = useMemo(
     () => textContent ? textContent.split(/\s+|(?=[\p{Script=Han}])/u).filter(Boolean).length : 0,
@@ -449,86 +435,134 @@ export default function AdminShell() {
   const seoTitle = draft.seoTitle || draft.title || "文章標題";
   const seoDescription = draft.seoDescription || draft.excerpt || "文章摘要會顯示在這裡。";
   const articlePath = `/articles/${slugify(draft.slug || draft.title) || "article-slug"}/`;
+  const selectedArticle = articles.find((article) => article.id === draft.id);
+  const readingMinutes = Math.max(1, Math.ceil(wordCount / 500));
+  const filteredArticles = useMemo(() => {
+    const query = articleQuery.trim().toLocaleLowerCase("zh-TW");
+    return articles.filter((article) => {
+      if (articleFilter !== "all" && article.status !== articleFilter) return false;
+      if (!query) return true;
+      return `${article.title} ${article.slug} ${article.tag}`.toLocaleLowerCase("zh-TW").includes(query);
+    });
+  }, [articleFilter, articleQuery, articles]);
+  const seoChecks = [
+    { label: "標題", pass: Boolean(draft.title.trim()) },
+    { label: "固定網址", pass: Boolean(draft.slug.trim()) },
+    { label: "SEO 描述 50–160 字", pass: draft.seoDescription.length >= 50 && draft.seoDescription.length <= 160 },
+    { label: "圖片替代文字", pass: !draft.heroImageUrl || Boolean(draft.heroImageAlt.trim()) },
+    { label: "正文至少 300 字", pass: wordCount >= 300 },
+  ];
+  const handleInspectorTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: InspectorTab) => {
+    const currentIndex = INSPECTOR_TABS.indexOf(current);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % INSPECTOR_TABS.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + INSPECTOR_TABS.length) % INSPECTOR_TABS.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = INSPECTOR_TABS.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = INSPECTOR_TABS[nextIndex];
+    setInspectorTab(nextTab);
+    window.setTimeout(() => document.getElementById(`article-tab-${nextTab}`)?.focus(), 0);
+  };
 
   return (
     <main className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <span>泰</span>
-          <div>
-            <b>泰聚達內容中樞</b>
-            <small>SHARED CONTENT CORE · TAIJUDA</small>
-          </div>
+          <div><b>泰聚達</b><small>內容管理&nbsp; / &nbsp;文章</small></div>
         </div>
-        <div className={styles.topbarActions}>
-          <NextLink href="/admin/site/">網站編輯</NextLink>
-          <NextLink href="/admin/products/">商品與庫存</NextLink>
+        <nav className={styles.topbarNav} aria-label="後台功能">
+          <NextLink className={styles.navActive} href="/admin/">文章</NextLink>
+          <NextLink href="/admin/site/">網站</NextLink>
+          <NextLink href="/admin/products/">商品</NextLink>
           <NextLink href="/admin/orders/">訂單</NextLink>
-          <a href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
+        </nav>
+        <div className={styles.topbarActions}>
+          <a href="/" target="_blank" rel="noreferrer"><ExternalLink size={15} /><span>查看前台</span></a>
           <button
             type="button"
+            aria-label="重新整理文章"
+            title="重新整理文章"
             onClick={() => {
               if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
               void loadArticles(draft.id || undefined);
             }}
             disabled={loading}
-          >
-            重新整理
-          </button>
+          ><RefreshCw size={16} /></button>
         </div>
       </header>
 
       <div className={styles.workspace}>
         <aside className={styles.sidebar}>
           <div className={styles.sidebarHead}>
-            <div>
-              <small>CONTENT</small>
-              <h1>文章管理</h1>
-            </div>
-            <button type="button" onClick={createArticle} aria-label="新增文章">＋</button>
+            <div><h1>文章</h1><span>{articles.length} 篇內容</span></div>
+            <button type="button" className={styles.newArticleButton} onClick={createArticle}><Plus size={15} />新增</button>
+          </div>
+          <div className={styles.sidebarControls}>
+            <label className={styles.searchField}>
+              <Search size={14} aria-hidden="true" />
+              <span className={styles.srOnly}>搜尋文章</span>
+              <input value={articleQuery} onChange={(event) => setArticleQuery(event.target.value)} placeholder="搜尋標題或網址" />
+            </label>
+            <label>
+              <span className={styles.srOnly}>依狀態篩選</span>
+              <select value={articleFilter} onChange={(event) => setArticleFilter(event.target.value as ArticleFilter)}>
+                <option value="all">全部狀態</option>
+                <option value="draft">草稿</option>
+                <option value="published">已發布</option>
+                <option value="archived">已封存</option>
+              </select>
+            </label>
           </div>
           <nav className={styles.articleList} aria-label="文章清單">
             {loading && <p className={styles.muted}>正在讀取文章…</p>}
-            {!loading && articles.length === 0 && (
+            {!loading && filteredArticles.length === 0 && (
               <div className={styles.emptyList}>
-                <b>還沒有文章</b>
-                <span>先建立第一篇草稿，確認編輯與 SEO 流程。</span>
+                <FileText size={20} />
+                <b>{articles.length ? "沒有符合條件的文章" : "還沒有文章"}</b>
+                <span>{articles.length ? "請調整搜尋文字或狀態。" : "按「新增」開始建立第一篇內容。"}</span>
               </div>
             )}
-            {articles.map((article) => (
+            {filteredArticles.map((article) => (
               <button
                 type="button"
                 key={article.id}
                 className={draft.id === article.id ? styles.articleActive : ""}
                 onClick={() => selectArticle(article)}
               >
-                <span className={`${styles.statusDot} ${styles[`status_${article.status}`]}`} />
-                <span>
+                <span className={styles.articleRowMain}>
                   <b>{article.title}</b>
-                  <small>{article.status === "published" ? "已發布" : article.status === "archived" ? "已封存" : "草稿"} · {formatUpdatedAt(article.updatedAt)}</small>
+                  <small>/{article.slug}</small>
+                </span>
+                <span className={styles.articleRowMeta}>
+                  <span className={`${styles.statusDot} ${styles[`status_${article.status}`]}`} />
+                  {article.status === "published" ? "已發布" : article.status === "archived" ? "已封存" : "草稿"}
+                  <time dateTime={article.updatedAt}>{formatUpdatedAt(article.updatedAt)}</time>
                 </span>
               </button>
             ))}
           </nav>
           <div className={styles.sidebarFoot}>
-            <span>站台</span>
-            <b>泰聚達</b>
-            <small>site_id: {SITE_CODE}</small>
+            <span>已發布 {articles.filter((article) => article.status === "published").length}</span>
+            <span>草稿 {articles.filter((article) => article.status === "draft").length}</span>
           </div>
         </aside>
 
         <section className={styles.editorPane}>
           <div className={styles.editorHeader}>
-            <div>
-              <span className={`${styles.statusPill} ${styles[`status_${draft.status}`]}`}>
-                {draft.status === "published" ? "已發布" : draft.status === "archived" ? "已封存" : "草稿"}
+            <div className={styles.documentState}>
+              <span className={`${styles.statusDot} ${styles[`status_${draft.status}`]}`} />
+              <span>
+                <b>{draft.title || "未命名文章"}</b>
+                <small>{dirty ? "有未儲存變更" : selectedArticle ? `最後儲存 ${formatUpdatedAt(selectedArticle.updatedAt)}` : "尚未儲存"}</small>
               </span>
-              <span className={styles.savedHint}>{draft.id ? "已建立內容版本" : "尚未儲存"}</span>
             </div>
             <div className={styles.primaryActions}>
-              {draft.id && <button type="button" className={styles.archiveButton} onClick={() => void archiveCurrent()} disabled={saving}>封存</button>}
+              {draft.id && <button type="button" className={styles.iconAction} aria-label="封存文章" title="封存文章" onClick={() => void archiveCurrent()} disabled={saving}><Archive size={16} /></button>}
               <button type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "處理中…" : "儲存草稿"}</button>
-              <button type="button" className={styles.publishButton} onClick={() => void save("published")} disabled={saving}>發布文章</button>
+              <button type="button" className={styles.publishButton} onClick={() => void save("published")} disabled={saving}>發布</button>
             </div>
           </div>
 
@@ -541,139 +575,109 @@ export default function AdminShell() {
 
           <div className={styles.contentGrid}>
             <div className={styles.editColumn}>
-              <label className={styles.field}>
-                <span>文章標題</span>
-                <input
-                  className={styles.titleInput}
-                  value={draft.title}
-                  onChange={(event) => {
-                    const nextTitle = event.target.value;
-                    setDraft((current) => ({
-                      ...current,
-                      title: nextTitle,
-                      slug: current.slug || slugify(nextTitle),
-                    }));
-                    markDirty();
-                  }}
-                  placeholder="輸入一個清楚、值得點開的標題"
-                />
-              </label>
-
-              <label className={styles.field}>
-                <span>摘要</span>
-                <textarea
-                  rows={3}
-                  value={draft.excerpt}
-                  onChange={(event) => updateDraft("excerpt", event.target.value)}
-                  placeholder="用兩三句話說明這篇文章能幫讀者解決什麼問題"
-                />
-              </label>
-
-              <div className={styles.editorCard}>
-                <div className={styles.toolbar} role="toolbar" aria-label="文章格式工具">
-                  <ToolbarButton label="H2" active={Boolean(editor?.isActive("heading", { level: 2 }))} disabled={!editor} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} />
-                  <ToolbarButton label="H3" active={Boolean(editor?.isActive("heading", { level: 3 }))} disabled={!editor} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} />
-                  <ToolbarButton label="粗體" active={Boolean(editor?.isActive("bold"))} disabled={!editor} onClick={() => editor?.chain().focus().toggleBold().run()} />
-                  <ToolbarButton label="斜體" active={Boolean(editor?.isActive("italic"))} disabled={!editor} onClick={() => editor?.chain().focus().toggleItalic().run()} />
-                  <ToolbarButton label="項目" active={Boolean(editor?.isActive("bulletList"))} disabled={!editor} onClick={() => editor?.chain().focus().toggleBulletList().run()} />
-                  <ToolbarButton label="編號" active={Boolean(editor?.isActive("orderedList"))} disabled={!editor} onClick={() => editor?.chain().focus().toggleOrderedList().run()} />
-                  <ToolbarButton label="引用" active={Boolean(editor?.isActive("blockquote"))} disabled={!editor} onClick={() => editor?.chain().focus().toggleBlockquote().run()} />
-                  <ToolbarButton label="連結" active={Boolean(editor?.isActive("link"))} disabled={!editor} onClick={setLink} />
-                  <ToolbarButton label="復原" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()} />
-                  <ToolbarButton label="重做" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()} />
+              <article className={styles.documentCanvas} aria-label="文章文件">
+                <div className={styles.documentHeading}>
+                  <label>
+                    <span className={styles.srOnly}>文章標題</span>
+                    <textarea
+                      className={styles.titleInput}
+                      rows={1}
+                      value={draft.title}
+                      onChange={(event) => {
+                        const nextTitle = event.target.value;
+                        setDraft((current) => ({ ...current, title: nextTitle, slug: current.slug || slugify(nextTitle) }));
+                        markDirty();
+                      }}
+                      placeholder="文章標題"
+                    />
+                  </label>
+                  <label>
+                    <span className={styles.srOnly}>文章摘要</span>
+                    <textarea
+                      className={styles.excerptInput}
+                      rows={2}
+                      value={draft.excerpt}
+                      onChange={(event) => updateDraft("excerpt", event.target.value)}
+                      placeholder="用一小段話說明這篇文章的重點"
+                    />
+                  </label>
                 </div>
+                <ArticleEditorToolbar editor={editor} />
                 <EditorContent editor={editor} />
-                <div className={styles.editorStats}><span>{wordCount} 字</span><span>內容以結構化 JSON 儲存</span></div>
-              </div>
+                <footer className={styles.editorStats}>
+                  <span>{wordCount} 字 · 約 {readingMinutes} 分鐘閱讀</span>
+                  <span>{dirty ? "尚未儲存" : draft.id ? `第 ${draft.version} 版` : "新草稿"}</span>
+                </footer>
+              </article>
             </div>
 
-            <aside className={styles.seoColumn}>
-              <section className={styles.panel}>
-                <div className={styles.panelTitle}>
-                  <span>SEO 設定</span>
-                  <small>{draft.noindex ? "不建立索引" : "可建立索引"}</small>
-                </div>
+            <aside className={styles.inspector}>
+              <div className={styles.inspectorTabs} role="tablist" aria-label="文章設定">
+                <button id="article-tab-publish" type="button" role="tab" aria-selected={inspectorTab === "publish"} aria-controls="article-panel-publish" tabIndex={inspectorTab === "publish" ? 0 : -1} className={inspectorTab === "publish" ? styles.tabActive : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "publish")} onClick={() => setInspectorTab("publish")}><FileText size={14} />發布</button>
+                <button id="article-tab-seo" type="button" role="tab" aria-selected={inspectorTab === "seo"} aria-controls="article-panel-seo" tabIndex={inspectorTab === "seo" ? 0 : -1} className={inspectorTab === "seo" ? styles.tabActive : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "seo")} onClick={() => setInspectorTab("seo")}><Globe2 size={14} />SEO</button>
+                <button id="article-tab-media" type="button" role="tab" aria-selected={inspectorTab === "media"} aria-controls="article-panel-media" tabIndex={inspectorTab === "media" ? 0 : -1} className={inspectorTab === "media" ? styles.tabActive : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "media")} onClick={() => setInspectorTab("media")}><ImageIcon size={14} />圖片</button>
+                <button id="article-tab-history" type="button" role="tab" aria-selected={inspectorTab === "history"} aria-controls="article-panel-history" tabIndex={inspectorTab === "history" ? 0 : -1} className={inspectorTab === "history" ? styles.tabActive : ""} onKeyDown={(event) => handleInspectorTabKeyDown(event, "history")} onClick={() => setInspectorTab("history")}><History size={14} />版本</button>
+              </div>
+
+              {inspectorTab === "publish" && <section id="article-panel-publish" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-publish">
+                <div className={styles.panelTitle}><span>發布設定</span><small>{draft.status === "published" ? "已發布" : "草稿"}</small></div>
                 <label className={styles.field}>
-                  <span>文章網址 Slug</span>
+                  <span>文章網址</span>
                   <div className={styles.slugField}><small>/articles/</small><input value={draft.slug} onChange={(event) => updateDraft("slug", slugify(event.target.value))} placeholder="article-slug" /></div>
                 </label>
-                <label className={styles.field}>
-                  <span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span>
-                  <input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder="留白時使用文章標題" />
-                </label>
-                <label className={styles.field}>
-                  <span>Meta 描述 <small>{draft.seoDescription.length}/160</small></span>
-                  <textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder="搜尋結果中顯示的文章摘要" />
-                </label>
-                <label className={styles.field}>
-                  <span>文章分類</span>
-                  <input value={draft.tag} onChange={(event) => updateDraft("tag", event.target.value)} placeholder="例如：新手指南" />
-                </label>
-                <label className={styles.field}>
-                  <span>關鍵字（逗號分隔）</span>
-                  <input value={draft.keywords.join(", ")} onChange={(event) => updateDraft("keywords", event.target.value.split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 12))} placeholder="泰國佛牌入門, 佛牌年份" />
-                </label>
-                <label className={styles.field}>
-                  <span>Canonical URL</span>
-                  <input type="url" value={draft.canonicalUrl} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/articles/..." />
-                </label>
-                <label className={styles.field}>
-                  <span>社群分享圖 URL</span>
-                  <input type="url" value={draft.ogImageUrl} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/article.jpg" />
-                </label>
-                <label className={styles.field}>
-                  <span>文章首圖 URL</span>
-                  <input type="url" value={draft.heroImageUrl} onChange={(event) => updateDraft("heroImageUrl", event.target.value)} placeholder="https://example.com/articles/photo.jpg" />
-                </label>
-                <label className={styles.field}>
-                  <span>首圖替代文字</span>
-                  <input value={draft.heroImageAlt} onChange={(event) => updateDraft("heroImageAlt", event.target.value)} placeholder="描述圖片內容與角度" />
-                </label>
-                <label className={styles.checkField}>
-                  <input type="checkbox" checked={draft.noindex} onChange={(event) => updateDraft("noindex", event.target.checked)} />
-                  <span><b>搜尋引擎不建立索引</b><small>適合尚未準備公開的特殊頁面</small></span>
-                </label>
-              </section>
+                <label className={styles.field}><span>文章分類</span><input value={draft.tag} onChange={(event) => updateDraft("tag", event.target.value)} placeholder="例如：新手指南" /></label>
+                <label className={styles.field}><span>關鍵字 <small>最多 12 組</small></span><input value={draft.keywords.join(", ")} onChange={(event) => updateDraft("keywords", event.target.value.split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 12))} placeholder="泰國佛牌入門, 佛牌年份" /></label>
+                <dl className={styles.articleFacts}>
+                  <div><dt>狀態</dt><dd>{draft.status === "published" ? "已發布" : draft.status === "archived" ? "已封存" : "草稿"}</dd></div>
+                  <div><dt>版本</dt><dd>{draft.version || "尚未建立"}</dd></div>
+                  <div><dt>公開時間</dt><dd>{selectedArticle?.publishedAt ? formatUpdatedAt(selectedArticle.publishedAt) : "尚未發布"}</dd></div>
+                </dl>
+                <p className={styles.helperText}>發布會先寫入這台電腦的內容資料庫；公開網站仍需執行同步建置。</p>
+              </section>}
 
-              <section className={styles.panel}>
-                <div className={styles.panelTitle}><span>搜尋結果預覽</span><small>GOOGLE</small></div>
+              {inspectorTab === "seo" && <section id="article-panel-seo" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-seo">
+                <div className={styles.panelTitle}><span>搜尋顯示</span><small>{seoChecks.filter((check) => check.pass).length}/{seoChecks.length}</small></div>
+                <label className={styles.field}><span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span><input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder="留白時使用文章標題" /></label>
+                <label className={styles.field}><span>Meta 描述 <small>{draft.seoDescription.length}/160</small></span><textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder="搜尋結果中顯示的文章摘要" /></label>
                 <div className={styles.searchPreview}>
-                  <span>泰聚達 · taijuda.tw{articlePath}</span>
+                  <span>taijuda.tw{articlePath}</span>
                   <h2>{seoTitle.slice(0, 70)}</h2>
                   <p>{seoDescription.slice(0, 180)}</p>
                 </div>
-                <ul className={styles.seoChecks}>
-                  <li className={draft.title ? styles.checkPass : ""}>文章標題已填寫</li>
-                  <li className={draft.slug ? styles.checkPass : ""}>文章網址已設定</li>
-                  <li className={draft.seoDescription.length >= 50 && draft.seoDescription.length <= 160 ? styles.checkPass : ""}>Meta 描述建議 50–160 字</li>
-                  <li className={!draft.heroImageUrl || Boolean(draft.heroImageAlt) ? styles.checkPass : ""}>首圖已填替代文字</li>
-                  <li className={wordCount >= 300 ? styles.checkPass : ""}>內容建議至少 300 字</li>
-                </ul>
-                <p className={styles.savedHint}>「發布文章」會寫入 D1；要讓獨立網址、sitemap 與 SEO 同步，仍需執行公開內容同步與重新建置。</p>
-              </section>
+                <ul className={styles.seoChecks}>{seoChecks.map((check) => <li key={check.label} className={check.pass ? styles.checkPass : ""}>{check.label}</li>)}</ul>
+                <details className={styles.advancedSettings}>
+                  <summary>進階設定</summary>
+                  <label className={styles.field}><span>Canonical URL</span><input type="url" value={draft.canonicalUrl} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/articles/..." /></label>
+                  <label className={styles.checkField}>
+                    <input type="checkbox" checked={draft.noindex} onChange={(event) => updateDraft("noindex", event.target.checked)} />
+                    <span><b>不要讓搜尋引擎收錄</b><small>適合測試頁或尚未完成的文章</small></span>
+                  </label>
+                </details>
+              </section>}
 
-              <section className={styles.panel}>
+              {inspectorTab === "media" && <section id="article-panel-media" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-media">
+                <div className={styles.panelTitle}><span>文章圖片</span><small>網址模式</small></div>
+                <div className={styles.mediaNotice}><ImageIcon size={18} /><span><b>目前僅支援公開圖片網址</b><small>檔案上傳需啟用雲端儲存。</small></span></div>
+                <label className={styles.field}><span>文章首圖 URL</span><input type="url" value={draft.heroImageUrl} onChange={(event) => updateDraft("heroImageUrl", event.target.value)} placeholder="https://example.com/articles/photo.jpg" /></label>
+                <label className={styles.field}><span>首圖替代文字</span><input value={draft.heroImageAlt} onChange={(event) => updateDraft("heroImageAlt", event.target.value)} placeholder="描述圖片內容與角度" /></label>
+                <label className={styles.field}><span>社群分享圖 URL</span><input type="url" value={draft.ogImageUrl} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/article.jpg" /></label>
+              </section>}
+
+              {inspectorTab === "history" && <section id="article-panel-history" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-history">
                 <div className={styles.panelTitle}>
                   <span>版本紀錄</span>
-                  <button type="button" className={styles.panelAction} onClick={() => draft.id && void loadRevisions(draft.id)} disabled={!draft.id || revisionsLoading}>
-                    {revisionsLoading ? "讀取中…" : "重新整理"}
-                  </button>
+                  <button type="button" className={styles.panelAction} onClick={() => draft.id && void loadRevisions(draft.id)} disabled={!draft.id || revisionsLoading}>{revisionsLoading ? "讀取中…" : "重新整理"}</button>
                 </div>
-                {!draft.id && <p className={styles.savedHint}>第一次儲存後會開始建立版本。</p>}
-                {draft.id && !revisionsLoading && revisions.length === 0 && <p className={styles.savedHint}>目前沒有可用的版本紀錄。</p>}
+                {!draft.id && <p className={styles.helperText}>第一次儲存後會開始建立版本。</p>}
+                {draft.id && !revisionsLoading && revisions.length === 0 && <p className={styles.helperText}>目前沒有可用的版本紀錄。</p>}
                 <div className={styles.revisionList}>
-                  {revisions.map((revision) => <button
-                    type="button"
-                    key={revision.revisionId}
-                    onClick={() => void restoreRevision(revision)}
-                    disabled={saving || revision.version === draft.version}
-                  >
+                  {revisions.map((revision) => <button type="button" key={revision.revisionId} onClick={() => void restoreRevision(revision)} disabled={saving || revision.version === draft.version}>
                     <span><b>第 {revision.version} 版</b><small>{revision.status === "published" ? "已發布" : revision.status === "archived" ? "已封存" : "草稿"}</small></span>
                     <time dateTime={revision.createdAt}>{formatUpdatedAt(revision.createdAt)}</time>
                   </button>)}
                 </div>
-                <p className={styles.savedHint}>還原會建立一個新的草稿版本，不會刪除現在或過去的紀錄。</p>
-              </section>
+                <p className={styles.helperText}>還原會建立新草稿，不會刪除現在或過去的紀錄。</p>
+              </section>}
             </aside>
           </div>
         </section>

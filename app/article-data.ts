@@ -1,4 +1,5 @@
 import { publishedArticles } from "../shared/published-content";
+import { ARTICLE_MAX_DOCUMENT_DEPTH } from "../lib/article-content-contract";
 
 export type TiptapNode = {
   type?: unknown;
@@ -47,7 +48,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function extractTiptapText(value: unknown, depth = 0): string {
-  if (depth > 24 || !isRecord(value)) return "";
+  if (depth > ARTICLE_MAX_DOCUMENT_DEPTH || !isRecord(value)) return "";
   const ownText = typeof value.text === "string" ? value.text : "";
   const childText = Array.isArray(value.content)
     ? value.content.map((child) => extractTiptapText(child, depth + 1)).join("")
