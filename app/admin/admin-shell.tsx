@@ -5,10 +5,8 @@ import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { publishedBrandName } from "../../shared/published-site";
 import {
   Archive,
-  ExternalLink,
   FileText,
   Globe2,
   History,
@@ -20,7 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import ArticleEditorToolbar from "./article-editor-toolbar";
-import AdminNavigation from "./admin-navigation";
+import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
 import styles from "./admin.module.css";
 
 type ArticleDocument = JSONContent;
@@ -469,26 +467,14 @@ export default function AdminShell() {
 
   return (
     <main className={styles.shell}>
-      <header className={styles.topbar}>
-        <div className={styles.brand}>
-          <span>泰</span>
-          <div><b>{publishedBrandName}</b><small>內容管理&nbsp; / &nbsp;文章</small></div>
-        </div>
-        <AdminNavigation active="articles" className={styles.topbarNav} activeClassName={styles.navActive} />
-        <div className={styles.topbarActions}>
-          <a href="/" target="_blank" rel="noreferrer"><ExternalLink size={15} /><span>查看前台</span></a>
-          <button
-            type="button"
-            aria-label="重新整理文章"
-            title="重新整理文章"
-            onClick={() => {
-              if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
-              void loadArticles(draft.id || undefined);
-            }}
-            disabled={loading}
-          ><RefreshCw size={16} /></button>
-        </div>
-      </header>
+      <AdminTopbar
+        active="articles"
+        refreshing={loading}
+        onRefresh={() => {
+          if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
+          void loadArticles(draft.id || undefined);
+        }}
+      />
 
       <div className={styles.workspace}>
         <aside className={styles.sidebar}>
@@ -547,20 +533,27 @@ export default function AdminShell() {
         </aside>
 
         <section className={styles.editorPane}>
-          <div className={styles.editorHeader}>
-            <div className={styles.documentState}>
-              <span className={`${styles.statusDot} ${styles[`status_${draft.status}`]}`} />
-              <span>
-                <b>{draft.title || "未命名文章"}</b>
-                <small>{dirty ? "有未儲存變更" : selectedArticle ? `最後儲存 ${formatUpdatedAt(selectedArticle.updatedAt)}` : "尚未儲存"}</small>
-              </span>
-            </div>
-            <div className={styles.primaryActions}>
-              {draft.id && <button type="button" className={styles.iconAction} aria-label="封存文章" title="封存文章" onClick={() => void archiveCurrent()} disabled={saving}><Archive size={16} /></button>}
-              <button type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "處理中…" : "儲存草稿"}</button>
-              <button type="button" className={styles.publishButton} onClick={() => void save("published")} disabled={saving}>發布</button>
-            </div>
-          </div>
+          <AdminActionBar
+            status={<AdminStatus tone={draft.status === "published" ? "success" : draft.status === "draft" ? "warning" : "neutral"}>{draft.status === "published" ? "已發布" : draft.status === "archived" ? "已封存" : "草稿"}</AdminStatus>}
+            title={draft.title || "未命名文章"}
+            detail={dirty ? "有未儲存變更" : selectedArticle ? `最後儲存 ${formatUpdatedAt(selectedArticle.updatedAt)}` : "尚未儲存"}
+          >
+            <AdminButton
+              type="button"
+              variant="ghost"
+              iconOnly
+              aria-label="重新整理文章"
+              title="重新整理文章"
+              onClick={() => {
+                if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
+                void loadArticles(draft.id || undefined);
+              }}
+              disabled={loading || saving}
+            ><RefreshCw size={15} /></AdminButton>
+            {draft.id && <AdminButton type="button" variant="danger" iconOnly aria-label="封存文章" title="封存文章" onClick={() => void archiveCurrent()} disabled={saving}><Archive size={15} /></AdminButton>}
+            <AdminButton type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "處理中…" : "儲存草稿"}</AdminButton>
+            <AdminButton type="button" variant="primary" onClick={() => void save("published")} disabled={saving}>發布</AdminButton>
+          </AdminActionBar>
 
           {(error || notice) && (
             <div className={error ? styles.errorBanner : styles.noticeBanner} role="status">

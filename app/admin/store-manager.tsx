@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
+import { Plus, RefreshCw } from "lucide-react";
 import type { Product } from "../data";
 import { formatPrice } from "../data";
 import styles from "./store-manager.module.css";
-import AdminNavigation from "./admin-navigation";
+import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
@@ -81,11 +81,7 @@ function statusLabel(status: string) {
 }
 
 function AdminHeader({ active }: { active: "products" | "orders" }) {
-  return <header className={styles.topbar}>
-    <div className={styles.brand}><span>{publishedBrandMark}</span><div><b>{publishedBrandName}營運中樞</b><small>LOCAL COMMERCE CORE</small></div></div>
-    <AdminNavigation active={active} activeClassName={styles.active} />
-    <a className={styles.frontLink} href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
-  </header>;
+  return <AdminTopbar active={active} />;
 }
 
 export default function StoreManager({ mode }: { mode: "products" | "orders" }) {
@@ -192,8 +188,17 @@ function ProductManager() {
   };
 
   return <div className={styles.workspace}>
-    <aside className={styles.listPane}><div className={styles.listHead}><div><small>CATALOG</small><h1>商品與庫存</h1></div><button onClick={createProduct} aria-label="新增商品">＋</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{products.map((product) => <button className={product.id === draft.id ? styles.selected : ""} key={product.id} onClick={() => selectProduct(product)}><span className={`${styles.dot} ${styles[`dot_${product.status}`]}`} /><span><b>{product.shortName}</b><small>{product.sku} · {statusLabel(product.status)} · 庫存 {product.stock}</small></span></button>)}</div><div className={styles.listFoot}>共 {products.length} 件商品</div></aside>
-    <section className={styles.mainPane}><div className={styles.actionbar}><div><span className={styles.pill}>{statusLabel(draft.status)}</span><small>{draft.id ? "已建立商品資料" : "尚未儲存的新商品"}</small></div><div>{draft.id && <button className={styles.archive} onClick={() => void archive()} disabled={saving}>封存</button>}<button className={styles.primary} onClick={() => void save()} disabled={saving}>{saving ? "處理中…" : "儲存商品"}</button></div></div>{(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
+    <aside className={styles.listPane}><div className={styles.listHead}><div><small>CATALOG</small><h1>商品與庫存</h1></div><button type="button" onClick={createProduct}><Plus size={14} />新增</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{products.map((product) => <button type="button" className={product.id === draft.id ? styles.selected : ""} key={product.id} onClick={() => selectProduct(product)}><span className={`${styles.dot} ${styles[`dot_${product.status}`]}`} /><span><b>{product.shortName}</b><small>{product.sku} · {statusLabel(product.status)} · 庫存 {product.stock}</small></span></button>)}</div><div className={styles.listFoot}>共 {products.length} 件商品</div></aside>
+    <section className={styles.mainPane}>
+      <AdminActionBar
+        status={<AdminStatus tone={draft.status === "active" ? "success" : draft.status === "sold_out" ? "danger" : draft.status === "draft" ? "warning" : "neutral"}>{statusLabel(draft.status)}</AdminStatus>}
+        title={draft.shortName || draft.name || "新商品"}
+        detail={dirty ? "尚有未儲存變更" : draft.id ? "商品與庫存資料已儲存" : "尚未儲存的新商品"}
+      >
+        {draft.id && <AdminButton type="button" variant="danger" onClick={() => void archive()} disabled={saving}>封存</AdminButton>}
+        <AdminButton type="button" variant="primary" onClick={() => void save()} disabled={saving}>{saving ? "處理中…" : "儲存商品"}</AdminButton>
+      </AdminActionBar>
+      {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
       <div className={styles.formGrid}><section className={styles.card}><h2>基本資料</h2><div className={styles.twoColumns}><Field label="商品全名"><input value={draft.name} onChange={(event) => update("name", event.target.value)} /></Field><Field label="前台短名"><input value={draft.shortName} onChange={(event) => update("shortName", event.target.value)} /></Field><Field label="典藏編號／SKU"><input value={draft.sku} onChange={(event) => update("sku", event.target.value.toUpperCase())} /></Field><Field label="網址 Slug"><input value={draft.slug} onChange={(event) => update("slug", event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} /></Field><Field label="分類"><select value={draft.category} onChange={(event) => update("category", event.target.value as Product["category"])}><option>佛牌</option><option>神尊</option><option>符印</option></select></Field><Field label="狀態"><select value={draft.status} onChange={(event) => update("status", event.target.value as Product["status"])}><option value="draft">草稿</option><option value="active">上架中</option><option value="sold_out">售罄</option><option value="archived">封存</option></select></Field><Field label="售價（TWD）"><input type="number" min="0" step="1" value={draft.price} onChange={(event) => update("price", Number(event.target.value))} /></Field><Field label="現有庫存"><input type="number" min="0" step="1" value={draft.stock} onChange={(event) => update("stock", Number(event.target.value))} /></Field><Field label="每筆限購"><input type="number" min="1" step="1" value={draft.purchaseLimit || 1} onChange={(event) => update("purchaseLimit", Number(event.target.value))} /></Field><Field label="前台標籤"><input value={draft.badge} onChange={(event) => update("badge", event.target.value)} /></Field></div><Field label="商品說明"><textarea rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} /></Field></section>
         <section className={styles.card}><h2>藏品履歷</h2><div className={styles.twoColumns}><Field label="來源地區"><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></Field><Field label="寺院／來源"><input value={draft.temple} onChange={(event) => update("temple", event.target.value)} /></Field><Field label="佛曆年份"><input value={draft.buddhistYear} onChange={(event) => update("buddhistYear", event.target.value)} /></Field><Field label="西元年份"><input value={draft.westernYear} onChange={(event) => update("westernYear", event.target.value)} /></Field><Field label="材質"><input value={draft.material} onChange={(event) => update("material", event.target.value)} /></Field><Field label="尺寸"><input value={draft.dimensions} onChange={(event) => update("dimensions", event.target.value)} /></Field><Field label="祈願文化主題"><input value={draft.theme} onChange={(event) => update("theme", event.target.value)} /></Field><Field label="視覺形制"><select value={draft.shape} onChange={(event) => update("shape", event.target.value as Product["shape"])}><option value="arch">拱形</option><option value="oval">橢圓</option><option value="round">圓形</option><option value="statue">神尊</option></select></Field></div></section>
         <section className={styles.card}><h2>圖片與 SEO</h2><Field label="商品主圖 URL"><input type="url" value={draft.imageUrl || ""} onChange={(event) => update("imageUrl", event.target.value)} placeholder="https://..." /></Field><Field label="主圖替代文字"><input value={draft.imageAlt || ""} onChange={(event) => update("imageAlt", event.target.value)} placeholder="清楚描述實拍商品與角度" /></Field><Field label="SEO 標題"><input value={draft.seoTitle} onChange={(event) => update("seoTitle", event.target.value)} /></Field><Field label="Meta 描述"><textarea rows={4} value={draft.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} /></Field><label className={styles.field}><span>搜尋收錄狀態</span><span><input type="checkbox" checked={draft.seoReady === true} onChange={(event) => update("seoReady", event.target.checked)} /> 已逐件覆核商品、圖片與 SEO，可以同步到可索引公開版</span></label><small>勾選前必須有公開主圖與替代文字、至少 8 字 SEO 標題及 50 字 Meta 描述；公開建置仍需設定商品覆核閘門。</small></section>
@@ -269,8 +274,22 @@ function OrderManager() {
   };
 
   return <div className={styles.workspace}>
-    <aside className={styles.listPane}><div className={styles.listHead}><div><small>ORDERS</small><h1>訂單管理</h1></div><button onClick={() => void load(selected?.id)} aria-label="重新整理訂單">↻</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{orders.map((order) => <button className={order.id === selected?.id ? styles.selected : ""} key={order.id} onClick={() => setSelectedId(order.id)}><span className={`${styles.dot} ${styles[`order_${order.orderStatus}`]}`} /><span><b>{order.orderNumber}</b><small>{order.customer.name} · {statusLabel(order.orderStatus)} · {formatPrice(order.subtotal)}</small></span></button>)}</div><div className={styles.listFoot}>共 {orders.length} 筆保留單</div></aside>
-    <section className={styles.mainPane}><div className={styles.actionbar}><div><span className={styles.pill}>{selected ? statusLabel(selected.orderStatus) : "尚無訂單"}</span><small>{selected ? dateTime(selected.createdAt) : "完成第一筆本機測試訂單後會顯示於此"}</small></div>{selected && <div><button onClick={() => void changeStatus("confirmed")} disabled={updating || !canChangeTo("confirmed")}>確認訂單</button><button onClick={() => void changeStatus("processing")} disabled={updating || !canChangeTo("processing")}>開始處理</button><button onClick={() => void changeStatus("shipped")} disabled={updating || !canChangeTo("shipped")}>標記出貨</button><button className={styles.primary} onClick={() => void changeStatus("completed")} disabled={updating || !canChangeTo("completed")}>標記完成</button><button className={styles.archive} onClick={() => void changeStatus("cancelled")} disabled={updating || !canChangeTo("cancelled")}>取消</button></div>}</div>{(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
+    <aside className={styles.listPane}><div className={styles.listHead}><div><small>ORDERS</small><h1>訂單管理</h1></div><button type="button" onClick={() => void load(selected?.id)} disabled={loading}><RefreshCw size={14} />重新整理</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{orders.map((order) => <button type="button" className={order.id === selected?.id ? styles.selected : ""} key={order.id} onClick={() => setSelectedId(order.id)}><span className={`${styles.dot} ${styles[`order_${order.orderStatus}`]}`} /><span><b>{order.orderNumber}</b><small>{order.customer.name} · {statusLabel(order.orderStatus)} · {formatPrice(order.subtotal)}</small></span></button>)}</div><div className={styles.listFoot}>共 {orders.length} 筆保留單</div></aside>
+    <section className={styles.mainPane}>
+      <AdminActionBar
+        status={<AdminStatus tone={!selected ? "neutral" : selected.orderStatus === "completed" ? "success" : selected.orderStatus === "cancelled" ? "danger" : selected.orderStatus === "new" ? "warning" : "neutral"}>{selected ? statusLabel(selected.orderStatus) : "尚無訂單"}</AdminStatus>}
+        title={selected?.orderNumber || "訂單管理"}
+        detail={selected ? dateTime(selected.createdAt) : "完成第一筆本機測試訂單後會顯示於此"}
+      >
+        {selected && <>
+          <AdminButton type="button" onClick={() => void changeStatus("confirmed")} disabled={updating || !canChangeTo("confirmed")}>確認訂單</AdminButton>
+          <AdminButton type="button" onClick={() => void changeStatus("processing")} disabled={updating || !canChangeTo("processing")}>開始處理</AdminButton>
+          <AdminButton type="button" onClick={() => void changeStatus("shipped")} disabled={updating || !canChangeTo("shipped")}>標記出貨</AdminButton>
+          <AdminButton type="button" variant="primary" onClick={() => void changeStatus("completed")} disabled={updating || !canChangeTo("completed")}>標記完成</AdminButton>
+          <AdminButton type="button" variant="danger" onClick={() => void changeStatus("cancelled")} disabled={updating || !canChangeTo("cancelled")}>取消</AdminButton>
+        </>}
+      </AdminActionBar>
+      {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
       {!selected ? <div className={styles.emptyState}><span>◇</span><h2>目前還沒有訂單</h2><p>前台送出的商品保留單會保存在本機資料庫。</p></div> : <div className={styles.orderGrid}><section className={styles.card}><div className={styles.orderTitle}><div><small>ORDER</small><h2>{selected.orderNumber}</h2></div><b>{formatPrice(selected.subtotal)}</b></div><div className={styles.orderItems}>{selected.items.map((item) => <div key={item.id}><span><b>{item.name}</b><small>{item.sku} · {formatPrice(item.unitPrice)} × {item.quantity}</small></span><b>{formatPrice(item.lineTotal)}</b></div>)}</div><dl className={styles.totals}><div><dt>商品小計</dt><dd>{formatPrice(selected.subtotal)}</dd></div><div><dt>運費</dt><dd>待確認</dd></div><div><dt>目前金額</dt><dd>{formatPrice(selected.subtotal)}</dd></div><div><dt>付款狀態</dt><dd>{statusLabel(selected.paymentStatus)}</dd></div><div><dt>保留期限</dt><dd>{selected.reservedUntil ? dateTime(selected.reservedUntil) : "不適用"}</dd></div>{selected.expiredAt && <div><dt>逾期取消</dt><dd>{dateTime(selected.expiredAt)}</dd></div>}</dl><Field label="手動付款狀態"><select value={selected.paymentStatus} onChange={(event) => void changePayment(event.target.value as PaymentStatus)} disabled={updating}><option value="uncollected">尚未收款</option><option value="pending">付款確認中</option><option value="paid">已收款</option><option value="failed">付款未完成</option><option value="refunded">已退款</option></select></Field></section><aside className={styles.card}><h2>顧客與配送</h2><dl className={styles.details}><div><dt>姓名</dt><dd>{selected.customer.name}</dd></div><div><dt>電話</dt><dd>{selected.customer.phone}</dd></div><div><dt>Email</dt><dd>{selected.customer.email || "未提供"}</dd></div><div><dt>LINE ID</dt><dd>{selected.customer.lineId || "未提供"}</dd></div><div><dt>配送</dt><dd>{selected.deliveryMethod}</dd></div><div><dt>地址／偏好</dt><dd>{selected.address || "未提供"}</dd></div><div><dt>備註</dt><dd>{selected.note || "無"}</dd></div></dl></aside></div>}
     </section>
   </div>;

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Puck } from "@puckeditor/core";
-import { publishedBrandMark, publishedBrandName } from "../../../shared/published-site";
+import { Puck, type Overrides } from "@puckeditor/core";
+import { Plus } from "lucide-react";
 import {
   editorPreviewMetadata,
   pageBuilderConfig,
@@ -21,7 +21,7 @@ import {
   validatePageData,
 } from "../../site-builder/validation";
 import styles from "./site-editor.module.css";
-import AdminNavigation from "../admin-navigation";
+import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "../admin-chrome";
 import {
   DEFAULT_SITE_APPEARANCE,
   normalizeSiteAppearance,
@@ -30,6 +30,9 @@ import {
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
+const puckOverrides = {
+  headerActions: () => <></>,
+} satisfies Partial<Overrides<typeof pageBuilderConfig>>;
 
 type PageRevision = {
   revisionId: string;
@@ -457,15 +460,11 @@ export default function SiteEditor() {
   const previewHref = `/pages/${encodeURIComponent(previewSlug)}/`;
 
   return <main className={styles.shell}>
-    <header className={styles.topbar}>
-      <div className={styles.brand}><span>{publishedBrandMark}</span><div><b>{publishedBrandName}網站編輯</b><small>STRUCTURED PAGE BUILDER</small></div></div>
-      <AdminNavigation active="site" activeClassName={styles.active} />
-      <a className={styles.frontLink} href={previewHref} target="_blank" rel="noreferrer">查看公開頁 ↗</a>
-    </header>
+    <AdminTopbar active="site" previewHref={previewHref} />
 
     <div className={styles.workspace}>
       <aside className={styles.pageSidebar}>
-        <div className={styles.sidebarHead}><div><small>PAGES</small><h1>網站頁面</h1></div><button type="button" onClick={createPage} aria-label="新增頁面">＋</button></div>
+        <div className={styles.sidebarHead}><div><small>PAGES</small><h1>網站頁面</h1></div><button type="button" onClick={createPage}><Plus size={14} />新增</button></div>
         <div className={styles.pageList}>
           {loading && <p className={styles.muted}>正在讀取頁面…</p>}
           {!loading && pages.length === 0 && <div className={styles.emptyList}><b>還沒有自訂頁面</b><span>按右上角的＋建立第一頁。</span></div>}
@@ -478,17 +477,18 @@ export default function SiteEditor() {
       </aside>
 
       <section className={styles.editorPane}>
-        <div className={styles.editorHeader}>
-          <div><span className={`${styles.statusPill} ${styles[`status_${draft.status}`]}`}>{statusLabel(draft.status)}</span><span className={styles.dirtyState}>{dirty ? "尚有未儲存變更" : draft.id ? "內容已儲存" : "新頁面"}</span></div>
-          <div className={styles.actions}>
-            <button type="button" onClick={() => setShowSiteSettings((value) => !value)}>{showSiteSettings ? "收合全站" : "全站設定"}</button>
-            <button type="button" onClick={() => setShowHistory((value) => !value)} disabled={!draft.id}>{showHistory ? "收合版本" : "版本紀錄"}</button>
-            <button type="button" onClick={() => setShowSeo((value) => !value)}>{showSeo ? "收合設定" : "展開設定"}</button>
-            {draft.id && <button type="button" className={styles.archiveButton} onClick={() => void archiveCurrent()} disabled={saving}>封存</button>}
-            <button type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "儲存中…" : "儲存草稿"}</button>
-            <button type="button" className={styles.publishButton} onClick={() => void save("published")} disabled={saving}>發布頁面</button>
-          </div>
-        </div>
+        <AdminActionBar
+          status={<AdminStatus tone={draft.status === "published" ? "success" : draft.status === "draft" ? "warning" : "neutral"}>{statusLabel(draft.status)}</AdminStatus>}
+          title={draft.title || "新網站頁面"}
+          detail={dirty ? "尚有未儲存變更" : draft.id ? "內容已儲存" : "新頁面"}
+        >
+          <AdminButton type="button" variant="ghost" onClick={() => setShowSiteSettings((value) => !value)}>{showSiteSettings ? "收合全站" : "全站設定"}</AdminButton>
+          <AdminButton type="button" variant="ghost" onClick={() => setShowHistory((value) => !value)} disabled={!draft.id}>{showHistory ? "收合版本" : "版本紀錄"}</AdminButton>
+          <AdminButton type="button" variant="ghost" onClick={() => setShowSeo((value) => !value)}>{showSeo ? "收合設定" : "頁面設定"}</AdminButton>
+          {draft.id && <AdminButton type="button" variant="danger" onClick={() => void archiveCurrent()} disabled={saving}>封存</AdminButton>}
+          <AdminButton type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "儲存中…" : "儲存草稿"}</AdminButton>
+          <AdminButton type="button" variant="primary" onClick={() => void save("published")} disabled={saving}>發布頁面</AdminButton>
+        </AdminActionBar>
 
         {(error || notice) && <div className={error ? styles.errorBanner : styles.noticeBanner} role="status"><span>{error || notice}</span>{authRequired && <a href="/signin-with-chatgpt?return_to=%2Fadmin%2Fsite%2F">登入後台</a>}</div>}
 
@@ -553,9 +553,10 @@ export default function SiteEditor() {
             config={pageBuilderConfig}
             data={draft.data}
             metadata={previewMetadata}
+            overrides={puckOverrides}
             headerTitle={draft.title || "新網站頁面"}
             headerPath={previewHref}
-            height="calc(100vh - 238px)"
+            height="max(640px, calc(100vh - 136px))"
             viewports={[
               { width: 1440, height: "auto", label: "桌面" },
               { width: 768, height: "auto", label: "平板" },

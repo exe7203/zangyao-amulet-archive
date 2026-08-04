@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Database,
-  ExternalLink,
   FileText,
   Globe2,
   Package,
@@ -14,8 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
-import AdminNavigation from "./admin-navigation";
+import { AdminButton, AdminTopbar } from "./admin-chrome";
 import styles from "./dashboard.module.css";
 
 type CountGroup = {
@@ -162,14 +160,7 @@ export default function AdminDashboard() {
 
   return (
     <main className={styles.shell}>
-      <header className={styles.topbar}>
-        <div className={styles.brand}><span>{publishedBrandMark}</span><div><b>{publishedBrandName}營運中樞</b><small>LOCAL-FIRST ADMIN</small></div></div>
-        <AdminNavigation active="dashboard" activeClassName={styles.active} />
-        <div className={styles.topActions}>
-          <a href="/" target="_blank" rel="noreferrer">查看前台 <ExternalLink size={14} /></a>
-          <button type="button" onClick={() => void load()} disabled={loading} aria-label="重新整理後台狀態"><RefreshCw size={16} /></button>
-        </div>
-      </header>
+      <AdminTopbar active="dashboard" onRefresh={() => void load()} refreshing={loading} />
 
       <div className={styles.content}>
         <section className={styles.intro}>
@@ -177,6 +168,7 @@ export default function AdminDashboard() {
           <div className={styles.runtimeState}>
             <span className={error ? styles.stateError : styles.stateOk} />
             <div><b>{error ? "系統狀態無法讀取" : loading ? "正在檢查系統" : "本機資料核心正常"}</b><small>{status ? `資料庫 Schema v${status.runtime.schemaVersion}・${dateTime(status.generatedAt)}` : error || "請稍候"}</small></div>
+            <AdminButton type="button" variant="ghost" iconOnly onClick={() => void load()} disabled={loading} aria-label="更新系統狀態" title="更新系統狀態"><RefreshCw size={15} /></AdminButton>
           </div>
         </section>
 
