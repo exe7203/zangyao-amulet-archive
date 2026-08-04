@@ -69,7 +69,10 @@ export const sitePageRevisions = sqliteTable(
     savedBy: text("saved_by").notNull().default("local-preview"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
-  (table) => [index("site_page_revisions_page_created_idx").on(table.pageId, table.createdAt)],
+  (table) => [
+    uniqueIndex("site_page_revisions_page_version_unique").on(table.pageId, table.version),
+    index("site_page_revisions_page_created_idx").on(table.pageId, table.createdAt),
+  ],
 );
 
 export const categories = sqliteTable(

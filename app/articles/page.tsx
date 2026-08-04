@@ -1,25 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { fallbackArticles } from "../article-data";
+import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
 import styles from "./articles-index.module.css";
 
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
 const canonical = new URL("articles/", siteUrl).toString();
+const journalName = `${publishedBrandName}收藏誌`;
 
 export const metadata: Metadata = {
-  title: { absolute: "泰國佛牌收藏誌｜泰聚達" },
-  description: "泰聚達收藏誌整理泰國佛牌年份、材質、來源、外殼保養與收藏履歷，從可以查證的資料開始認識佛牌文化。",
+  title: { absolute: `泰國佛牌收藏誌｜${publishedBrandName}` },
+  description: `${publishedBrandName}收藏誌整理泰國佛牌年份、材質、來源、外殼保養與收藏履歷，從可以查證的資料開始認識佛牌文化。`,
   alternates: { canonical },
   openGraph: {
     type: "website",
     url: canonical,
-    title: "泰國佛牌收藏誌｜泰聚達",
+    title: `泰國佛牌收藏誌｜${publishedBrandName}`,
     description: "從年份、材質、來源與保存紀錄開始認識泰國佛牌收藏。",
-    images: [{ url: new URL("og.png", siteUrl).toString(), alt: "泰聚達泰國佛牌收藏誌" }],
+    images: [{ url: new URL("og.png", siteUrl).toString(), alt: `${publishedBrandName}泰國佛牌收藏誌` }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "泰國佛牌收藏誌｜泰聚達",
+    title: `泰國佛牌收藏誌｜${publishedBrandName}`,
     description: "從年份、材質、來源與保存紀錄開始認識泰國佛牌收藏。",
     images: [new URL("og.png", siteUrl).toString()],
   },
@@ -32,7 +34,7 @@ export default function ArticlesIndexPage() {
       {
         "@type": "CollectionPage",
         "@id": `${canonical}#collection`,
-        name: "泰聚達收藏誌",
+        name: journalName,
         description: String(metadata.description),
         url: canonical,
         inLanguage: "zh-Hant-TW",
@@ -60,14 +62,14 @@ export default function ArticlesIndexPage() {
     <div className={styles.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
       <header className={styles.header}>
-        <Link className={styles.brand} href="/"><span>泰</span><b>泰聚達</b></Link>
+        <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
         <Link href="/#journal">返回首頁 →</Link>
       </header>
       <main className={styles.shell}>
         <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">收藏誌</span></nav>
         <header className={styles.intro}>
           <p>THE JOURNAL</p>
-          <h1>泰聚達收藏誌</h1>
+          <h1>{journalName}</h1>
           <span>從可以查證的年份、材質、來源與保存紀錄開始，慢慢建立自己的收藏判斷。</span>
         </header>
         <section className={styles.grid} aria-label="收藏文章">
@@ -81,8 +83,7 @@ export default function ArticlesIndexPage() {
           ))}
         </section>
       </main>
-      <footer className={styles.footer}><span>© 2026 泰聚達</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
+      <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
     </div>
   );
 }
-

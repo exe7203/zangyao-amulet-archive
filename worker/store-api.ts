@@ -8,6 +8,7 @@ import {
   cleanSlug,
   cleanText,
   cleanUrl,
+  isLocalRequest,
   isRecord,
   json,
   publicJson,
@@ -29,7 +30,10 @@ const ORDER_STATUSES = new Set(["new", "confirmed", "processing", "shipped", "co
 const PAYMENT_STATUSES = new Set(["uncollected", "pending", "paid", "failed", "refunded"]);
 export const RESERVATION_HOLD_HOURS = 72;
 export const ORDER_CONSENT_VERSION = "local-reservation-v1";
-const EXPIRY_BATCH_LIMIT = 50;
+export const MAX_ORDER_DISTINCT_ITEMS = 10;
+// Workers Free currently allows 50 D1 queries per invocation. Two worst-case
+// ten-item expiries plus their lookup queries stay within that ceiling.
+const EXPIRY_BATCH_LIMIT = 2;
 const EXPIRY_NOTE = `系統：商品保留逾 ${RESERVATION_HOLD_HOURS} 小時，已自動取消並釋放庫存。`;
 const ORDER_TRANSITIONS: Record<string, ReadonlySet<string>> = {
   new: new Set(["new", "confirmed", "cancelled"]),
@@ -308,9 +312,9 @@ async function listPublicProducts(request: Request, db: D1Database, slug?: strin
   return publicJson({ site, products: rows.results.map(parseProductRow) });
 }
 
-function normalizeCartItems(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 50) {
-    return { error: "訂單商品需為 1 至 50 筆" } as const;
+export function normalizeCartItems(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_ORDER_DISTINCT_ITEMS) {
+    return { error: `訂單商品需為 1 至 ${MAX_ORDER_DISTINCT_ITEMS} 筆` } as const;
   }
 
   const merged = new Map<string, number>();
@@ -695,6 +699,9 @@ function normalizeProductPayload(payload: Record<string, unknown>) {
   const inventoryVersion = payload.inventoryVersion === undefined
     ? null
     : integerInRange(payload.inventoryVersion, 0, 2_147_483_647);
+  const productVersion = payload.productVersion === undefined
+    ? null
+    : integerInRange(payload.productVersion, 1, 2_147_483_647);
   const status = cleanText(payload.status, 30) as ProductStatus;
   const seoTitle = cleanText(payload.seoTitle, 180);
   const seoDescription = cleanText(payload.seoDescription, 500);
@@ -706,6 +713,7 @@ function normalizeProductPayload(payload: Record<string, unknown>) {
       !slug || !name || !shortName || !PRODUCT_CATEGORIES.has(category) ||
       price === null || !PRODUCT_SHAPES.has(shape) || purchaseLimit === null ||
       stock === null || (payload.inventoryVersion !== undefined && inventoryVersion === null) ||
+      (payload.productVersion !== undefined && productVersion === null) ||
       !PRODUCT_STATUSES.has(status) ||
       (cleanText(payload.imageUrl, 1000) && !imageUrl) ||
       (imageUrl && !imageAlt) ||
@@ -718,7 +726,7 @@ function normalizeProductPayload(payload: Record<string, unknown>) {
       id, sku, slug, name, shortName, description, category,
       origin, temple, buddhistYear, westernYear, material, dimensions,
       price, badge, tone, shape, theme, purchaseLimit, stock, status,
-      seoTitle, seoDescription, imageUrl, imageAlt, seoReady, inventoryVersion,
+      seoTitle, seoDescription, imageUrl, imageAlt, seoReady, inventoryVersion, productVersion,
     },
   };
 }
@@ -744,7 +752,7 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
     .bind(site.id, id)
     .first<Record<string, unknown>>();
   const current = existing ? parseProductRow(existing) : null;
-  if (current && input.inventoryVersion === null) {
+  if (current && (input.inventoryVersion === null || input.productVersion === null)) {
     return json({ error: "商品資料已更新，請重新整理後再儲存" }, { status: 409 });
   }
   if (current && input.stock < current.inventory.reserved) {
@@ -759,7 +767,7 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
         dimensions = ?, price = ?, badge = ?, tone = ?, shape = ?, theme = ?,
         purchase_limit = ?, stock = ?, status = ?, seo_title = ?, seo_description = ?,
         image_url = ?, image_alt = ?, seo_ready = ?, version = version + 1, updated_at = ?
-      WHERE id = ? AND site_id = ?
+      WHERE id = ? AND site_id = ? AND version = ?
         AND EXISTS (
           SELECT 1 FROM inventory i
           WHERE i.product_id = products.id AND i.site_id = products.site_id AND i.version = ?
@@ -770,7 +778,7 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
         input.dimensions, input.price, input.badge, input.tone, input.shape, input.theme,
         input.purchaseLimit, input.stock, input.status, input.seoTitle, input.seoDescription,
         input.imageUrl, input.imageAlt, input.seoReady ? 1 : 0,
-        now, id, site.id, input.inventoryVersion,
+        now, id, site.id, input.productVersion, input.inventoryVersion,
       )
     : db.prepare(`INSERT INTO products (
         id, site_id, category_id, sku, slug, name, short_name, description,
@@ -788,8 +796,22 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
       );
   const inventoryStatement = current
     ? db.prepare(`UPDATE inventory SET on_hand = ?, version = version + 1, updated_at = ?
-        WHERE product_id = ? AND site_id = ? AND version = ?`)
-      .bind(input.stock, now, id, site.id, input.inventoryVersion)
+        WHERE product_id = ? AND site_id = ? AND version = ?
+          AND EXISTS (
+            SELECT 1 FROM products p
+            WHERE p.id = inventory.product_id AND p.site_id = inventory.site_id
+              AND p.version = ? AND p.updated_at = ? AND p.status = ?
+          )`)
+      .bind(
+        input.stock,
+        now,
+        id,
+        site.id,
+        input.inventoryVersion,
+        input.productVersion! + 1,
+        now,
+        input.status,
+      )
     : db.prepare(`INSERT INTO inventory (product_id, site_id, on_hand, reserved, version, updated_at)
         VALUES (?, ?, ?, 0, 0, ?)`)
       .bind(id, site.id, input.stock, now);
@@ -837,18 +859,29 @@ async function saveAdminProduct(request: Request, db: D1Database, actor: string)
 }
 
 async function archiveAdminProduct(request: Request, db: D1Database, productId: string) {
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
   const id = cleanIdentifier(productId);
   if (!id) return json({ error: "商品編號不正確" }, { status: 400 });
+  const expectedVersion = Number(url.searchParams.get("version"));
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return json({ error: "請提供目前商品版本" }, { status: 400 });
+  }
 
-  const result = await db.prepare(`UPDATE products SET status = 'archived', updated_at = ?
-    WHERE id = ? AND site_id = ?`)
-    .bind(new Date().toISOString(), id, site.id)
+  const result = await db.prepare(`UPDATE products SET status = 'archived', version = version + 1, updated_at = ?
+    WHERE id = ? AND site_id = ? AND version = ?`)
+    .bind(new Date().toISOString(), id, site.id, expectedVersion)
     .run();
-  return result.meta.changes > 0
-    ? json({ ok: true, id, status: "archived" })
+  if (result.meta.changes > 0) {
+    return json({ ok: true, id, status: "archived", version: expectedVersion + 1 });
+  }
+  const existing = await db.prepare("SELECT id FROM products WHERE id = ? AND site_id = ? LIMIT 1")
+    .bind(id, site.id)
+    .first<Record<string, unknown>>();
+  return existing
+    ? json({ error: "商品已被其他操作更新，請重新整理後再封存" }, { status: 409 })
     : json({ error: "找不到商品" }, { status: 404 });
 }
 
@@ -1112,6 +1145,10 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     await ensureDatabase(env.DB);
 
     if (isPublicProducts && request.method === "GET") {
+      // Local development has no Cron Trigger. Remote cleanup is deliberately
+      // isolated in the scheduled handler so a large expiry batch can never
+      // consume the D1 query budget of a customer or admin request.
+      if (isLocalRequest(request)) await expireStaleReservations(env.DB);
       const slug = url.pathname.startsWith("/api/store/products/")
         ? decodeURIComponent(url.pathname.slice("/api/store/products/".length))
         : undefined;
@@ -1120,7 +1157,7 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     if (isPublicOrders && request.method === "POST") {
       const invalidWrite = validateWriteRequest(request);
       if (invalidWrite) return invalidWrite;
-      await expireStaleReservations(env.DB);
+      if (isLocalRequest(request)) await expireStaleReservations(env.DB);
       return createOrder(request, env.DB);
     }
     if (isPublicProducts || isPublicOrders) {
@@ -1132,7 +1169,7 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     const invalidWrite = validateWriteRequest(request);
     if (invalidWrite) return invalidWrite;
 
-    if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+    if (isLocalRequest(request) && ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
       await expireStaleReservations(env.DB);
     }
 

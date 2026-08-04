@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import InfoPage from "../../info-page";
 import { infoPageMetadata } from "../../site-metadata";
+import { publishedBrandName } from "../../../shared/published-site";
 
 export const metadata: Metadata = infoPageMetadata(
   "聯絡與訂單協助",
-  "泰聚達商品問題、訂單編號與售後協助方式。",
+  `${publishedBrandName}商品問題、訂單編號與售後協助方式。`,
   "service/contact/",
 );
 

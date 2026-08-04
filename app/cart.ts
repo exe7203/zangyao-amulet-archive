@@ -1,6 +1,7 @@
 import type { Product } from "./data";
 
 export const CART_STORAGE_KEY = "taijuda-amulet-archive:cart:v1";
+export const MAX_CART_DISTINCT_ITEMS = 10;
 const DEFAULT_PURCHASE_LIMIT = 10;
 
 export type CartItem = {
@@ -20,6 +21,7 @@ export function getPurchaseLimit(product: Pick<Product, "purchaseLimit" | "stock
 export function normalizeCartItems(
   value: unknown,
   catalog: readonly Product[],
+  options: { preserveUnknown?: boolean } = {},
 ): CartItem[] {
   if (!Array.isArray(value)) return [];
 
@@ -40,24 +42,34 @@ export function normalizeCartItems(
     if (!productId || !Number.isInteger(quantity) || Number(quantity) <= 0) continue;
 
     const product = productsById.get(productId);
-    if (!product) continue;
+    if (!product && (
+      !options.preserveUnknown ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(productId)
+    )) continue;
 
     if (!quantities.has(productId)) order.push(productId);
     const nextQuantity = (quantities.get(productId) ?? 0) + Number(quantity);
-    quantities.set(productId, Math.min(nextQuantity, getPurchaseLimit(product)));
+    // When the live API is unavailable, the published catalog can have stale
+    // stock or limits. Keep the stored intent intact until a live response can
+    // authoritatively revalidate it.
+    const limit = options.preserveUnknown ? 100 : product ? getPurchaseLimit(product) : 100;
+    quantities.set(productId, Math.min(nextQuantity, limit));
   }
 
-  return order.map((productId) => ({ productId, quantity: quantities.get(productId)! }));
+  return order
+    .map((productId) => ({ productId, quantity: quantities.get(productId)! }))
+    .filter((item) => item.quantity > 0);
 }
 
 export function parseCartStorage(
   value: string | null,
   catalog: readonly Product[],
+  options: { preserveUnknown?: boolean } = {},
 ): CartItem[] {
   if (!value) return [];
 
   try {
-    return normalizeCartItems(JSON.parse(value), catalog);
+    return normalizeCartItems(JSON.parse(value), catalog, options);
   } catch {
     return [];
   }
@@ -72,7 +84,11 @@ export function addCartItem(
   product: Product,
 ): CartItem[] {
   const existing = items.find((item) => item.productId === product.id);
-  if (!existing) return [...items, { productId: product.id, quantity: 1 }];
+  if (!existing) {
+    return items.length >= MAX_CART_DISTINCT_ITEMS
+      ? [...items]
+      : [...items, { productId: product.id, quantity: 1 }];
+  }
 
   const limit = getPurchaseLimit(product);
   return items.map((item) => item.productId === product.id

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { publishedBrandMark, publishedBrandName } from "../shared/published-site";
 import styles from "./info-page.module.css";
 
 export default function InfoPage({
@@ -16,7 +17,7 @@ export default function InfoPage({
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <Link className={styles.brand} href="/"><span>泰</span><b>泰聚達</b></Link>
+        <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
         <Link href="/">返回典藏首頁 →</Link>
       </header>
       <article className={styles.article}>
@@ -26,7 +27,7 @@ export default function InfoPage({
         <p className={styles.intro}>{intro}</p>
         <div className={styles.content}>{children}</div>
       </article>
-      <footer className={styles.footer}><span>© 2026 泰聚達</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
+      <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
     </main>
   );
 }

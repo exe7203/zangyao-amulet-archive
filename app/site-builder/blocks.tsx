@@ -5,6 +5,7 @@ import type {
   ShowcaseProduct,
 } from "./types";
 import styles from "./blocks.module.css";
+import { publishedBrandName } from "../../shared/published-site";
 
 function sectionClass(tone: string, extra?: string) {
   return [styles.section, styles[`tone_${tone}`], extra].filter(Boolean).join(" ");
@@ -60,7 +61,7 @@ export function HeroBlock(props: PageComponents["Hero"]) {
       </div>
       <div className={styles.heroMotif} aria-hidden="true">
         <span className={styles.orbit} />
-        <span className={styles.amulet}><i /><b>泰聚達</b></span>
+        <span className={styles.amulet}><i /><b>{publishedBrandName}</b></span>
       </div>
     </div>
   </section>;

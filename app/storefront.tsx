@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CART_STORAGE_KEY,
+  MAX_CART_DISTINCT_ITEMS,
   addCartItem,
   changeCartItemQuantity,
   getPurchaseLimit,
@@ -19,9 +21,16 @@ import JournalSection from "./journal-section";
 import ProductArtwork from "./product-artwork";
 import ProductDialog from "./product-dialog";
 import { useModalFocus } from "./use-modal-focus";
+import { publishedSnapshot } from "../shared/published-content";
+import { normalizeSiteAppearance } from "../shared/site-settings";
 
 const filters = ["全部新藏", "佛牌", "神尊", "符印"] as const;
 const productShapes = new Set(["arch", "oval", "round", "statue"]);
+const publishedProductSlugs = new Set(products.map((product) => product.slug));
+const snapshotAppearance = normalizeSiteAppearance(
+  publishedSnapshot.siteSettings.settings,
+  publishedSnapshot.siteSettings.theme,
+);
 
 type OrderConfirmation = {
   id: string;
@@ -77,6 +86,7 @@ export default function Storefront() {
   const [orderApiEnabled, setOrderApiEnabled] = useState(process.env.NEXT_PUBLIC_STORE_MODE === "live");
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null);
   const [notice, setNotice] = useState("");
+  const appearance = snapshotAppearance;
   const cartPanelRef = useRef<HTMLElement>(null);
   const cartCloseRef = useRef<HTMLButtonElement>(null);
   const menuPanelRef = useRef<HTMLElement>(null);
@@ -120,19 +130,10 @@ export default function Storefront() {
             const liveProducts = payload.products
               .map(normalizePublicProduct)
               .filter((product): product is Product => Boolean(product));
-            const liveById = new Map(liveProducts.map((product) => [product.id, product]));
-            nextCatalog = products.map((snapshotProduct) => {
-              const live = liveById.get(snapshotProduct.id);
-              return live
-                ? {
-                    ...snapshotProduct,
-                    price: live.price,
-                    stock: live.stock,
-                    status: live.status,
-                    purchaseLimit: live.purchaseLimit,
-                  }
-                : snapshotProduct;
-            });
+            // A successful live response is authoritative. Reusing snapshot-only
+            // products would keep archived records visible, while overlaying only
+            // snapshot IDs would hide newly-created products.
+            nextCatalog = liveProducts;
             usingLiveCatalog = true;
           }
         }
@@ -144,7 +145,11 @@ export default function Storefront() {
       setCatalog(nextCatalog);
       setCatalogLive(usingLiveCatalog);
       try {
-        setCartItems(parseCartStorage(window.localStorage.getItem(CART_STORAGE_KEY), nextCatalog));
+        setCartItems(parseCartStorage(
+          window.localStorage.getItem(CART_STORAGE_KEY),
+          nextCatalog,
+          { preserveUnknown: !usingLiveCatalog },
+        ));
       } catch {
         setCartItems([]);
       }
@@ -165,11 +170,13 @@ export default function Storefront() {
 
   useEffect(() => {
     const syncCart = (event: StorageEvent) => {
-      if (event.key === CART_STORAGE_KEY) setCartItems(parseCartStorage(event.newValue, catalog));
+      if (event.key === CART_STORAGE_KEY) {
+        setCartItems(parseCartStorage(event.newValue, catalog, { preserveUnknown: !catalogLive }));
+      }
     };
     window.addEventListener("storage", syncCart);
     return () => window.removeEventListener("storage", syncCart);
-  }, [catalog]);
+  }, [catalog, catalogLive]);
 
   useEffect(() => {
     const closeSearchOnEscape = (event: KeyboardEvent) => {
@@ -195,6 +202,12 @@ export default function Storefront() {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
   const checkoutReady = orderApiEnabled && catalogLive;
+  const brandMark = appearance.settings.brandName.slice(0, 1) || "泰";
+  const themeStyle = {
+    "--gold": appearance.theme.accent,
+    "--paper": appearance.theme.surface,
+    "--ink": appearance.theme.ink,
+  } as CSSProperties;
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -212,6 +225,10 @@ export default function Storefront() {
       showNotice(`${product.shortName}目前暫不可訂購`);
       return;
     }
+    if (!existing && cartItems.length >= MAX_CART_DISTINCT_ITEMS) {
+      showNotice(`收藏袋最多可放 ${MAX_CART_DISTINCT_ITEMS} 種商品，請先移除一件再加入`);
+      return;
+    }
     setCartItems((current) => addCartItem(current, product));
     showNotice(existing && existing.quantity >= limit
       ? limit === 1
@@ -222,7 +239,11 @@ export default function Storefront() {
 
   const openCheckout = () => {
     if (!checkoutReady) {
-      showNotice(orderApiEnabled ? "接單資料服務尚未就緒，現在不會收集個人資料。" : "目前公開展示版不收集個人資料；請在泰聚達本機版建立訂單。");
+      showNotice(orderApiEnabled ? "接單資料服務尚未就緒，現在不會收集個人資料。" : `目前公開展示版不收集個人資料；請在${appearance.settings.brandName}本機版建立訂單。`);
+      return;
+    }
+    if (cartItems.length > MAX_CART_DISTINCT_ITEMS) {
+      showNotice(`每張訂單最多 ${MAX_CART_DISTINCT_ITEMS} 種商品，請先調整收藏袋`);
       return;
     }
     setCartOpen(false);
@@ -230,11 +251,11 @@ export default function Storefront() {
   };
 
   return (
-    <main>
-      <div className="announcement"><p>{catalogLive ? "本機營運測試版｜庫存與訂單由本機資料庫管理" : "公開展示版｜商品為建置時快照，暫不收集訂單資料"}</p><span>台灣現貨・來源透明</span></div>
+    <main style={themeStyle}>
+      <div className="announcement"><p>{catalogLive ? "本機營運測試版｜庫存與訂單由本機資料庫管理" : "公開展示版｜商品為建置時快照，暫不收集訂單資料"}</p><span>{appearance.settings.announcement}</span></div>
 
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="泰聚達首頁"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a>
+        <a className="brand" href="#top" aria-label={`${appearance.settings.brandName}首頁`}><span className="brand-mark">{brandMark}</span><span><b>{appearance.settings.brandName}</b><small>{appearance.settings.brandSubtitle}</small></span></a>
         <nav className="desktop-nav" aria-label="主要導覽"><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a><a href="#archive">來源履歷</a><a href="#journal">收藏誌</a></nav>
         <div className="header-actions">
           <button className="icon-button desktop-search" onClick={() => setSearchOpen((value) => !value)} aria-label="搜尋商品" aria-expanded={searchOpen}>⌕</button>
@@ -260,7 +281,7 @@ export default function Storefront() {
           const canOrder = cartReady && product.status === "active" && product.stock > 0;
           return <article className="product-card" key={product.id}>
             <button className="product-visual" onClick={() => setSelected(product)} aria-label={`快速查看${product.name}`}><span className="product-badge">{product.badge}</span><ProductArtwork product={product} /><span className="quick-view">快速查看藏品履歷</span></button>
-            <div className="product-info"><p>{product.origin} · {product.buddhistYear}</p><h3><Link href={`/products/${product.slug}/`}>{product.name}</Link></h3><small className={canOrder ? "stock-state" : "stock-state stock-state--empty"}>{canOrder ? `現貨 ${product.stock} 件` : "目前不可訂購"}</small><div><b>{formatPrice(product.price)}</b><button className="add-button" onClick={() => addToCart(product)} aria-label={`將${product.shortName}加入收藏袋`} disabled={!canOrder}>＋</button></div></div>
+            <div className="product-info"><p>{product.origin} · {product.buddhistYear}</p><h3>{publishedProductSlugs.has(product.slug) ? <Link href={`/products/${product.slug}/`}>{product.name}</Link> : product.name}</h3><small className={canOrder ? "stock-state" : "stock-state stock-state--empty"}>{canOrder ? `現貨 ${product.stock} 件` : "目前不可訂購"}</small><div><b>{formatPrice(product.price)}</b><button className="add-button" onClick={() => addToCart(product)} aria-label={`將${product.shortName}加入收藏袋`} disabled={!canOrder}>＋</button></div></div>
           </article>;
         })}</div>
         {visibleProducts.length === 0 && <div className="empty-products"><p>{catalogLive ? "目前尚無符合條件的可訂商品。" : "目前沒有符合的展示商品。"}</p><button onClick={() => { setQuery(""); setActiveFilter("全部新藏"); }}>清除搜尋</button></div>}
@@ -275,7 +296,7 @@ export default function Storefront() {
 
       <section className="newsletter"><div><p className="eyebrow">ARCHIVE LETTER</p><h2>新藏與文化筆記，<br />一個月寄一封就好。</h2></div><form onSubmit={(event) => { event.preventDefault(); showNotice("電子報服務尚未啟用，不會儲存你的信箱。"); }}><label htmlFor="email">電子信箱</label><div><input id="email" type="email" required placeholder="your@email.com" /><button aria-label="訂閱電子報">→</button></div><small>訂閱功能尚未啟用，此表單不會儲存或送出個人資料。</small></form></section>
 
-      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">泰</span><span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><Link href="/about/">關於泰聚達</Link><Link href="/articles/">收藏誌</Link><a href="#archive">來源履歷</a></div><div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/privacy/">隱私說明</Link><Link href="/service/contact/">聯絡我們</Link></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 泰聚達</span><span>展示商品與來源資料正式上架前仍須逐件覆核。</span></div></footer>
+      <footer><div className="footer-brand"><a className="brand brand--footer" href="#top"><span className="brand-mark">{brandMark}</span><span><b>{appearance.settings.brandName}</b><small>{appearance.settings.brandSubtitle}</small></span></a><p>來源可讀，收藏可久。<br />從文化與工藝開始認識泰國佛牌。</p></div><div className="footer-links"><div><b>典藏</b><a href="#new">本週新藏</a><a href="#collections">佛牌與聖物</a><a href="#themes">依祈願主題</a></div><div><b>認識</b><Link href="/about/">{`關於${appearance.settings.brandName}`}</Link><Link href="/articles/">收藏誌</Link><a href="#archive">來源履歷</a></div><div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/privacy/">隱私說明</Link><Link href="/service/contact/">聯絡我們</Link></div></div><div className="footer-bottom" id="footer-note"><span>© 2026 {appearance.settings.brandName}</span><span>{appearance.settings.footerNote}</span></div></footer>
 
       <aside ref={menuPanelRef} className={`mobile-menu ${menuOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="網站選單" aria-hidden={!menuOpen} inert={!menuOpen} tabIndex={-1}><div className="drawer-head"><span>選單</span><button ref={menuCloseRef} className="icon-button" onClick={() => setMenuOpen(false)} aria-label="關閉選單">×</button></div><nav>{[["本週新藏", "#new"], ["佛牌與聖物", "#collections"], ["依祈願主題", "#themes"], ["來源履歷", "#archive"], ["收藏誌", "#journal"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}<span>→</span></a>)}</nav></aside>
 

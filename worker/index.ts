@@ -1,9 +1,11 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleAdminSystemApi } from "./admin-system-api";
 import { handleContentApi } from "./content-api";
 import { handleSiteApi } from "./site-api";
-import { handleStoreApi } from "./store-api";
+import { expireStaleReservations, handleStoreApi } from "./store-api";
+import { ensureDatabase } from "./database";
 
 interface Env {
   ASSETS: Fetcher;
@@ -33,6 +35,9 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    const adminSystemResponse = await handleAdminSystemApi(request, env);
+    if (adminSystemResponse) return adminSystemResponse;
+
     const contentResponse = await handleContentApi(request, env);
     if (contentResponse) return contentResponse;
 
@@ -54,6 +59,11 @@ const worker = {
     }
 
     return handler.fetch(request, env, ctx);
+  },
+  async scheduled(_controller: unknown, env: Env, ctx: ExecutionContext) {
+    const db = env.DB;
+    if (!db) return;
+    ctx.waitUntil(ensureDatabase(db).then(() => expireStaleReservations(db)));
   },
 };
 

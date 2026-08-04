@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Storefront from "./storefront";
 import { products } from "./data";
+import { publishedBrandName } from "../shared/published-site";
 
 export const metadata: Metadata = {
   title: "泰國佛牌與聖物收藏",
-  description: "泰聚達以來源紀錄、實物影像與文化導讀為核心，精選泰國佛牌與聖物。",
+  description: `${publishedBrandName}以來源紀錄、實物影像與文化導讀為核心，精選泰國佛牌與聖物。`,
   robots: {
     index: true,
     follow: true,
@@ -22,7 +23,7 @@ export default function Home() {
       {
         "@type": "OnlineStore",
         "@id": new URL("#store", siteUrl).toString(),
-        name: "泰聚達",
+        name: publishedBrandName,
         description: "以來源紀錄與文化導讀為核心的泰國佛牌與聖物選物。",
         areaServed: "TW",
       },

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import AdminShell from "./admin-shell";
+import { publishedBrandName } from "../../shared/published-site";
+import AdminDashboard from "./admin-dashboard";
 
 export const metadata: Metadata = {
-  title: "內容管理後台｜泰聚達",
-  description: "泰聚達文章、SEO 與多站內容管理後台。",
+  title: `營運總覽｜${publishedBrandName}`,
+  description: `${publishedBrandName}內容、商品、訂單、庫存與網站營運總覽。`,
   robots: { index: false, follow: false },
 };
 
 export default function AdminPage() {
-  return <AdminShell />;
+  return <AdminDashboard />;
 }

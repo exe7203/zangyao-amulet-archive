@@ -15,6 +15,7 @@ import {
   findSite,
   type DatabaseEnv,
 } from "./database";
+import { normalizeSiteAppearance } from "../shared/site-settings";
 
 const PAGE_STATUSES = new Set(["draft", "published", "archived"]);
 const PAGE_BLOCK_TYPES = new Set([
@@ -174,23 +175,37 @@ function parsePageRow(row: Record<string, unknown>) {
   };
 }
 
+function pageIdFromRevisionsPath(pathname: string) {
+  const prefix = "/api/admin/pages/";
+  const suffix = "/revisions";
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return "";
+  return cleanText(decodeURIComponent(pathname.slice(prefix.length, -suffix.length)), 100);
+}
+
+function parsePageRevisionRow(row: Record<string, unknown>) {
+  return {
+    revisionId: String(row.id || ""),
+    pageId: String(row.page_id || ""),
+    slug: String(row.slug || ""),
+    title: String(row.title || ""),
+    status: String(row.status || "draft"),
+    version: Number(row.version || 1),
+    savedBy: String(row.saved_by || ""),
+    createdAt: String(row.created_at || ""),
+  };
+}
+
 function parseSiteSettingsRow(row: Record<string, unknown> | null, site: Record<string, unknown>) {
+  const appearance = normalizeSiteAppearance(
+    parseJson(row?.settings_json, {}),
+    parseJson(row?.theme_json, {}),
+  );
   return {
     siteId: String(site.id || ""),
     siteCode: String(site.code || DEFAULT_SITE_CODE),
     siteName: String(site.name || "泰聚達"),
-    settings: parseJson(row?.settings_json, {
-      announcement: "台灣現貨・來源透明",
-      brandName: "泰聚達",
-      brandSubtitle: "THAI AMULET ARCHIVE",
-      footerNote: "展示商品與來源資料正式上架前仍須逐件覆核。",
-    }),
-    theme: parseJson(row?.theme_json, {
-      preset: "archive",
-      accent: "#b89048",
-      surface: "#f4efe4",
-      ink: "#171713",
-    }),
+    settings: appearance.settings,
+    theme: appearance.theme,
     version: Number(row?.version || 1),
     updatedBy: String(row?.updated_by || "system"),
     updatedAt: String(row?.updated_at || ""),
@@ -355,6 +370,91 @@ async function archivePage(request: Request, db: D1Database, pageId: string, sav
   return json({ ok: true });
 }
 
+async function listPageRevisions(request: Request, pathname: string, db: D1Database) {
+  const pageId = pageIdFromRevisionsPath(pathname);
+  if (!pageId) return json({ error: "缺少頁面 ID" }, { status: 400 });
+  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const page = await db.prepare("SELECT id, version FROM site_pages WHERE id = ? AND site_id = ? LIMIT 1")
+    .bind(pageId, site.id)
+    .first<Record<string, unknown>>();
+  if (!page) return json({ error: "找不到頁面" }, { status: 404 });
+  const rows = await db.prepare(`SELECT * FROM site_page_revisions
+    WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 50`)
+    .bind(pageId)
+    .all<Record<string, unknown>>();
+  return json({ pageId, version: Number(page.version || 1), revisions: rows.results.map(parsePageRevisionRow) });
+}
+
+async function restorePageRevision(
+  request: Request,
+  pathname: string,
+  db: D1Database,
+  savedBy: string,
+) {
+  const pageId = pageIdFromRevisionsPath(pathname);
+  if (!pageId) return json({ error: "缺少頁面 ID" }, { status: 400 });
+  const parsed = await readJsonObject(request, 16_000);
+  if (parsed.response) return parsed.response;
+  const revisionId = cleanText(parsed.value.revisionId, 100);
+  const expectedVersion = Number(parsed.value.version);
+  if (!revisionId || !Number.isSafeInteger(expectedVersion)) {
+    return json({ error: "請提供版本 ID 與目前頁面版本" }, { status: 400 });
+  }
+  const siteCode = cleanSlug(parsed.value.siteCode || new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const [page, revision] = await Promise.all([
+    db.prepare("SELECT * FROM site_pages WHERE id = ? AND site_id = ? LIMIT 1")
+      .bind(pageId, site.id).first<Record<string, unknown>>(),
+    db.prepare(`SELECT r.* FROM site_page_revisions r
+      JOIN site_pages p ON p.id = r.page_id
+      WHERE r.id = ? AND r.page_id = ? AND p.site_id = ? LIMIT 1`)
+      .bind(revisionId, pageId, site.id).first<Record<string, unknown>>(),
+  ]);
+  if (!page || !revision) return json({ error: "找不到頁面版本" }, { status: 404 });
+  if (Number(page.version || 1) !== expectedVersion) {
+    return json({ error: "頁面已被其他操作更新，請重新整理後再還原" }, { status: 409 });
+  }
+
+  const nextVersion = expectedVersion + 1;
+  const now = new Date().toISOString();
+  let results;
+  try {
+    results = await db.batch([
+      db.prepare(`UPDATE site_pages SET slug = ?, title = ?, data_json = ?, status = 'draft',
+        seo_title = ?, seo_description = ?, canonical_url = ?, og_image_url = ?, noindex = ?,
+        version = ?, updated_at = ? WHERE id = ? AND site_id = ? AND version = ?`)
+        .bind(
+          revision.slug, revision.title, revision.data_json,
+          revision.seo_title, revision.seo_description, revision.canonical_url,
+          revision.og_image_url, revision.noindex, nextVersion, now,
+          pageId, site.id, expectedVersion,
+        ),
+      db.prepare(`INSERT INTO site_page_revisions (
+        id, page_id, slug, title, data_json, status, seo_title, seo_description,
+        canonical_url, og_image_url, noindex, version, saved_by, created_at
+      ) SELECT ?, id, slug, title, data_json, 'draft', seo_title, seo_description,
+        canonical_url, og_image_url, noindex, ?, ?, ?
+        FROM site_pages WHERE id = ? AND site_id = ? AND version = ? AND updated_at = ?`)
+        .bind(crypto.randomUUID(), nextVersion, savedBy, now, pageId, site.id, nextVersion, now),
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("site_page_revisions.page_id")) {
+      return json({ error: "頁面已被其他操作更新，請重新整理後再還原" }, { status: 409 });
+    }
+    throw error;
+  }
+  if (Number(results[0]?.meta.changes || 0) !== 1 || Number(results[1]?.meta.changes || 0) !== 1) {
+    return json({ error: "頁面已被其他操作更新，請重新整理後再還原" }, { status: 409 });
+  }
+  const row = await db.prepare("SELECT * FROM site_pages WHERE id = ? AND site_id = ? LIMIT 1")
+    .bind(pageId, site.id)
+    .first<Record<string, unknown>>();
+  return json({ page: row ? parsePageRow(row) : null, restoredRevisionId: revisionId });
+}
+
 async function getPublicPage(request: Request, db: D1Database) {
   const url = new URL(request.url);
   const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
@@ -391,8 +491,9 @@ async function saveSiteSettings(request: Request, db: D1Database, savedBy: strin
       !validatePageValue(parsed.value.settings, 0) || !validatePageValue(parsed.value.theme, 0)) {
     return json({ error: "全站設定格式不正確" }, { status: 400 });
   }
-  const settingsJson = JSON.stringify(parsed.value.settings);
-  const themeJson = JSON.stringify(parsed.value.theme);
+  const appearance = normalizeSiteAppearance(parsed.value.settings, parsed.value.theme);
+  const settingsJson = JSON.stringify(appearance.settings);
+  const themeJson = JSON.stringify(appearance.theme);
   if (settingsJson.length + themeJson.length > 100_000) {
     return json({ error: "全站設定內容過大" }, { status: 413 });
   }
@@ -523,6 +624,25 @@ async function exportPublishedSite(request: Request, db: D1Database) {
   });
 }
 
+async function getPublicSiteSettings(request: Request, db: D1Database) {
+  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return publicJson({ error: "找不到指定站台" }, { status: 404 });
+  const row = await db.prepare("SELECT * FROM site_settings WHERE site_id = ? LIMIT 1")
+    .bind(site.id)
+    .first<Record<string, unknown>>();
+  const parsed = parseSiteSettingsRow(row, site);
+  return publicJson({
+    site,
+    siteSettings: {
+      settings: parsed.settings,
+      theme: parsed.theme,
+      version: parsed.version,
+      updatedAt: parsed.updatedAt,
+    },
+  });
+}
+
 function adminDenied(request: Request) {
   const hasAuthenticatedEmail = Boolean(request.headers.get("oai-authenticated-user-email"));
   return hasAuthenticatedEmail
@@ -535,12 +655,15 @@ export async function handleSiteApi(request: Request, env: DatabaseEnv) {
   const isAdminPages = url.pathname === "/api/admin/pages" || url.pathname.startsWith("/api/admin/pages/");
   const isAdminSettings = url.pathname === "/api/admin/site-settings";
   const isAdminExport = url.pathname === "/api/admin/site-export";
+  const isPublicSettings = url.pathname === "/api/content/site-settings";
   const isPublicPage = url.pathname.startsWith("/api/content/pages/");
-  if (!isAdminPages && !isAdminSettings && !isAdminExport && !isPublicPage) return null;
+  if (!isAdminPages && !isAdminSettings && !isAdminExport && !isPublicSettings && !isPublicPage) return null;
   if (!env.DB) return json({ error: "網站資料庫尚未連線" }, { status: 503 });
 
   try {
     await ensureDatabase(env.DB);
+    if (isPublicSettings && request.method === "GET") return getPublicSiteSettings(request, env.DB);
+    if (isPublicSettings) return json({ error: "不支援的操作" }, { status: 405, headers: { allow: "GET" } });
     if (isPublicPage && request.method === "GET") return getPublicPage(request, env.DB);
     if (isPublicPage) return json({ error: "不支援的操作" }, { status: 405, headers: { allow: "GET" } });
 
@@ -551,6 +674,12 @@ export async function handleSiteApi(request: Request, env: DatabaseEnv) {
 
     if (url.pathname === "/api/admin/pages" && request.method === "GET") return listAdminPages(request, env.DB);
     if (url.pathname === "/api/admin/pages" && request.method === "POST") return savePage(request, env.DB, identity);
+    if (url.pathname.endsWith("/revisions") && request.method === "GET") {
+      return listPageRevisions(request, url.pathname, env.DB);
+    }
+    if (url.pathname.endsWith("/revisions") && request.method === "POST") {
+      return restorePageRevision(request, url.pathname, env.DB, identity);
+    }
     if (url.pathname.startsWith("/api/admin/pages/") && request.method === "DELETE") {
       return archivePage(
         request,

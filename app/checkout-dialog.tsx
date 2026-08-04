@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { publishedBrandName } from "../shared/published-site";
 import type { CartLine } from "./cart";
 import { formatPrice } from "./data";
 
@@ -139,7 +140,7 @@ export default function CheckoutDialog({
       };
       if (!response.ok || !payload.order) {
         if (response.status === 404 || response.status === 503) {
-          throw new Error("目前開啟的是未連接接單服務的展示版，請改用泰聚達本機版送出訂單。");
+          throw new Error(`目前開啟的是未連接接單服務的展示版，請改用${publishedBrandName}本機版送出訂單。`);
         }
         throw new Error(payload.error || "訂單送出失敗，請稍後再試。");
       }

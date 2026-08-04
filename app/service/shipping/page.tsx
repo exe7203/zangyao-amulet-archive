@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import InfoPage from "../../info-page";
 import { infoPageMetadata } from "../../site-metadata";
+import { publishedBrandName } from "../../../shared/published-site";
 
 export const metadata: Metadata = infoPageMetadata(
   "配送與付款",
-  "泰聚達商品保留、付款確認與台灣配送流程說明。",
+  `${publishedBrandName}商品保留、付款確認與台灣配送流程說明。`,
   "service/shipping/",
 );
 

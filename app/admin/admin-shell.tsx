@@ -5,6 +5,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { publishedBrandName } from "../../shared/published-site";
 import {
   Archive,
   ExternalLink,
@@ -16,10 +17,10 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import NextLink from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import ArticleEditorToolbar from "./article-editor-toolbar";
+import AdminNavigation from "./admin-navigation";
 import styles from "./admin.module.css";
 
 type ArticleDocument = JSONContent;
@@ -471,14 +472,9 @@ export default function AdminShell() {
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <span>泰</span>
-          <div><b>泰聚達</b><small>內容管理&nbsp; / &nbsp;文章</small></div>
+          <div><b>{publishedBrandName}</b><small>內容管理&nbsp; / &nbsp;文章</small></div>
         </div>
-        <nav className={styles.topbarNav} aria-label="後台功能">
-          <NextLink className={styles.navActive} href="/admin/">文章</NextLink>
-          <NextLink href="/admin/site/">網站</NextLink>
-          <NextLink href="/admin/products/">商品</NextLink>
-          <NextLink href="/admin/orders/">訂單</NextLink>
-        </nav>
+        <AdminNavigation active="articles" className={styles.topbarNav} activeClassName={styles.navActive} />
         <div className={styles.topbarActions}>
           <a href="/" target="_blank" rel="noreferrer"><ExternalLink size={15} /><span>查看前台</span></a>
           <button

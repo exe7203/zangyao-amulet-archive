@@ -2,16 +2,27 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Miniflare } from "miniflare";
 import {
+  MAX_ORDER_DISTINCT_ITEMS,
   ORDER_CONSENT_VERSION,
   RESERVATION_HOLD_HOURS,
   canonicalOrderFingerprint,
   expireStaleReservations,
   handleStoreApi,
   idempotencyReplayDecision,
+  normalizeCartItems,
   orderRequestFingerprint,
   paymentTransitionAllowed,
   reservationDeadline,
 } from "../worker/store-api.ts";
+
+test("order size stays within the free D1 invocation query budget", () => {
+  const accepted = Array.from({ length: MAX_ORDER_DISTINCT_ITEMS }, (_, index) => ({
+    productId: `product-${index}`,
+    quantity: 1,
+  }));
+  assert.equal(normalizeCartItems(accepted).items.length, MAX_ORDER_DISTINCT_ITEMS);
+  assert.match(normalizeCartItems([...accepted, { productId: "too-many", quantity: 1 }]).error, /1 至 10 筆/);
+});
 
 let miniflare;
 let db;
@@ -137,7 +148,7 @@ before(async () => {
     "CREATE INDEX order_events_order_created_idx ON order_events (order_id, created_at)",
   ]);
   await db.batch([
-    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '6')"),
+    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '7')"),
     db.prepare("INSERT INTO sites (id, code, name) VALUES (?, 'taijuda', '泰聚達')").bind(siteId),
     db.prepare("INSERT INTO categories (id, site_id, slug, name, sort_order, status) VALUES (?, ?, 'amulet', '佛牌', 1, 'active')").bind(categoryId, siteId),
   ]);
@@ -239,6 +250,7 @@ test("admin product writes persist image SEO fields and advance product and inve
     ...savedFields,
     price: 2880,
     stock: inventory.onHand,
+    productVersion: savedFields.version,
     inventoryVersion: inventory.version,
   }), { DB: db });
   assert.equal(updated.status, 200);
@@ -247,6 +259,48 @@ test("admin product writes persist image SEO fields and advance product and inve
   assert.equal(updatedPayload.product.version, 2);
   assert.equal(updatedPayload.product.inventory.version, 1);
   assert.equal(updatedPayload.product.seoReady, true);
+
+  const staleArchive = await handleStoreApi(new Request(
+    `http://localhost/api/admin/products/${encodeURIComponent(updatedPayload.product.id)}?site=taijuda&version=1`,
+    { method: "DELETE", headers: { accept: "application/json", origin: "http://localhost" } },
+  ), { DB: db });
+  assert.equal(staleArchive.status, 409);
+
+  const archived = await handleStoreApi(new Request(
+    `http://localhost/api/admin/products/${encodeURIComponent(updatedPayload.product.id)}?site=taijuda&version=2`,
+    { method: "DELETE", headers: { accept: "application/json", origin: "http://localhost" } },
+  ), { DB: db });
+  assert.equal(archived.status, 200);
+  const archivedPayload = await archived.json();
+  assert.equal(archivedPayload.version, 3);
+
+  const {
+    inventory: staleInventory,
+    createdAt: staleCreatedAt,
+    updatedAt: staleUpdatedAt,
+    ...staleProductFields
+  } = updatedPayload.product;
+  assert.ok(staleCreatedAt);
+  assert.ok(staleUpdatedAt);
+  const staleSaveAfterArchive = await handleStoreApi(adminProductRequest({
+    ...staleProductFields,
+    status: "active",
+    stock: staleInventory.onHand,
+    productVersion: staleProductFields.version,
+    inventoryVersion: staleInventory.version,
+  }), { DB: db });
+  assert.equal(staleSaveAfterArchive.status, 409);
+
+  const productAfterStaleSave = await db.prepare(
+    "SELECT status, version FROM products WHERE id = ? LIMIT 1",
+  ).bind(updatedPayload.product.id).first();
+  const inventoryAfterStaleSave = await db.prepare(
+    "SELECT on_hand, version FROM inventory WHERE product_id = ? LIMIT 1",
+  ).bind(updatedPayload.product.id).first();
+  assert.equal(productAfterStaleSave.status, "archived");
+  assert.equal(productAfterStaleSave.version, 3);
+  assert.equal(inventoryAfterStaleSave.on_hand, staleInventory.onHand);
+  assert.equal(inventoryAfterStaleSave.version, staleInventory.version);
 });
 
 test("order creation persists a deadline, replays the same request, and rejects key collisions", async () => {

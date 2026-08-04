@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
 import type { Product } from "../data";
 import { formatPrice } from "../data";
 import styles from "./store-manager.module.css";
+import AdminNavigation from "./admin-navigation";
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
@@ -81,8 +82,8 @@ function statusLabel(status: string) {
 
 function AdminHeader({ active }: { active: "products" | "orders" }) {
   return <header className={styles.topbar}>
-    <div className={styles.brand}><span>泰</span><div><b>泰聚達營運中樞</b><small>LOCAL COMMERCE CORE</small></div></div>
-    <nav aria-label="後台功能"><Link href="/admin/">文章</Link><Link href="/admin/site/">網站編輯</Link><Link className={active === "products" ? styles.active : ""} href="/admin/products/">商品與庫存</Link><Link className={active === "orders" ? styles.active : ""} href="/admin/orders/">訂單</Link></nav>
+    <div className={styles.brand}><span>{publishedBrandMark}</span><div><b>{publishedBrandName}營運中樞</b><small>LOCAL COMMERCE CORE</small></div></div>
+    <AdminNavigation active={active} activeClassName={styles.active} />
     <a className={styles.frontLink} href="/" target="_blank" rel="noreferrer">查看前台 ↗</a>
   </header>;
 }
@@ -155,7 +156,7 @@ function ProductManager() {
     const savingRevision = editRevision.current;
     try {
       const { inventory, ...productFields } = draft;
-      const response = await fetch(`${API_BASE}/api/admin/products`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...productFields, inventoryVersion: inventory?.version, siteCode: SITE_CODE }) });
+      const response = await fetch(`${API_BASE}/api/admin/products`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...productFields, productVersion: draft.version, inventoryVersion: inventory?.version, siteCode: SITE_CODE }) });
       const payload = await response.json().catch(() => ({})) as { product?: AdminProduct; error?: string };
       if (!response.ok || !payload.product) throw new Error(payload.error || "商品儲存失敗");
       const saved = payload.product as AdminProduct;
@@ -169,6 +170,7 @@ function ProductManager() {
         setDraft((current) => ({
           ...current,
           id: normalizedSaved.id,
+          version: normalizedSaved.version,
           inventory: normalizedSaved.inventory,
         }));
         setNotice("已儲存送出時的版本；你後續輸入的內容仍保留，請再次儲存。");
@@ -180,7 +182,7 @@ function ProductManager() {
     if (!draft.id || !window.confirm(`確定封存「${draft.name}」嗎？`)) return;
     setSaving(true); setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(draft.id)}?site=${SITE_CODE}`, { method: "DELETE", headers: { accept: "application/json" } });
+      const response = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(draft.id)}?site=${SITE_CODE}&version=${draft.version}`, { method: "DELETE", headers: { accept: "application/json" } });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "商品封存失敗");
       setNotice("商品已封存，不再顯示於前台");

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Puck } from "@puckeditor/core";
+import { publishedBrandMark, publishedBrandName } from "../../../shared/published-site";
 import {
   editorPreviewMetadata,
   pageBuilderConfig,
@@ -10,6 +10,7 @@ import {
 import {
   createEmptyPageRecord,
   type PageData,
+  type PageRenderMetadata,
   type PageRecord,
   type PageStatus,
 } from "../../site-builder/types";
@@ -20,9 +21,24 @@ import {
   validatePageData,
 } from "../../site-builder/validation";
 import styles from "./site-editor.module.css";
+import AdminNavigation from "../admin-navigation";
+import {
+  DEFAULT_SITE_APPEARANCE,
+  normalizeSiteAppearance,
+  type SiteAppearance,
+} from "../../../shared/site-settings";
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
+
+type PageRevision = {
+  revisionId: string;
+  pageId: string;
+  title: string;
+  status: PageStatus;
+  version: number;
+  createdAt: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -102,6 +118,15 @@ export default function SiteEditor() {
   const [notice, setNotice] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
   const [showSeo, setShowSeo] = useState(true);
+  const [showSiteSettings, setShowSiteSettings] = useState(false);
+  const [siteAppearance, setSiteAppearance] = useState<SiteAppearance>(DEFAULT_SITE_APPEARANCE);
+  const [siteSettingsVersion, setSiteSettingsVersion] = useState(1);
+  const [siteSettingsDirty, setSiteSettingsDirty] = useState(false);
+  const [siteSettingsSaving, setSiteSettingsSaving] = useState(false);
+  const [previewMetadata, setPreviewMetadata] = useState<PageRenderMetadata>(editorPreviewMetadata);
+  const [showHistory, setShowHistory] = useState(false);
+  const [revisions, setRevisions] = useState<PageRevision[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const editRevision = useRef(0);
   const initialLoadStarted = useRef(false);
 
@@ -114,6 +139,7 @@ export default function SiteEditor() {
   const installDraft = useCallback((page: PageRecord) => {
     setDraft(page);
     setEditorKey((value) => value + 1);
+    setRevisions([]);
     setDirty(false);
     setError("");
     setNotice("");
@@ -153,21 +179,157 @@ export default function SiteEditor() {
     }
   }, [installDraft]);
 
+  const loadPageRevisions = useCallback(async (pageId: string) => {
+    setRevisionsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/pages/${encodeURIComponent(pageId)}/revisions?site=${SITE_CODE}`, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({})) as { revisions?: PageRevision[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "頁面版本讀取失敗");
+      setRevisions(Array.isArray(payload.revisions) ? payload.revisions : []);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "頁面版本讀取失敗");
+      setRevisions([]);
+    } finally {
+      setRevisionsLoading(false);
+    }
+  }, []);
+
+  const loadSiteSettings = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/site-settings?site=${SITE_CODE}`, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        siteSettings?: { settings?: unknown; theme?: unknown; version?: number };
+        error?: string;
+      };
+      if (response.status === 401) setAuthRequired(true);
+      if (!response.ok || !payload.siteSettings) throw new Error(payload.error || "全站設定讀取失敗");
+      setSiteAppearance(normalizeSiteAppearance(payload.siteSettings.settings, payload.siteSettings.theme));
+      setSiteSettingsVersion(Number.isSafeInteger(payload.siteSettings.version) ? Number(payload.siteSettings.version) : 1);
+      setSiteSettingsDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "全站設定讀取失敗");
+    }
+  }, []);
+
+  const loadPreviewMetadata = useCallback(async () => {
+    try {
+      const [productsResponse, articlesResponse] = await Promise.all([
+        fetch(`${API_BASE}/api/store/products?site=${SITE_CODE}`, { headers: { accept: "application/json" }, cache: "no-store" }),
+        fetch(`${API_BASE}/api/content/articles?site=${SITE_CODE}`, { headers: { accept: "application/json" }, cache: "no-store" }),
+      ]);
+      if (!productsResponse.ok || !articlesResponse.ok) return;
+      const productsPayload = await productsResponse.json() as { products?: unknown[] };
+      const articlesPayload = await articlesResponse.json() as { articles?: unknown[] };
+      const previewProducts = (productsPayload.products || []).flatMap((value) => {
+        if (!isRecord(value) || typeof value.id !== "string" || typeof value.slug !== "string" || typeof value.name !== "string") return [];
+        return [{
+          id: value.id,
+          slug: value.slug,
+          name: value.name,
+          category: text(value.category),
+          origin: text(value.origin),
+          material: text(value.material),
+          price: Number(value.price || 0),
+          stock: Number(value.stock || 0),
+          status: text(value.status),
+        }];
+      });
+      const previewArticles = (articlesPayload.articles || []).flatMap((value) => {
+        if (!isRecord(value) || typeof value.id !== "string" || typeof value.slug !== "string" || typeof value.title !== "string") return [];
+        return [{
+          id: value.id,
+          slug: value.slug,
+          title: value.title,
+          excerpt: text(value.excerpt),
+          tag: text(value.tag),
+          status: text(value.status),
+        }];
+      });
+      setPreviewMetadata({ preview: true, products: previewProducts, articles: previewArticles });
+    } catch {
+      // Keep the clearly-labelled sample preview when local public APIs are unavailable.
+    }
+  }, []);
+
   useEffect(() => {
     if (initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void loadPages();
-  }, [loadPages]);
+    void Promise.all([loadPages(), loadSiteSettings(), loadPreviewMetadata()]);
+  }, [loadPages, loadPreviewMetadata, loadSiteSettings]);
+
+  useEffect(() => {
+    if (!draft.id) return;
+    const pageId = draft.id;
+    const timer = window.setTimeout(() => void loadPageRevisions(pageId), 0);
+    return () => window.clearTimeout(timer);
+  }, [draft.id, loadPageRevisions]);
 
   useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
+      if (!dirty && !siteSettingsDirty) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [dirty]);
+  }, [dirty, siteSettingsDirty]);
+
+  const updateIdentitySetting = (key: keyof SiteAppearance["settings"], value: string) => {
+    setSiteAppearance((current) => ({
+      ...current,
+      settings: { ...current.settings, [key]: value },
+    }));
+    setSiteSettingsDirty(true);
+    setNotice("");
+  };
+
+  const updateThemeSetting = (key: keyof SiteAppearance["theme"], value: string) => {
+    setSiteAppearance((current) => ({
+      ...current,
+      theme: { ...current.theme, [key]: value },
+    }));
+    setSiteSettingsDirty(true);
+    setNotice("");
+  };
+
+  const saveSiteSettings = async () => {
+    const normalized = normalizeSiteAppearance(siteAppearance.settings, siteAppearance.theme);
+    setSiteSettingsSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/site-settings`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          siteCode: SITE_CODE,
+          version: siteSettingsVersion,
+          settings: normalized.settings,
+          theme: normalized.theme,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        siteSettings?: { settings?: unknown; theme?: unknown; version?: number };
+        error?: string;
+      };
+      if (response.status === 401) setAuthRequired(true);
+      if (!response.ok || !payload.siteSettings) throw new Error(payload.error || "全站設定儲存失敗");
+      setSiteAppearance(normalizeSiteAppearance(payload.siteSettings.settings, payload.siteSettings.theme));
+      setSiteSettingsVersion(Number(payload.siteSettings.version || siteSettingsVersion + 1));
+      setSiteSettingsDirty(false);
+      setNotice("全站品牌與配色已儲存為待發布設定；編輯器預覽已更新。同步建置後才會套用前台與 SEO，避免兩者不一致。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "全站設定儲存失敗");
+    } finally {
+      setSiteSettingsSaving(false);
+    }
+  };
 
   const updateDraft = <Key extends keyof PageRecord>(key: Key, value: PageRecord[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -223,8 +385,37 @@ export default function SiteEditor() {
       setNotice(status === "published"
         ? "頁面已發布至內容資料庫；公開 SEO 版仍須同步快照並重新建置。"
         : "草稿已儲存。");
+      await loadPageRevisions(saved.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "頁面儲存失敗");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restoreRevision = async (revision: PageRevision) => {
+    if (!draft.id || saving) return;
+    if (dirty && !window.confirm("目前頁面有未儲存變更。還原版本會以所選版本建立一份新草稿，確定繼續嗎？")) return;
+    if (!window.confirm(`確定要把頁面還原到第 ${revision.version} 版嗎？原有版本紀錄不會被刪除。`)) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/pages/${encodeURIComponent(draft.id)}/revisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ siteCode: SITE_CODE, revisionId: revision.revisionId, version: draft.version }),
+      });
+      const payload = await response.json().catch(() => ({})) as { page?: unknown; error?: string };
+      if (!response.ok) throw new Error(payload.error || "頁面版本還原失敗");
+      const restored = normalizePage(payload.page);
+      if (!restored) throw new Error("伺服器沒有回傳有效的頁面資料");
+      installDraft(restored);
+      setPages((current) => [restored, ...current.filter((page) => page.id !== restored.id)]);
+      setNotice(`已還原第 ${revision.version} 版並建立新的草稿版本；尚未重新發布。`);
+      await loadPageRevisions(restored.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "頁面版本還原失敗");
     } finally {
       setSaving(false);
     }
@@ -267,8 +458,8 @@ export default function SiteEditor() {
 
   return <main className={styles.shell}>
     <header className={styles.topbar}>
-      <div className={styles.brand}><span>泰</span><div><b>泰聚達網站編輯</b><small>STRUCTURED PAGE BUILDER</small></div></div>
-      <nav aria-label="後台功能"><Link href="/admin/">文章</Link><Link href="/admin/products/">商品與庫存</Link><Link href="/admin/orders/">訂單</Link><Link className={styles.active} href="/admin/site/">網站編輯</Link></nav>
+      <div className={styles.brand}><span>{publishedBrandMark}</span><div><b>{publishedBrandName}網站編輯</b><small>STRUCTURED PAGE BUILDER</small></div></div>
+      <AdminNavigation active="site" activeClassName={styles.active} />
       <a className={styles.frontLink} href={previewHref} target="_blank" rel="noreferrer">查看公開頁 ↗</a>
     </header>
 
@@ -290,6 +481,8 @@ export default function SiteEditor() {
         <div className={styles.editorHeader}>
           <div><span className={`${styles.statusPill} ${styles[`status_${draft.status}`]}`}>{statusLabel(draft.status)}</span><span className={styles.dirtyState}>{dirty ? "尚有未儲存變更" : draft.id ? "內容已儲存" : "新頁面"}</span></div>
           <div className={styles.actions}>
+            <button type="button" onClick={() => setShowSiteSettings((value) => !value)}>{showSiteSettings ? "收合全站" : "全站設定"}</button>
+            <button type="button" onClick={() => setShowHistory((value) => !value)} disabled={!draft.id}>{showHistory ? "收合版本" : "版本紀錄"}</button>
             <button type="button" onClick={() => setShowSeo((value) => !value)}>{showSeo ? "收合設定" : "展開設定"}</button>
             {draft.id && <button type="button" className={styles.archiveButton} onClick={() => void archiveCurrent()} disabled={saving}>封存</button>}
             <button type="button" onClick={() => void save("draft")} disabled={saving}>{saving ? "儲存中…" : "儲存草稿"}</button>
@@ -298,6 +491,40 @@ export default function SiteEditor() {
         </div>
 
         {(error || notice) && <div className={error ? styles.errorBanner : styles.noticeBanner} role="status"><span>{error || notice}</span>{authRequired && <a href="/signin-with-chatgpt?return_to=%2Fadmin%2Fsite%2F">登入後台</a>}</div>}
+
+        {showHistory && draft.id && <section className={styles.historyPanel} aria-label="頁面版本紀錄">
+          <div><small>PAGE HISTORY</small><h2>版本紀錄</h2><p>還原會建立新的草稿版本，不會刪除或覆蓋舊紀錄。</p></div>
+          <div className={styles.historyList}>
+            {revisionsLoading && <span>正在讀取版本…</span>}
+            {!revisionsLoading && revisions.length === 0 && <span>目前沒有版本紀錄。</span>}
+            {revisions.map((revision) => <article key={revision.revisionId}>
+              <div><b>第 {revision.version} 版・{statusLabel(revision.status)}</b><small>{formatUpdatedAt(revision.createdAt)}</small></div>
+              <button type="button" onClick={() => void restoreRevision(revision)} disabled={saving || revision.version === draft.version}>{revision.version === draft.version ? "目前版本" : "還原為草稿"}</button>
+            </article>)}
+          </div>
+        </section>}
+
+        {showSiteSettings && <section className={`${styles.settingsPanel} ${styles.siteSettingsPanel}`} aria-label="全站品牌與配色">
+          <div>
+            <div className={styles.settingsTitle}><div><small>SITE IDENTITY</small><h2>全站品牌與配色</h2></div><span>{siteSettingsDirty ? "尚未儲存" : `版本 ${siteSettingsVersion}`}</span></div>
+            <div className={styles.basicFields}>
+              <label><span>品牌名稱</span><input value={siteAppearance.settings.brandName} maxLength={80} onChange={(event) => updateIdentitySetting("brandName", event.target.value)} /></label>
+              <label><span>英文副標</span><input value={siteAppearance.settings.brandSubtitle} maxLength={120} onChange={(event) => updateIdentitySetting("brandSubtitle", event.target.value)} /></label>
+              <label><span>公告短句</span><input value={siteAppearance.settings.announcement} maxLength={120} onChange={(event) => updateIdentitySetting("announcement", event.target.value)} /></label>
+              <label className={styles.wideField}><span>頁尾提醒</span><textarea rows={2} value={siteAppearance.settings.footerNote} maxLength={300} onChange={(event) => updateIdentitySetting("footerNote", event.target.value)} /></label>
+              <label className={styles.colorField}><span>品牌金色</span><div><input type="color" value={siteAppearance.theme.accent} onChange={(event) => updateThemeSetting("accent", event.target.value)} /><code>{siteAppearance.theme.accent}</code></div></label>
+              <label className={styles.colorField}><span>頁面底色</span><div><input type="color" value={siteAppearance.theme.surface} onChange={(event) => updateThemeSetting("surface", event.target.value)} /><code>{siteAppearance.theme.surface}</code></div></label>
+              <label className={styles.colorField}><span>主要文字</span><div><input type="color" value={siteAppearance.theme.ink} onChange={(event) => updateThemeSetting("ink", event.target.value)} /><code>{siteAppearance.theme.ink}</code></div></label>
+            </div>
+          </div>
+          <aside className={styles.siteSettingsSummary}>
+            <span>SAFE TEMPLATE</span>
+            <h3>保留商店骨架，只開放安全欄位</h3>
+            <p>品牌、公告、頁尾與配色會套用到首頁；商品流程、SEO 結構與行動版版型不會被任意拖曳破壞。</p>
+            <div className={styles.colorPreview} style={{ background: siteAppearance.theme.surface, color: siteAppearance.theme.ink, borderColor: siteAppearance.theme.accent }}><i style={{ background: siteAppearance.theme.accent }} />{siteAppearance.settings.brandName || "品牌預覽"}</div>
+            <button type="button" onClick={() => void saveSiteSettings()} disabled={siteSettingsSaving || !siteSettingsDirty}>{siteSettingsSaving ? "儲存中…" : "儲存全站設定"}</button>
+          </aside>
+        </section>}
 
         {showSeo && <div className={styles.settingsPanel}>
           <div className={styles.basicFields}>
@@ -325,7 +552,7 @@ export default function SiteEditor() {
             key={editorKey}
             config={pageBuilderConfig}
             data={draft.data}
-            metadata={editorPreviewMetadata}
+            metadata={previewMetadata}
             headerTitle={draft.title || "新網站頁面"}
             headerPath={previewHref}
             height="calc(100vh - 238px)"

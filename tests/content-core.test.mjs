@@ -40,7 +40,7 @@ before(async () => {
     "CREATE INDEX article_revisions_article_idx ON article_revisions (article_id, created_at)",
   ]) await db.prepare(statement).run();
   await db.batch([
-    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '6')"),
+    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '7')"),
     db.prepare("INSERT INTO sites (id, code, name) VALUES ('site_taijuda', 'taijuda', '泰聚達')"),
   ]);
 });

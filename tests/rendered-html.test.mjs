@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   addCartItem,
   changeCartItemQuantity,
+  MAX_CART_DISTINCT_ITEMS,
   normalizeCartItems,
+  parseCartStorage,
   serializeCartItems,
 } from "../app/cart.ts";
 
@@ -72,4 +74,32 @@ test("cart changes respect one-of-one limits and remove zero quantities", () => 
   const firstAdd = addCartItem([], uniqueProduct);
   assert.deepEqual(addCartItem(firstAdd, uniqueProduct), firstAdd);
   assert.deepEqual(changeCartItemQuantity(firstAdd, "product_taijuda_001", -1, catalog), []);
+});
+
+test("cart caps new distinct products at ten", () => {
+  const catalog = Array.from({ length: MAX_CART_DISTINCT_ITEMS + 1 }, (_, index) => ({
+    id: `product_taijuda_cap_${index}`,
+    purchaseLimit: 1,
+    stock: 1,
+  }));
+  const cart = catalog.reduce((items, product) => addCartItem(items, product), []);
+
+  assert.equal(cart.length, MAX_CART_DISTINCT_ITEMS);
+  assert.equal(cart.some((item) => item.productId === catalog.at(-1).id), false);
+});
+
+test("cart can preserve live-only ids during a catalog outage", () => {
+  const catalog = [{ id: "product_taijuda_001", purchaseLimit: 1, stock: 1 }];
+  const stored = JSON.stringify([
+    { productId: "product_taijuda_001", quantity: 2 },
+    { productId: "product_live_only", quantity: 2 },
+  ]);
+
+  assert.deepEqual(parseCartStorage(stored, catalog), [
+    { productId: "product_taijuda_001", quantity: 1 },
+  ]);
+  assert.deepEqual(parseCartStorage(stored, catalog, { preserveUnknown: true }), [
+    { productId: "product_taijuda_001", quantity: 2 },
+    { productId: "product_live_only", quantity: 2 },
+  ]);
 });

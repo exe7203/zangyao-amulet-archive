@@ -7,11 +7,18 @@ import {
   getFallbackArticle,
   type JournalArticle,
 } from "../../article-data";
+import {
+  publishedBrandMark,
+  publishedBrandName,
+  publishedEditorName,
+} from "../../../shared/published-site";
 import styles from "../../article-page.module.css";
 
 type ArticlePageProps = {
   params: Promise<{ slug: string }>;
 };
+
+const journalName = `${publishedBrandName}收藏誌`;
 
 function getSiteUrl(): URL {
   try {
@@ -100,18 +107,18 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
     openGraph: {
       type: "article",
       locale: "zh_TW",
-      siteName: "泰聚達",
+      siteName: publishedBrandName,
       url: canonicalUrl,
       title,
       description,
       publishedTime: article.publishedAt || undefined,
       modifiedTime: article.updatedAt || undefined,
-      authors: ["泰聚達編輯部"],
+      authors: [publishedEditorName],
       images: [{
         url: ogImageUrl,
         width: 1731,
         height: 909,
-        alt: `${article.title}｜泰聚達收藏誌`,
+        alt: `${article.title}｜${publishedBrandName}收藏誌`,
       }],
     },
     twitter: {
@@ -145,8 +152,8 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         inLanguage: "zh-Hant-TW",
         isAccessibleForFree: true,
         mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
-        author: { "@type": "Organization", name: "泰聚達編輯部", url: siteUrl.toString() },
-        publisher: { "@type": "Organization", name: "泰聚達", url: siteUrl.toString() },
+        author: { "@type": "Organization", name: publishedEditorName, url: siteUrl.toString() },
+        publisher: { "@type": "Organization", name: publishedBrandName, url: siteUrl.toString() },
         ...(article.publishedAt ? { datePublished: article.publishedAt } : {}),
         ...(article.updatedAt ? { dateModified: article.updatedAt } : {}),
       },
@@ -170,8 +177,8 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
       <header className={styles.header}>
-        <Link className={styles.brand} href="/" aria-label="泰聚達首頁">
-          <span aria-hidden="true">泰</span><b>泰聚達</b>
+        <Link className={styles.brand} href="/" aria-label={`${publishedBrandName}首頁`}>
+          <span aria-hidden="true">{publishedBrandMark}</span><b>{publishedBrandName}</b>
         </Link>
         <Link className={styles.homeLink} href="/articles/">返回收藏誌 →</Link>
       </header>
@@ -193,7 +200,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             <h1>{article.title}</h1>
             <p className={styles.lead}>{article.excerpt}</p>
             <p className={styles.byline}>
-              <span>泰聚達編輯部</span>
+              <span>{publishedEditorName}</span>
               {publishedLabel && article.publishedAt && (
                 <><span aria-hidden="true">·</span><time dateTime={article.publishedAt}>{publishedLabel}</time></>
               )}
@@ -204,13 +211,13 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
           <div className={styles.returnBlock}>
             <p>從來源、材質與保存紀錄開始認識每一件藏品。</p>
-            <Link href="/articles/">← 返回泰聚達收藏誌</Link>
+            <Link href="/articles/">{`← 返回${journalName}`}</Link>
           </div>
         </article>
       </main>
 
       <footer className={styles.footer}>
-        <span>© 2026 泰聚達</span>
+        <span>© 2026 {publishedBrandName}</span>
         <Link href="/service/contact/">聯絡與訂單協助</Link>
       </footer>
     </div>

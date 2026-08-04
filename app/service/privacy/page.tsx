@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import InfoPage from "../../info-page";
 import { infoPageMetadata } from "../../site-metadata";
+import { publishedBrandName } from "../../../shared/published-site";
 
 export const metadata: Metadata = infoPageMetadata(
   "隱私與保留單資料說明",
-  "泰聚達保留單會收集哪些聯絡與配送資料、用途、保存原則及查詢刪除方式。",
+  `${publishedBrandName}保留單會收集哪些聯絡與配送資料、用途、保存原則及查詢刪除方式。`,
   "service/privacy/",
 );
 
@@ -17,4 +18,3 @@ export default function PrivacyPage() {
     <section><h2>目前運行範圍</h2><p>本機版資料保存在站主電腦的專案資料夾；GitHub Pages 公開展示版不提供保留單表單，也不儲存訂單個資。若日後部署公開後台，必須先設定管理員允許名單、濫用防護、備份與資料保留流程。</p></section>
   </InfoPage>;
 }
-

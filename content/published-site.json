@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "exportedAt": "2026-08-04T03:42:08.390Z",
+  "exportedAt": "2026-08-04T06:57:12.218Z",
   "site": {
     "id": "site_taijuda",
     "code": "taijuda",
@@ -34,7 +34,9 @@
       "slug": "brand-story",
       "title": "泰聚達品牌故事",
       "data": {
-        "root": {},
+        "root": {
+          "props": {}
+        },
         "content": [
           {
             "type": "Hero",
@@ -61,7 +63,8 @@
               "tone": "paper"
             }
           }
-        ]
+        ],
+        "zones": {}
       },
       "status": "published",
       "seoTitle": "泰聚達品牌故事｜泰國佛牌收藏履歷",
@@ -69,10 +72,10 @@
       "canonicalUrl": "",
       "ogImageUrl": "",
       "noindex": false,
-      "version": 1,
+      "version": 2,
       "publishedAt": "2026-08-04T00:00:00.000Z",
       "createdAt": "2026-08-04T00:00:00.000Z",
-      "updatedAt": "2026-08-04T00:00:00.000Z"
+      "updatedAt": "2026-08-04T05:55:08.188Z"
     }
   ],
   "articles": [
@@ -604,5 +607,5 @@
       "updatedAt": "2026-08-02T14:01:58.000Z"
     }
   ],
-  "snapshotHash": "71cf2bfef511f99c"
+  "snapshotHash": "b61ee24e00213217"
 }

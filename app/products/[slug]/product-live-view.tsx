@@ -21,24 +21,18 @@ export default function ProductLiveView({ slug, initialProduct }: { slug: string
 
   useEffect(() => {
     const controller = new AbortController();
-    const localHost = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" || window.location.hostname === "::1";
     async function load() {
       try {
         const response = await fetch(`/api/store/products/${encodeURIComponent(slug)}?site=taijuda`, { headers: { accept: "application/json" }, cache: "no-store", signal: controller.signal });
-        if (response.status === 404 && localHost) { setProduct(null); setState("unavailable"); return; }
+        const isJsonApiResponse = response.headers.get("content-type")?.toLowerCase().includes("application/json");
+        if (response.status === 404 && isJsonApiResponse) { setProduct(null); setState("unavailable"); return; }
         if (!response.ok) { setState(initialProduct ? "ready" : "unavailable"); return; }
         const payload = await response.json() as { product?: unknown };
         if (!validProduct(payload.product)) { setState(initialProduct ? "ready" : "unavailable"); return; }
         const liveProduct = payload.product;
-        setProduct(initialProduct
-          ? {
-              ...initialProduct,
-              price: liveProduct.price,
-              stock: liveProduct.stock,
-              status: liveProduct.status,
-              purchaseLimit: liveProduct.purchaseLimit,
-            }
-          : liveProduct);
+        // The live API returns the complete product record and is authoritative
+        // for every customer-visible field, not only price and stock.
+        setProduct(liveProduct);
         setState("ready");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;

@@ -6,7 +6,7 @@ import type { DatabaseEnv } from "./api-utils";
 export const DEFAULT_SITE_CODE = "taijuda";
 export const DEFAULT_SITE_ID = "site_taijuda";
 const SEED_TIMESTAMP = "2026-08-04T00:00:00.000Z";
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 export type { DatabaseEnv };
 
@@ -326,6 +326,15 @@ async function upgradeLegacySchema(db: D1Database) {
       ON orders (order_status, payment_status, reserved_until)
       WHERE reserved_until IS NOT NULL`,
   ).run();
+  // Older local databases could contain duplicate revision numbers from a
+  // concurrent restore. Keep the newest copy before enforcing one immutable
+  // revision per page/version.
+  await db.prepare(`DELETE FROM site_page_revisions
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid) FROM site_page_revisions GROUP BY page_id, version
+    )`).run();
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS site_page_revisions_page_version_unique
+    ON site_page_revisions (page_id, version)`).run();
 }
 
 async function seedCatalog(db: D1Database) {

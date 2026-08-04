@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { publishedBrandName } from "../shared/published-site";
 
 function siteUrl(): URL {
   try {
@@ -22,7 +23,7 @@ export function infoPageMetadata(title: string, description: string, path: strin
     openGraph: {
       type: "website",
       url: canonical,
-      title: `${title}｜泰聚達`,
+      title: `${title}｜${publishedBrandName}`,
       description,
     },
   };

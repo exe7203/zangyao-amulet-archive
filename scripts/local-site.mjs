@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const runtimeDir = path.join(projectRoot, ".local-runtime");
 const dataDir = path.join(projectRoot, ".local-data");
+const backupsDir = path.join(projectRoot, ".local-backups");
 const legacyDataDir = path.join(projectRoot, ".wrangler", "state");
 const pidFile = path.join(runtimeDir, "server.json");
 const stdoutLog = path.join(runtimeDir, "server.stdout.log");
@@ -32,10 +33,11 @@ const host = "127.0.0.1";
 const port = 3000;
 const siteUrl = `http://${host}:${port}/`;
 const adminUrl = `${siteUrl}admin/`;
+const articleAdminUrl = `${siteUrl}admin/articles/`;
 const productAdminUrl = `${siteUrl}admin/products/`;
 const orderAdminUrl = `${siteUrl}admin/orders/`;
 const siteAdminUrl = `${siteUrl}admin/site/`;
-const healthUrl = `${siteUrl}api/admin/articles?site=taijuda`;
+const healthUrl = `${siteUrl}api/admin/system-status?site=taijuda`;
 
 const sourceTargets = [
   "app",
@@ -43,6 +45,7 @@ const sourceTargets = [
   "content",
   "db",
   "drizzle",
+  "lib",
   "public",
   "shared",
   "worker",
@@ -113,7 +116,10 @@ async function checkHealth() {
     });
     if (!response.ok) return false;
     const body = await response.json();
-    return body?.site?.code === "taijuda" && Array.isArray(body.articles);
+    return body?.site?.code === "taijuda" &&
+      body?.runtime?.database === "Cloudflare D1 / SQLite" &&
+      Number.isSafeInteger(body?.runtime?.schemaVersion) &&
+      body.runtime.schemaVersion > 0;
   } catch {
     return false;
   } finally {
@@ -181,6 +187,7 @@ async function validateBuild() {
       config.assets?.directory === "../client" &&
       clientFiles.length > 0 &&
       worker.includes("/api/admin/articles") &&
+      worker.includes("/api/admin/system-status") &&
       worker.includes("/api/content/articles") &&
       worker.includes("/api/admin/products") &&
       worker.includes("/api/store/orders") &&
@@ -270,7 +277,7 @@ async function stopProcessTree(record) {
   return terminationSucceeded && !processIsRunning(record.pid);
 }
 
-async function startSite() {
+async function startSite(openBrowser = true) {
   await mkdir(runtimeDir, { recursive: true });
   await ensureDependencies();
 
@@ -280,11 +287,12 @@ async function startSite() {
     const currentBuild = !await buildIsRequired() && await validateBuild();
     if (currentBuild) {
       console.log(`泰聚達本機版已經在運行：${siteUrl}`);
-      console.log(`文章管理後台：${adminUrl}`);
+      console.log(`營運總覽：${adminUrl}`);
+      console.log(`文章管理後台：${articleAdminUrl}`);
       console.log(`商品與庫存：${productAdminUrl}`);
       console.log(`訂單管理：${orderAdminUrl}`);
       console.log(`網站編輯器：${siteAdminUrl}`);
-      openSiteInBrowser();
+      if (openBrowser) openSiteInBrowser();
       return;
     }
     console.log("偵測到網站程式已有更新，正在安全重啟本機版……");
@@ -293,7 +301,7 @@ async function startSite() {
   if (!managedHealthy && await checkHealth()) {
     console.log(`泰聚達本機版已經在運行：${siteUrl}`);
     console.log("目前的網站不是由本啟動器開啟，因此停止器不會結束它。");
-    openSiteInBrowser();
+    if (openBrowser) openSiteInBrowser();
     return;
   }
 
@@ -359,12 +367,13 @@ async function startSite() {
       if (!await checkHealth()) continue;
       process.stdout.write("\n");
       console.log(`網站已啟動：${siteUrl}`);
-      console.log(`文章管理後台：${adminUrl}`);
+      console.log(`營運總覽：${adminUrl}`);
+      console.log(`文章管理後台：${articleAdminUrl}`);
       console.log(`商品與庫存：${productAdminUrl}`);
       console.log(`訂單管理：${orderAdminUrl}`);
       console.log(`網站編輯器：${siteAdminUrl}`);
       console.log("文章、商品、庫存與訂單資料會保存在本機專案的 .local-data 資料夾中。");
-      openSiteInBrowser();
+      if (openBrowser) openSiteInBrowser();
       return;
     }
     if (!managedProcessIsRunning(record)) break;
@@ -396,12 +405,67 @@ async function stopSite() {
   console.log("泰聚達本機版已停止；文章與設定資料仍保留在電腦中。");
 }
 
+function backupFolderName(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `taijuda-data-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+async function backupLocalData() {
+  await mkdir(backupsDir, { recursive: true });
+  const current = await readPidRecord();
+  const managedRunning = Boolean(current && managedProcessIsRunning(current));
+  const healthy = await checkHealth();
+
+  if (healthy && !managedRunning) {
+    throw new Error("網站正在運行，但不是由本啟動器開啟。請先安全停止該網站，再執行備份。");
+  }
+  if (!existsSync(dataDir)) {
+    throw new Error("目前還沒有本機營運資料可備份。請先啟動網站並建立資料。");
+  }
+
+  if (managedRunning) {
+    console.log("正在暫停網站並確認資料已寫入……");
+    if (!await stopProcessTree(current)) throw new Error("網站無法安全停止，已取消備份。");
+    await rm(pidFile, { force: true });
+    await wait(1_000);
+  }
+
+  const destination = path.resolve(backupsDir, backupFolderName());
+  const relativeDestination = path.relative(backupsDir, destination);
+  if (!relativeDestination || relativeDestination.startsWith("..") || path.isAbsolute(relativeDestination)) {
+    throw new Error("備份目標不在指定的備份資料夾內，已取消操作。");
+  }
+
+  let backupError = null;
+  try {
+    await cp(dataDir, destination, { recursive: true, errorOnExist: true, force: false });
+    await writeFile(path.join(destination, "backup-manifest.json"), JSON.stringify({
+      format: "taijuda-local-data-backup-v1",
+      createdAt: new Date().toISOString(),
+      source: ".local-data",
+      siteCode: "taijuda",
+    }, null, 2), "utf8");
+    console.log(`備份已完成：${destination}`);
+    console.log("請定期把 .local-backups 複製到另一顆硬碟或可信任的雲端空間。");
+  } catch (error) {
+    backupError = error;
+  } finally {
+    if (managedRunning) {
+      console.log("正在重新啟動泰聚達本機版……");
+      await startSite(false);
+    }
+  }
+
+  if (backupError) throw backupError;
+}
+
 async function showStatus() {
   const current = await readPidRecord();
   const healthy = await checkHealth();
   if (healthy) {
     console.log(`運行中：${siteUrl}`);
-    console.log(`文章管理後台：${adminUrl}`);
+    console.log(`營運總覽：${adminUrl}`);
+    console.log(`文章管理後台：${articleAdminUrl}`);
     console.log(`商品與庫存：${productAdminUrl}`);
     console.log(`訂單管理：${orderAdminUrl}`);
     console.log(`網站編輯器：${siteAdminUrl}`);
@@ -423,6 +487,7 @@ try {
   } else if (command === "start") await startSite();
   else if (command === "stop") await stopSite();
   else if (command === "status") await showStatus();
+  else if (command === "backup") await backupLocalData();
   else throw new Error(`不支援的操作：${command}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

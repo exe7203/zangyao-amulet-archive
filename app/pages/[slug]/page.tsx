@@ -8,6 +8,7 @@ import {
   publishedPages,
   publishedProducts,
 } from "../../../shared/published-content";
+import { publishedBrandMark, publishedBrandName, publishedBrandSubtitle } from "../../../shared/published-site";
 import styles from "./page.module.css";
 
 type PageProps = { params: Promise<{ slug: string }> };
@@ -42,14 +43,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const title = page.seoTitle || page.title;
 
   return {
-    title: { absolute: title.includes("泰聚達") ? title : `${title}｜泰聚達` },
+    title: { absolute: title.includes(publishedBrandName) ? title : `${title}｜${publishedBrandName}` },
     description: page.seoDescription,
     alternates: { canonical },
     robots: { index: !page.noindex, follow: true },
     openGraph: {
       type: "website",
       locale: "zh_TW",
-      siteName: "泰聚達",
+      siteName: publishedBrandName,
       url: canonical,
       title,
       description: page.seoDescription,
@@ -89,7 +90,7 @@ export default async function PublishedPage({ params }: PageProps) {
       inLanguage: "zh-Hant-TW",
       datePublished: page.publishedAt || page.createdAt,
       dateModified: page.updatedAt,
-      isPartOf: { "@type": "WebSite", name: "泰聚達", url: siteUrl.toString() },
+      isPartOf: { "@type": "WebSite", name: publishedBrandName, url: siteUrl.toString() },
     },
     {
       "@type": "BreadcrumbList",
@@ -107,7 +108,7 @@ export default async function PublishedPage({ params }: PageProps) {
       dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c") }}
     />
     <header className={styles.header}>
-      <Link className={styles.brand} href="/"><span>泰</span><b>泰聚達</b><small>THAI AMULET ARCHIVE</small></Link>
+      <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b><small>{publishedBrandSubtitle}</small></Link>
       <nav aria-label="主要導覽"><Link href="/#new">本週新藏</Link><Link href="/articles/">收藏誌</Link><Link href="/service/contact/">聯絡我們</Link></nav>
     </header>
     <main>
@@ -117,7 +118,7 @@ export default async function PublishedPage({ params }: PageProps) {
       <PageRenderer data={page.data} products={publishedProducts} articles={publishedArticles} />
     </main>
     <footer className={styles.footer}>
-      <span>© 2026 泰聚達</span>
+      <span>© 2026 {publishedBrandName}</span>
       <nav><Link href="/service/privacy/">隱私權與訂購資料</Link><Link href="/service/contact/">聯絡與訂單協助</Link></nav>
     </footer>
   </div>;
