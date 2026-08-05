@@ -3,7 +3,6 @@ import {
   cleanSlug,
   cleanText,
   cleanUrl,
-  isRecord,
   json,
   publicJson,
   readJsonObject,
@@ -16,7 +15,8 @@ import {
   type DatabaseEnv,
 } from "./database";
 import {
-  ARTICLE_MAX_DOCUMENT_DEPTH,
+  ARTICLE_PUBLISH_ERROR_MESSAGE,
+  evaluateArticlePublishReadiness,
   validateArticleDocument,
 } from "../lib/article-content-contract";
 
@@ -54,14 +54,6 @@ function normalizeContentJson(value: unknown) {
     throw new Error("文章內容超過 1 MB 上限");
   }
   return serialized;
-}
-
-function contentTextLength(value: unknown, depth = 0): number {
-  if (depth > ARTICLE_MAX_DOCUMENT_DEPTH || !isRecord(value)) return 0;
-  const own = typeof value.text === "string" ? value.text.replace(/\s/gu, "").length : 0;
-  return own + (Array.isArray(value.content)
-    ? value.content.reduce((sum, child) => sum + contentTextLength(child, depth + 1), 0)
-    : 0);
 }
 
 function normalizeKeywords(value: unknown) {
@@ -103,7 +95,15 @@ function parseArticleRow(row: Record<string, unknown>) {
     })(),
     heroImageUrl: row.hero_image_url || "",
     heroImageAlt: row.hero_image_alt || "",
-    noindex: Boolean(row.noindex),
+    noindex: Boolean(row.noindex) || (
+      row.status === "published" &&
+      !evaluateArticlePublishReadiness({
+        excerpt: row.excerpt,
+        seoTitle: row.seo_title,
+        seoDescription: row.seo_description,
+        contentJson,
+      }).ok
+    ),
     version: Number(row.version || 1),
     publishedAt: row.published_at,
     createdAt: row.created_at,
@@ -178,10 +178,13 @@ async function saveArticle(request: Request, db: D1Database, savedBy: string) {
     } catch {
       // normalizeContentJson already guarantees valid JSON.
     }
-    if (excerpt.length < 20 || seoTitle.length < 8 || seoDescription.length < 50 || contentTextLength(contentValue) < 80) {
-      return json({
-        error: "發布前請完成摘要（至少 20 字）、SEO 標題（至少 8 字）、SEO 描述（至少 50 字）與正文（至少 80 字）",
-      }, { status: 400 });
+    if (!evaluateArticlePublishReadiness({
+      excerpt,
+      seoTitle,
+      seoDescription,
+      contentJson: contentValue,
+    }).ok) {
+      return json({ error: ARTICLE_PUBLISH_ERROR_MESSAGE }, { status: 400 });
     }
   }
 

@@ -24,6 +24,13 @@ export const ARTICLE_MARK_TYPES = [
 export const ARTICLE_HEADING_LEVELS = [2, 3, 4] as const;
 export const ARTICLE_MAX_DOCUMENT_DEPTH = 24;
 export const ARTICLE_MAX_NODE_COUNT = 5000;
+export const ARTICLE_PUBLISH_REQUIREMENTS = {
+  excerptLength: 20,
+  seoTitleLength: 8,
+  seoDescriptionLength: 50,
+  bodyTextLength: 300,
+} as const;
+export const ARTICLE_PUBLISH_ERROR_MESSAGE = `發布前請完成摘要（至少 ${ARTICLE_PUBLISH_REQUIREMENTS.excerptLength} 字）、SEO 標題（至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength} 字）、SEO 描述（至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength} 字）與正文（至少 ${ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength} 字）`;
 
 const CONTROL_OR_SPACE = /[\u0000-\u001f\u007f\s<>]/u;
 const MAILTO_PATTERN = /^mailto:[^\s@]+@[^\s@]+$/iu;
@@ -54,6 +61,43 @@ export function isArticleHeadingLevel(value: unknown): value is 2 | 3 | 4 {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function articleDocumentTextLength(value: unknown, depth = 0): number {
+  if (depth > ARTICLE_MAX_DOCUMENT_DEPTH || !isRecord(value)) return 0;
+  const ownText = typeof value.text === "string"
+    ? Array.from(value.text.replace(/\s/gu, "")).length
+    : 0;
+  return ownText + (Array.isArray(value.content)
+    ? value.content.reduce((sum, child) => sum + articleDocumentTextLength(child, depth + 1), 0)
+    : 0);
+}
+
+export function evaluateArticlePublishReadiness(value: {
+  excerpt: unknown;
+  seoTitle: unknown;
+  seoDescription: unknown;
+  contentJson: unknown;
+}) {
+  const excerptLength = typeof value.excerpt === "string" ? value.excerpt.trim().length : 0;
+  const seoTitleLength = typeof value.seoTitle === "string" ? value.seoTitle.trim().length : 0;
+  const seoDescriptionLength = typeof value.seoDescription === "string" ? value.seoDescription.trim().length : 0;
+  const bodyTextLength = articleDocumentTextLength(value.contentJson);
+  const excerptReady = excerptLength >= ARTICLE_PUBLISH_REQUIREMENTS.excerptLength;
+  const seoTitleReady = seoTitleLength >= ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength;
+  const seoDescriptionReady = seoDescriptionLength >= ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength;
+  const bodyReady = bodyTextLength >= ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength;
+  return {
+    excerptLength,
+    seoTitleLength,
+    seoDescriptionLength,
+    bodyTextLength,
+    excerptReady,
+    seoTitleReady,
+    seoDescriptionReady,
+    bodyReady,
+    ok: excerptReady && seoTitleReady && seoDescriptionReady && bodyReady,
+  };
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]) {

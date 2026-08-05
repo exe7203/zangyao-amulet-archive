@@ -12,6 +12,8 @@ import {
   normalizeCartItems,
   orderRequestFingerprint,
   paymentTransitionAllowed,
+  productMeetsPublicOrderRequirements,
+  publicOrderAccess,
   reservationDeadline,
 } from "../worker/store-api.ts";
 
@@ -81,6 +83,18 @@ function orderRequest(body) {
       accept: "application/json",
       "content-type": "application/json",
       origin: "http://localhost",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function remoteOrderRequest(body) {
+  return new Request("https://shop.example/api/store/orders", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      origin: "https://shop.example",
     },
     body: JSON.stringify(body),
   });
@@ -189,6 +203,36 @@ test("reservation deadline is exactly 72 hours and payment transitions are fail-
   assert.equal(paymentTransitionAllowed("unknown", "paid"), false);
 });
 
+test("public ordering is local-only by default and remote enablement is exact", () => {
+  assert.deepEqual(publicOrderAccess(new Request("http://localhost/api/store/products"), {}), {
+    localDemo: true,
+    explicitlyEnabled: false,
+    enabled: true,
+  });
+  assert.equal(publicOrderAccess(new Request("https://shop.example/api/store/products"), {}).enabled, false);
+  assert.equal(publicOrderAccess(
+    new Request("https://shop.example/api/store/products"),
+    { STORE_ORDERS_ENABLED: "true" },
+  ).enabled, false);
+  assert.equal(publicOrderAccess(
+    new Request("https://shop.example/api/store/products"),
+    { STORE_ORDERS_ENABLED: "1" },
+  ).enabled, true);
+
+  const base = {
+    status: "active",
+    stock: 1,
+    seoReady: true,
+    imageUrl: "https://example.com/verified.webp",
+    imageAlt: "已覆核商品實物正面",
+  };
+  assert.equal(productMeetsPublicOrderRequirements(base), true);
+  assert.equal(productMeetsPublicOrderRequirements({ ...base, stock: 0 }), false);
+  assert.equal(productMeetsPublicOrderRequirements({ ...base, seoReady: false }), false);
+  assert.equal(productMeetsPublicOrderRequirements({ ...base, imageUrl: "" }), false);
+  assert.equal(productMeetsPublicOrderRequirements({ ...base, imageAlt: "" }), false);
+});
+
 test("active sold-out product detail remains readable while reporting zero stock", async () => {
   await seedProduct({ id: "product-soldout", slug: "sold-out-amulet", onHand: 1, reserved: 1 });
   const response = await handleStoreApi(
@@ -203,6 +247,87 @@ test("active sold-out product detail remains readable while reporting zero stock
   assert.equal(payload.product.imageAlt, "");
   assert.equal(payload.product.seoReady, false);
   assert.equal(payload.product.version, 1);
+  assert.equal(payload.ordersEnabled, true);
+  assert.equal(payload.readiness.mode, "local_demo");
+  assert.deepEqual(payload.readiness.orderableProductIds, []);
+});
+
+test("public products expose fail-closed order readiness and remote orders require reviewed product data", async () => {
+  await seedProduct({ id: "product-public-unready", slug: "public-unready", onHand: 2 });
+  await seedProduct({ id: "product-public-ready", slug: "public-ready", onHand: 2, price: 2680 });
+  await db.prepare(`UPDATE products
+    SET seo_ready = 1, image_url = 'https://example.com/public-ready.webp', image_alt = '已覆核商品正面實物影像'
+    WHERE id = ?`)
+    .bind("product-public-ready")
+    .run();
+
+  const disabledResponse = await handleStoreApi(
+    new Request("https://shop.example/api/store/products?site=taijuda"),
+    { DB: db },
+  );
+  assert.equal(disabledResponse.status, 200);
+  const disabledPayload = await disabledResponse.json();
+  assert.equal(disabledPayload.ordersEnabled, false);
+  assert.equal(disabledPayload.readiness.mode, "disabled");
+  assert.deepEqual(disabledPayload.readiness.orderableProductIds, []);
+  assert.ok(disabledPayload.readiness.blockedProductIds.includes("product-public-ready"));
+
+  const enabledResponse = await handleStoreApi(
+    new Request("https://shop.example/api/store/products?site=taijuda"),
+    { DB: db, STORE_ORDERS_ENABLED: "1" },
+  );
+  assert.equal(enabledResponse.status, 200);
+  const enabledPayload = await enabledResponse.json();
+  assert.equal(enabledPayload.ordersEnabled, true);
+  assert.equal(enabledPayload.readiness.mode, "enabled");
+  assert.ok(enabledPayload.readiness.orderableProductIds.includes("product-public-ready"));
+  assert.ok(!enabledPayload.readiness.orderableProductIds.includes("product-public-unready"));
+  assert.ok(enabledPayload.readiness.blockedProductIds.includes("product-public-unready"));
+
+  const localResponse = await handleStoreApi(
+    new Request("http://localhost/api/store/products?site=taijuda"),
+    { DB: db },
+  );
+  const localPayload = await localResponse.json();
+  assert.equal(localPayload.ordersEnabled, true);
+  assert.equal(localPayload.readiness.mode, "local_demo");
+  assert.ok(localPayload.readiness.orderableProductIds.includes("product-public-ready"));
+  assert.ok(localPayload.readiness.orderableProductIds.includes("product-public-unready"));
+
+  const baseOrder = {
+    siteCode: "taijuda",
+    customer: { name: "王小明", phone: "0912345678", email: "", lineId: "" },
+    deliveryMethod: "appointment",
+    address: "",
+    note: "",
+    items: [{ productId: "product-public-ready", quantity: 1 }],
+  };
+  const disabledOrder = await handleStoreApi(remoteOrderRequest({
+    ...baseOrder,
+    idempotencyKey: "remote-disabled-key-0001",
+  }), { DB: db });
+  assert.equal(disabledOrder.status, 503);
+  assert.equal((await disabledOrder.json()).ordersEnabled, false);
+  const disabledOrderRow = await db.prepare(
+    "SELECT id FROM orders WHERE idempotency_key = 'remote-disabled-key-0001'",
+  ).first();
+  assert.equal(disabledOrderRow, null);
+
+  const unreadyOrder = await handleStoreApi(remoteOrderRequest({
+    ...baseOrder,
+    idempotencyKey: "remote-unready-key-0001",
+    items: [{ productId: "product-public-unready", quantity: 1 }],
+  }), { DB: db, STORE_ORDERS_ENABLED: "1" });
+  assert.equal(unreadyOrder.status, 409);
+  assert.match((await unreadyOrder.json()).error, /尚未完成.*覆核/);
+
+  const readyOrder = await handleStoreApi(remoteOrderRequest({
+    ...baseOrder,
+    idempotencyKey: "remote-ready-key-0001",
+  }), { DB: db, STORE_ORDERS_ENABLED: "1" });
+  assert.equal(readyOrder.status, 201);
+  const readyOrderPayload = await readyOrder.json();
+  assert.equal(readyOrderPayload.order.items[0].productId, "product-public-ready");
 });
 
 test("admin product writes persist image SEO fields and advance product and inventory versions", async () => {

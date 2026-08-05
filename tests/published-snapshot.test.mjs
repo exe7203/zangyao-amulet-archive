@@ -8,9 +8,18 @@ import {
   ARTICLE_MAX_NODE_COUNT,
   ARTICLE_MARK_TYPES,
   ARTICLE_NODE_TYPES,
+  ARTICLE_PUBLISH_REQUIREMENTS,
+  articleDocumentTextLength,
   safeArticleLinkHref,
   validateArticleDocument,
 } from "../lib/article-content-contract.ts";
+import sitemap from "../app/sitemap.ts";
+import { infoPageMetadata } from "../app/site-metadata.ts";
+import {
+  isPublishedArticleIndexable,
+  isPublishedPageIndexable,
+  isStaticPathIndexable,
+} from "../shared/seo-indexing.ts";
 
 const snapshotSource = await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -287,7 +296,7 @@ test("published page snapshots satisfy the public renderer and SEO contract", ()
   }
 });
 
-test("published article snapshots are crawlable, dated, and safe to render", () => {
+test("published article snapshots are dated, safe to render, and index-gated", () => {
   assertUniqueEntries(snapshot.articles, "article");
   assert.ok(snapshot.articles.length > 0, "published snapshot must contain at least one article");
   for (const article of snapshot.articles) {
@@ -313,7 +322,52 @@ test("published article snapshots are crawlable, dated, and safe to render", () 
     assertTiptapNode(article.contentJson, `article ${article.slug} contentJson`);
     assert.equal(article.contentJson.type, "doc", `article ${article.slug} root node must be doc`);
     assert.ok(tiptapTextLength(article.contentJson) >= 80, `article ${article.slug} has too little indexable text`);
+    if (!article.noindex) {
+      assert.ok(
+        articleDocumentTextLength(article.contentJson) >= ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength,
+        `indexable article ${article.slug} has less than 300 body characters`,
+      );
+    }
   }
+});
+
+test("unfinished demos, contact details, and the duplicate brand page stay out of search and sitemap", async () => {
+  const shortDemos = snapshot.articles.filter((article) =>
+    articleDocumentTextLength(article.contentJson) < ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength);
+  assert.equal(shortDemos.length, 3, "the current three short demo articles must remain explicitly protected");
+  for (const article of shortDemos) {
+    assert.equal(article.noindex, true, `${article.slug} must be stored as noindex`);
+    assert.equal(isPublishedArticleIndexable(article), false, `${article.slug} must fail the shared index policy`);
+  }
+
+  const brandStory = snapshot.pages.find((page) => page.slug === "brand-story");
+  assert.ok(brandStory, "the retained brand-story page is missing");
+  assert.equal(brandStory.noindex, true, "the duplicate brand story must be stored as noindex");
+  assert.equal(isPublishedPageIndexable(brandStory), false);
+
+  assert.equal(isStaticPathIndexable("service/contact/"), false);
+  assert.equal(isStaticPathIndexable("service/shipping/"), false);
+  assert.equal(isStaticPathIndexable("service/returns/"), false);
+  assert.equal(isStaticPathIndexable("service/privacy/"), false);
+  const contactMetadata = infoPageMetadata("聯絡與訂單協助", "尚未設定公開聯絡管道。", "service/contact/");
+  assert.deepEqual(contactMetadata.robots, { index: false, follow: true });
+
+  const sitemapPaths = sitemap().map((entry) => new URL(entry.url).pathname);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/contact/")), false);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/shipping/")), false);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/returns/")), false);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/privacy/")), false);
+  for (const article of shortDemos) {
+    assert.equal(sitemapPaths.some((path) => path.endsWith(`/articles/${article.slug}/`)), false);
+  }
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/pages/brand-story/")), false);
+
+  const [articleRouteSource, pageRouteSource] = await Promise.all([
+    readFile(new URL("../app/articles/[slug]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/pages/[slug]/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(articleRouteSource, /robots:\s*\{\s*index:\s*isPublishedArticleIndexable\(article\)/);
+  assert.match(pageRouteSource, /robots:\s*\{\s*index:\s*isPublishedPageIndexable\(page\)/);
 });
 
 test("public product snapshots remain noindex until each item is SEO-ready", () => {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { publishedBrandName } from "../shared/published-site";
+import { isStaticPathIndexable } from "../shared/seo-indexing";
 
 function siteUrl(): URL {
   try {
@@ -16,10 +17,12 @@ function siteUrl(): URL {
 
 export function infoPageMetadata(title: string, description: string, path: string): Metadata {
   const canonical = new URL(path.replace(/^\/+/, ""), siteUrl()).toString();
+  const indexable = isStaticPathIndexable(path);
   return {
     title,
     description,
     alternates: { canonical },
+    robots: { index: indexable, follow: true },
     openGraph: {
       type: "website",
       url: canonical,

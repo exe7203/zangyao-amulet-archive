@@ -6,7 +6,7 @@ export const DEFAULT_BRAND_PAGE = {
   seoDescription: "認識泰聚達如何以年份、材質、尺寸、來源與保存紀錄整理泰國佛牌和聖物，從可查證資料開始建立可閱讀的收藏履歷。",
   canonicalUrl: "",
   ogImageUrl: "",
-  noindex: false,
+  noindex: true,
   data: {
     root: {},
     content: [

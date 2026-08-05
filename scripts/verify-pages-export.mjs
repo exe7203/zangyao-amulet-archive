@@ -244,6 +244,12 @@ await Promise.all([
 for (const route of ["about/", "service/shipping/", "service/returns/", "service/contact/", "service/privacy/"]) {
   const html = await readFile(routeFile(route), "utf8");
   assert.match(html, /<nav\b[^>]*aria-label="麵包屑"/i, `${route} is missing a visible breadcrumb`);
+  const routeRobots = metaContent(html, "name", "robots")?.toLowerCase() || "";
+  assert.match(
+    routeRobots,
+    route.startsWith("service/") ? /(?:^|,\s*)noindex(?:,|$)/ : /(?:^|,\s*)index(?:,|$)/,
+    `${route} has an incorrect robots index directive`,
+  );
   const types = jsonLdTypes(html, route);
   assert.ok(types.has("WebPage"), `${route} JSON-LD is missing WebPage`);
   assert.ok(types.has("BreadcrumbList"), `${route} JSON-LD is missing BreadcrumbList`);
@@ -354,10 +360,6 @@ const expectedSitemap = new Map([
   [publicUrl(""), null],
   [publicUrl("about/"), null],
   [publicUrl("articles/"), null],
-  [publicUrl("service/shipping/"), null],
-  [publicUrl("service/returns/"), null],
-  [publicUrl("service/contact/"), null],
-  [publicUrl("service/privacy/"), null],
 ]);
 for (const page of snapshot.pages.filter((candidate) =>
   !candidate.noindex && hasMatchingCanonical(candidate.canonicalUrl, `pages/${candidate.slug}/`))) {

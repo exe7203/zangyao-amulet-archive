@@ -71,7 +71,7 @@
       "seoDescription": "認識泰聚達如何以年份、材質、尺寸、來源與保存紀錄整理泰國佛牌和聖物，從可查證資料開始建立可閱讀的收藏履歷。",
       "canonicalUrl": "",
       "ogImageUrl": "",
-      "noindex": false,
+      "noindex": true,
       "version": 2,
       "publishedAt": "2026-08-04T00:00:00.000Z",
       "createdAt": "2026-08-04T00:00:00.000Z",
@@ -147,7 +147,7 @@
       "seoDescription": "認識防水殼、壓克力殼與金屬框的差異，以及粉質、老件佛牌在日常配戴與長期收藏時應注意的保存環境與檢查方式。",
       "canonicalUrl": "",
       "ogImageUrl": "og.png",
-      "noindex": false,
+      "noindex": true,
       "version": 1,
       "publishedAt": "2026-08-04T00:00:00.000Z",
       "updatedAt": "2026-08-04T00:00:00.000Z"
@@ -253,7 +253,7 @@
       "seoDescription": "第一次接觸泰國佛牌，先學會核對佛曆年份、材質、尺寸、實拍與寺院來源，建立可以查證且不依賴傳聞的收藏判斷方式。",
       "canonicalUrl": "",
       "ogImageUrl": "og.png",
-      "noindex": false,
+      "noindex": true,
       "version": 1,
       "publishedAt": "2026-08-04T00:00:00.000Z",
       "updatedAt": "2026-08-04T00:00:00.000Z"
@@ -359,7 +359,7 @@
       "seoDescription": "整理佛牌與聖物的寺院、師父、法會、年份、材質、尺寸、取得與轉手紀錄，並把已知證據和待確認資訊分開保存。",
       "canonicalUrl": "",
       "ogImageUrl": "og.png",
-      "noindex": false,
+      "noindex": true,
       "version": 1,
       "publishedAt": "2026-08-04T00:00:00.000Z",
       "updatedAt": "2026-08-04T00:00:00.000Z"
@@ -607,5 +607,5 @@
       "updatedAt": "2026-08-02T14:01:58.000Z"
     }
   ],
-  "snapshotHash": "b61ee24e00213217"
+  "snapshotHash": "95f6b873ef9605b6"
 }

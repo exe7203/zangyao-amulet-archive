@@ -138,7 +138,7 @@
   .pageSidebar { top: 112px; height: calc(100vh - 112px); }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; }
   .pageSidebar { position: static; height: auto; grid-template-rows: auto auto; }
   .pageList { max-height: 190px; }
@@ -147,4 +147,11 @@
   .basicFields { grid-template-columns: 1fr; }
   .basicFields label.checkbox { grid-column: auto; }
   .basicFields .wideField { grid-column: auto; }
+}
+
+@media (max-width: 760px) {
+  .basicFields input, .basicFields textarea, .slugField input,
+  .builderFrame :global(input), .builderFrame :global(textarea), .builderFrame :global(select) {
+    font-size: 16px;
+  }
 }

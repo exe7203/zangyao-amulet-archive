@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Miniflare } from "miniflare";
+import {
+  ARTICLE_PUBLISH_ERROR_MESSAGE,
+  ARTICLE_PUBLISH_REQUIREMENTS,
+  articleDocumentTextLength,
+  evaluateArticlePublishReadiness,
+} from "../lib/article-content-contract.ts";
 import { handleContentApi } from "../worker/content-api.ts";
 
 let miniflare;
@@ -71,7 +77,7 @@ test("article editor saves, detects stale versions, lists history, and restores 
   assert.equal(created.payload.article.version, 1);
   const articleId = created.payload.article.id;
 
-  const publishedText = "第二版已發布正文".repeat(12);
+  const publishedText = "第二版已發布正文".repeat(40);
   const published = await saveArticle({
     ...created.payload.article,
     id: articleId,
@@ -128,6 +134,82 @@ test("article editor saves, detects stale versions, lists history, and restores 
     { version: 2, status: "published" },
     { version: 3, status: "draft" },
   ]);
+});
+
+test("article publishing requires 300 body characters and keeps summary and SEO gates", async () => {
+  const document = (text) => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  });
+  const validMetadata = {
+    excerpt: "這是一段超過二十個字並可提供搜尋摘要使用的完整文章摘要。",
+    seoTitle: "符合發布條件的 SEO 文章標題",
+    seoDescription: "這是一段超過五十個字的搜尋描述，用來證明文章發布時仍會保留摘要、SEO 標題、SEO 描述與正文長度等所有必要條件。",
+  };
+  const shortDocument = document("字".repeat(ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength - 1));
+  assert.equal(articleDocumentTextLength(shortDocument), 299);
+  assert.equal(evaluateArticlePublishReadiness({ ...validMetadata, contentJson: shortDocument }).bodyReady, false);
+
+  const shortResponse = await saveArticle({
+    siteCode: "taijuda",
+    slug: "too-short-to-publish",
+    title: "正文不足三百字",
+    ...validMetadata,
+    contentJson: shortDocument,
+    status: "published",
+    version: 0,
+  });
+  assert.equal(shortResponse.response.status, 400);
+  assert.equal(shortResponse.payload.error, ARTICLE_PUBLISH_ERROR_MESSAGE);
+
+  await db.prepare(`INSERT INTO articles (
+    id, site_id, slug, title, excerpt, content_json, status, seo_title,
+    seo_description, noindex, version, published_at
+  ) VALUES (?, 'site_taijuda', ?, ?, ?, ?, 'published', ?, ?, 0, 1, ?)`)
+    .bind(
+      "legacy-short-demo",
+      "legacy-short-demo",
+      "既有短篇示範文章",
+      validMetadata.excerpt,
+      JSON.stringify(shortDocument),
+      validMetadata.seoTitle,
+      validMetadata.seoDescription,
+      new Date().toISOString(),
+    )
+    .run();
+  const legacyPublicResponse = await handleContentApi(
+    request("/api/content/articles/legacy-short-demo?site=taijuda"),
+    { DB: db },
+  );
+  assert.equal(legacyPublicResponse?.status, 200);
+  const legacyPublic = await legacyPublicResponse.json();
+  assert.equal(legacyPublic.article.noindex, true);
+
+  const completeDocument = document("字".repeat(ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength));
+  const missingSummaryResponse = await saveArticle({
+    siteCode: "taijuda",
+    slug: "missing-summary-gate",
+    title: "摘要條件仍須保留",
+    ...validMetadata,
+    excerpt: "摘要太短",
+    contentJson: completeDocument,
+    status: "published",
+    version: 0,
+  });
+  assert.equal(missingSummaryResponse.response.status, 400);
+  assert.equal(missingSummaryResponse.payload.error, ARTICLE_PUBLISH_ERROR_MESSAGE);
+
+  const accepted = await saveArticle({
+    siteCode: "taijuda",
+    slug: "exact-publish-threshold",
+    title: "剛好符合發布條件",
+    ...validMetadata,
+    contentJson: completeDocument,
+    status: "published",
+    version: 0,
+  });
+  assert.equal(accepted.response.status, 201);
+  assert.equal(accepted.payload.article.status, "published");
 });
 
 test("article API accepts the editor whitelist and rejects hidden public-renderer drift", async () => {

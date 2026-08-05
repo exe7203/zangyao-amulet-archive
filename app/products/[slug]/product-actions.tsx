@@ -12,11 +12,23 @@ import {
 } from "../../cart";
 import { products, type Product } from "../../data";
 
-export default function ProductActions({ product, availabilityConfirmed = true }: { product: Product; availabilityConfirmed?: boolean }) {
+export default function ProductActions({
+  product,
+  availabilityConfirmed = false,
+  orderReady = false,
+}: {
+  product: Product;
+  availabilityConfirmed?: boolean;
+  orderReady?: boolean;
+}) {
   const [message, setMessage] = useState("");
-  const canOrder = availabilityConfirmed && product.status === "active" && product.stock > 0;
+  const canOrder = availabilityConfirmed && orderReady && product.status === "active" && product.stock > 0;
 
   const add = () => {
+    if (!canOrder) {
+      setMessage("商品或接單狀態尚未完成覆核，目前不可加入收藏袋。");
+      return;
+    }
     try {
       const catalog = products.some((candidate) => candidate.id === product.id)
         ? products
@@ -40,7 +52,7 @@ export default function ProductActions({ product, availabilityConfirmed = true }
   };
 
   return <div>
-    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "庫存待確認" : canOrder ? "加入收藏袋" : "目前不可訂購"}</button>
+    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "庫存待確認" : !orderReady ? "目前未開放接單" : canOrder ? "加入收藏袋" : "目前不可訂購"}</button>
     {message && <p role="status">{message} <Link href="/#new">返回首頁查看收藏袋 →</Link></p>}
   </div>;
 }

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleContent from "../../article-content";
 import { SafePublicImage } from "../../product-artwork";
-import DeviceCartLink from "../../device-cart-link";
 import {
   fallbackArticles,
   getFallbackArticle,
@@ -15,7 +14,10 @@ import {
   publishedEditorName,
 } from "../../../shared/published-site";
 import { serializeJsonLd } from "../../../shared/json-ld";
+import { isPublishedArticleIndexable } from "../../../shared/seo-indexing";
 import styles from "../../article-page.module.css";
+import PublicFooter from "../../public-footer";
+import PublicHeader from "../../public-header";
 
 type ArticlePageProps = {
   params: Promise<{ slug: string }>;
@@ -99,7 +101,7 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
     description,
     keywords: article.keywords,
     alternates: { canonical: canonicalUrl },
-    robots: { index: !article.noindex, follow: true },
+    robots: { index: isPublishedArticleIndexable(article), follow: true },
     openGraph: {
       type: "article",
       locale: "zh_TW",
@@ -167,17 +169,11 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
   return (
     <div className={styles.page}>
-      <a className={styles.skipLink} href="#article-content">跳至文章內容</a>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
-      <header className={styles.header}>
-        <Link className={styles.brand} href="/" aria-label={`${publishedBrandName}首頁`}>
-          <span aria-hidden="true">{publishedBrandMark}</span><b>{publishedBrandName}</b>
-        </Link>
-        <nav className={styles.headerActions} aria-label="網站工具"><DeviceCartLink className={styles.homeLink} /><Link className={styles.homeLink} href="/articles/">返回收藏誌 →</Link></nav>
-      </header>
+      <PublicHeader section="journal" mainId="article-content" contextLinks={[{ href: "/articles/", label: "返回收藏誌 →" }]} />
 
       <main className={styles.shell} id="article-content">
         <nav className={styles.breadcrumb} aria-label="麵包屑">
@@ -235,10 +231,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         </article>
       </main>
 
-      <footer className={styles.footer}>
-        <span>© 2026 {publishedBrandName}</span>
-        <Link href="/service/contact/">聯絡與訂單協助</Link>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

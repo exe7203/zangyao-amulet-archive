@@ -6,11 +6,13 @@ import { handleContentApi } from "./content-api";
 import { handleSiteApi } from "./site-api";
 import { expireStaleReservations, handleStoreApi } from "./store-api";
 import { ensureDatabase } from "./database";
+import { handleSeoMetadata } from "./seo-metadata";
 
 interface Env {
   ASSETS: Fetcher;
   DB?: D1Database;
   ADMIN_EMAIL_ALLOWLIST?: string;
+  STORE_ORDERS_ENABLED?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -34,6 +36,12 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // vinext currently applies trailing-slash redirects before resolving
+    // metadata routes. Serve the two standard crawler endpoints explicitly so
+    // /robots.txt and /sitemap.xml remain stable in the Worker runtime.
+    const seoMetadataResponse = handleSeoMetadata(request);
+    if (seoMetadataResponse) return seoMetadataResponse;
 
     const adminSystemResponse = await handleAdminSystemApi(request, env);
     if (adminSystemResponse) return adminSystemResponse;

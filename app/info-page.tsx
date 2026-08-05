@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { publishedBrandMark, publishedBrandName } from "../shared/published-site";
+import { publishedBrandName } from "../shared/published-site";
 import { serializeJsonLd } from "../shared/json-ld";
-import DeviceCartLink from "./device-cart-link";
+import PublicFooter from "./public-footer";
+import PublicHeader from "./public-header";
 import styles from "./info-page.module.css";
 
 export default function InfoPage({
@@ -43,12 +44,8 @@ export default function InfoPage({
   };
   return (
     <div className={styles.page}>
-      <a className={styles.skipLink} href="#main-content">跳至主要內容</a>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
-      <header className={styles.header}>
-        <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
-        <nav className={styles.utilities} aria-label="網站工具"><DeviceCartLink /><Link href="/">返回典藏首頁 →</Link></nav>
-      </header>
+      <PublicHeader section="info" contextLinks={[{ href: "/", label: "返回典藏首頁 →" }]} />
       <main id="main-content">
         <article className={styles.article}>
           <nav aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">{title}</span></nav>
@@ -58,7 +55,7 @@ export default function InfoPage({
           <div className={styles.content}>{children}</div>
         </article>
       </main>
-      <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
+      <PublicFooter />
     </div>
   );
 }

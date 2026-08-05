@@ -15,7 +15,10 @@ import {
   ARTICLE_MAX_DOCUMENT_DEPTH,
   ARTICLE_MARK_TYPES,
   ARTICLE_NODE_TYPES,
+  ARTICLE_PUBLISH_ERROR_MESSAGE,
+  ARTICLE_PUBLISH_REQUIREMENTS,
   articleHrefForPublicSite,
+  evaluateArticlePublishReadiness,
   safeArticleLinkHref,
   validateArticleDocument,
 } from "../lib/article-content-contract.ts";
@@ -28,6 +31,14 @@ test("article editor contract exposes the reviewed SEO-safe schema", () => {
   assert.ok(ARTICLE_MARK_TYPES.includes("link"));
   assert.ok(!ARTICLE_NODE_TYPES.includes("image"));
   assert.ok(!ARTICLE_NODE_TYPES.includes("taskList"));
+  assert.equal(ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength, 300);
+  assert.match(ARTICLE_PUBLISH_ERROR_MESSAGE, /摘要（至少 20 字）.*SEO 標題（至少 8 字）.*SEO 描述（至少 50 字）.*正文（至少 300 字）/);
+  assert.equal(evaluateArticlePublishReadiness({
+    excerpt: "摘要太短",
+    seoTitle: "完整 SEO 標題",
+    seoDescription: "字".repeat(50),
+    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "字".repeat(300) }] }] },
+  }).ok, false);
   assert.equal(articleHrefForPublicSite("/articles/example/", "/zangyao-amulet-archive"), "/zangyao-amulet-archive/articles/example/");
 });
 
@@ -148,4 +159,7 @@ test("product and article editors wire safe previews, limits, and pre-save error
   assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
   assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_ALT_MAX_LENGTH\}/);
   assert.match(articleSource, /const mediaFieldError = heroImageError \|\| ogImageError \|\| canonicalUrlError/);
+  assert.match(articleSource, /ARTICLE_PUBLISH_ERROR_MESSAGE/);
+  assert.match(articleSource, /evaluateArticlePublishReadiness/);
+  assert.match(articleSource, /ARTICLE_PUBLISH_REQUIREMENTS\.bodyTextLength/);
 });

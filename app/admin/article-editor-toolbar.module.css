@@ -119,5 +119,15 @@
 }
 
 @media (max-width: 780px) {
-  .toolbar { top: 0; }
+  .toolbar { top: 108px; }
+  .toolbar button { width: 44px; height: 44px; }
+  .blockSelect { height: 44px; }
+  .linkPopover {
+    position: fixed;
+    inset: auto max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    width: auto;
+    max-height: calc(100dvh - 140px);
+    overflow-y: auto;
+  }
+  .linkPopover input { font-size: 16px; }
 }

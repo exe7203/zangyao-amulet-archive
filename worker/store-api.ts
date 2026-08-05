@@ -199,6 +199,62 @@ function parseProductRow(row: Record<string, unknown>) {
   };
 }
 
+type PublicProductRecord = ReturnType<typeof parseProductRow>;
+
+export function productMeetsPublicOrderRequirements(product: Pick<
+  PublicProductRecord,
+  "status" | "stock" | "seoReady" | "imageUrl" | "imageAlt"
+>) {
+  return product.status === "active" &&
+    product.stock > 0 &&
+    product.seoReady === true &&
+    Boolean(cleanUrl(product.imageUrl)) &&
+    Boolean(cleanText(product.imageAlt, 300));
+}
+
+export function publicOrderAccess(request: Request, env: DatabaseEnv) {
+  const localDemo = isLocalRequest(request);
+  const explicitlyEnabled = env.STORE_ORDERS_ENABLED === "1";
+  return {
+    localDemo,
+    explicitlyEnabled,
+    enabled: localDemo || explicitlyEnabled,
+  };
+}
+
+function publicOrderReadiness(
+  request: Request,
+  env: DatabaseEnv,
+  products: PublicProductRecord[],
+) {
+  const access = publicOrderAccess(request, env);
+  const orderableProductIds = access.enabled
+    ? products
+      .filter((product) => access.localDemo
+        ? product.status === "active" && product.stock > 0
+        : productMeetsPublicOrderRequirements(product))
+      .map((product) => product.id)
+    : [];
+  const orderable = new Set(orderableProductIds);
+  return {
+    ordersEnabled: access.enabled,
+    readiness: {
+      mode: access.localDemo ? "local_demo" : access.enabled ? "enabled" : "disabled",
+      localDemo: access.localDemo,
+      requiresVerifiedProducts: !access.localDemo,
+      orderableProductIds,
+      blockedProductIds: products
+        .filter((product) => !orderable.has(product.id))
+        .map((product) => product.id),
+      reason: access.localDemo
+        ? "本機僅供營運測試；商品、價格、視覺與來源皆不得視為可對外銷售資料。"
+        : access.enabled
+          ? "只接受已完成 SEO 覆核、主圖與替代文字的商品。"
+          : "公開接單尚未啟用。",
+    },
+  };
+}
+
 function parseOrderRow(row: Record<string, unknown>) {
   return {
     id: String(row.id),
@@ -331,7 +387,7 @@ function publicOrderReceipt(order: NonNullable<Awaited<ReturnType<typeof orderWi
   };
 }
 
-async function listPublicProducts(request: Request, db: D1Database, slug?: string) {
+async function listPublicProducts(request: Request, db: D1Database, env: DatabaseEnv, slug?: string) {
   const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return publicJson({ error: "找不到指定站台" }, { status: 404 });
@@ -343,8 +399,9 @@ async function listPublicProducts(request: Request, db: D1Database, slug?: strin
       LIMIT 1`)
       .bind(site.id, cleanSlug(slug))
       .first<Record<string, unknown>>();
-    return row
-      ? publicJson({ site, product: parseProductRow(row) })
+    const product = row ? parseProductRow(row) : null;
+    return product
+      ? publicJson({ site, product, ...publicOrderReadiness(request, env, [product]) })
       : publicJson({ error: "找不到商品" }, { status: 404 });
   }
 
@@ -355,7 +412,8 @@ async function listPublicProducts(request: Request, db: D1Database, slug?: strin
     LIMIT 100`)
     .bind(site.id)
     .all<Record<string, unknown>>();
-  return publicJson({ site, products: rows.results.map(parseProductRow) });
+  const products = rows.results.map(parseProductRow);
+  return publicJson({ site, products, ...publicOrderReadiness(request, env, products) });
 }
 
 export function normalizeCartItems(value: unknown) {
@@ -379,7 +437,7 @@ export function normalizeCartItems(value: unknown) {
   };
 }
 
-async function createOrder(request: Request, db: D1Database) {
+async function createOrder(request: Request, db: D1Database, requireVerifiedProducts: boolean) {
   const parsed = await readJsonObject(request, 64_000);
   if (parsed.response) return parsed.response;
   const payload = parsed.value;
@@ -466,6 +524,9 @@ async function createOrder(request: Request, db: D1Database) {
     if (product.status !== "active" || product.stock <= 0) {
       return json({ error: `${product.name}目前無法購買` }, { status: 409 });
     }
+    if (requireVerifiedProducts && !productMeetsPublicOrderRequirements(product)) {
+      return json({ error: `${product.name}尚未完成商品、圖片與 SEO 覆核，目前不可對外接單` }, { status: 409 });
+    }
     if (item.quantity > product.purchaseLimit) {
       return json({ error: `${product.name}每筆訂單最多 ${product.purchaseLimit} 件` }, { status: 409 });
     }
@@ -482,6 +543,9 @@ async function createOrder(request: Request, db: D1Database) {
   const reservedUntil = reservationDeadline(now);
   const availabilityClauses = items.map(() =>
     "(p.id = ? AND p.price = ? AND p.purchase_limit >= ? AND (i.on_hand - i.reserved) >= ?)").join(" OR ");
+  const verifiedProductClause = requireVerifiedProducts
+    ? "AND p.seo_ready = 1 AND trim(p.image_url) <> '' AND trim(p.image_alt) <> ''"
+    : "";
   const availabilityBindings = items.flatMap((item) => {
     const product = productsById.get(item.productId)!;
     return [item.productId, product.price, item.quantity, item.quantity];
@@ -499,6 +563,7 @@ async function createOrder(request: Request, db: D1Database) {
       JOIN inventory i ON i.product_id = p.id AND i.site_id = p.site_id
       JOIN categories c ON c.id = p.category_id AND c.site_id = p.site_id
       WHERE p.site_id = ? AND p.status = 'active' AND c.status = 'active'
+        ${verifiedProductClause}
         AND (${availabilityClauses})
     ) = ?`)
       .bind(
@@ -1322,13 +1387,28 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
       const slug = url.pathname.startsWith("/api/store/products/")
         ? decodeURIComponent(url.pathname.slice("/api/store/products/".length))
         : undefined;
-      return listPublicProducts(request, env.DB, slug);
+      return listPublicProducts(request, env.DB, env, slug);
     }
     if (isPublicOrders && request.method === "POST") {
       const invalidWrite = validateWriteRequest(request);
       if (invalidWrite) return invalidWrite;
+      const orderAccess = publicOrderAccess(request, env);
+      if (!orderAccess.enabled) {
+        return json({
+          error: "公開接單尚未啟用；目前商品、價格、視覺與來源皆為版型示範或待覆核資料。",
+          ordersEnabled: false,
+          readiness: {
+            mode: "disabled",
+            localDemo: false,
+            requiresVerifiedProducts: true,
+            orderableProductIds: [],
+            blockedProductIds: [],
+            reason: "公開接單尚未啟用。",
+          },
+        }, { status: 503 });
+      }
       if (isLocalRequest(request)) await expireStaleReservations(env.DB);
-      return createOrder(request, env.DB);
+      return createOrder(request, env.DB, !orderAccess.localDemo);
     }
     if (isPublicProducts || isPublicOrders) {
       return json({ error: "不支援的操作" }, { status: 405, headers: { allow: isPublicProducts ? "GET" : "POST" } });

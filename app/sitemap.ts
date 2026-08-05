@@ -2,6 +2,11 @@ import type { MetadataRoute } from "next";
 import { fallbackArticles } from "./article-data";
 import { products } from "./data";
 import { publishedPages } from "../shared/published-content";
+import {
+  isPublishedArticleIndexable,
+  isPublishedPageIndexable,
+  isStaticPathIndexable,
+} from "../shared/seo-indexing";
 
 export const dynamic = "force-static";
 
@@ -30,19 +35,24 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority,
     ...(lastModified ? { lastModified } : {}),
   });
+  const staticRoutes = [
+    ["", 1, "weekly"],
+    ["about/", 0.6, "yearly"],
+    ["articles/", 0.8, "weekly"],
+    ["service/shipping/", 0.5, "yearly"],
+    ["service/returns/", 0.5, "yearly"],
+    ["service/contact/", 0.5, "yearly"],
+    ["service/privacy/", 0.4, "yearly"],
+  ] as const;
   const baseEntries: MetadataRoute.Sitemap = [
-    entry("", 1, "weekly"),
-    entry("about/", 0.6, "yearly"),
-    entry("articles/", 0.8, "weekly"),
-    entry("service/shipping/", 0.5, "yearly"),
-    entry("service/returns/", 0.5, "yearly"),
-    entry("service/contact/", 0.5, "yearly"),
-    entry("service/privacy/", 0.4, "yearly"),
+    ...staticRoutes
+      .filter(([path]) => isStaticPathIndexable(path))
+      .map(([path, priority, frequency]) => entry(path, priority, frequency)),
     ...publishedPages
-      .filter((page) => !page.noindex && hasMatchingCanonical(page.canonicalUrl, `pages/${page.slug}/`))
+      .filter((page) => isPublishedPageIndexable(page) && hasMatchingCanonical(page.canonicalUrl, `pages/${page.slug}/`))
       .map((page) => entry(`pages/${page.slug}/`, 0.65, "monthly", page.updatedAt)),
     ...fallbackArticles
-      .filter((article) => !article.noindex && hasMatchingCanonical(article.canonicalUrl, `articles/${article.slug}/`))
+      .filter((article) => isPublishedArticleIndexable(article) && hasMatchingCanonical(article.canonicalUrl, `articles/${article.slug}/`))
       .map((article) => entry(`articles/${article.slug}/`, 0.75, "monthly", article.updatedAt)),
   ];
   if (process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1") {

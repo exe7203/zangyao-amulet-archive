@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { fallbackArticles } from "../article-data";
-import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
+import { publishedBrandName } from "../../shared/published-site";
 import styles from "./articles-index.module.css";
-import DeviceCartLink from "../device-cart-link";
 import { serializeJsonLd } from "../../shared/json-ld";
+import PublicFooter from "../public-footer";
+import PublicHeader from "../public-header";
 
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
 const canonical = new URL("articles/", siteUrl).toString();
@@ -63,11 +64,8 @@ export default function ArticlesIndexPage() {
   return (
     <div className={styles.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
-      <header className={styles.header}>
-        <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
-        <nav className={styles.headerActions} aria-label="網站工具"><DeviceCartLink /><Link href="/#journal">返回首頁 →</Link></nav>
-      </header>
-      <main className={styles.shell}>
+      <PublicHeader section="journal" contextLinks={[{ href: "/#journal", label: "返回首頁 →" }]} />
+      <main className={styles.shell} id="main-content">
         <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">收藏誌</span></nav>
         <header className={styles.intro}>
           <p>THE JOURNAL</p>
@@ -85,7 +83,7 @@ export default function ArticlesIndexPage() {
           ))}
         </section>
       </main>
-      <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><Link href="/service/contact/">聯絡與訂單協助</Link></footer>
+      <PublicFooter />
     </div>
   );
 }

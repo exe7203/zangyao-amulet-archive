@@ -375,7 +375,7 @@ async function seedCatalog(db: D1Database) {
   await db.prepare(`INSERT OR IGNORE INTO site_pages (
     id, site_id, slug, title, data_json, status, seo_title, seo_description,
     canonical_url, og_image_url, noindex, version, published_at, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, 'published', ?, ?, '', '', 0, 1, ?, ?, ?)`)
+  ) VALUES (?, ?, ?, ?, ?, 'published', ?, ?, '', '', ?, 1, ?, ?, ?)`)
     .bind(
       DEFAULT_BRAND_PAGE.id,
       DEFAULT_SITE_ID,
@@ -384,6 +384,7 @@ async function seedCatalog(db: D1Database) {
       JSON.stringify(DEFAULT_BRAND_PAGE.data),
       DEFAULT_BRAND_PAGE.seoTitle,
       DEFAULT_BRAND_PAGE.seoDescription,
+      DEFAULT_BRAND_PAGE.noindex ? 1 : 0,
       SEED_TIMESTAMP,
       SEED_TIMESTAMP,
       SEED_TIMESTAMP,

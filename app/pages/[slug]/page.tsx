@@ -8,10 +8,12 @@ import {
   publishedPages,
   publishedProducts,
 } from "../../../shared/published-content";
-import { publishedBrandMark, publishedBrandName, publishedBrandSubtitle } from "../../../shared/published-site";
+import { publishedBrandName } from "../../../shared/published-site";
 import styles from "./page.module.css";
-import DeviceCartLink from "../../device-cart-link";
 import { serializeJsonLd } from "../../../shared/json-ld";
+import { isPublishedPageIndexable } from "../../../shared/seo-indexing";
+import PublicFooter from "../../public-footer";
+import PublicHeader from "../../public-header";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -48,7 +50,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: { absolute: title.includes(publishedBrandName) ? title : `${title}｜${publishedBrandName}` },
     description: page.seoDescription,
     alternates: { canonical },
-    robots: { index: !page.noindex, follow: true },
+    robots: { index: isPublishedPageIndexable(page), follow: true },
     openGraph: {
       type: "website",
       locale: "zh_TW",
@@ -109,19 +111,13 @@ export default async function PublishedPage({ params }: PageProps) {
       type="application/ld+json"
       dangerouslySetInnerHTML={{ __html: serializeJsonLd({ "@context": "https://schema.org", "@graph": graph }) }}
     />
-    <header className={styles.header}>
-      <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b><small>{publishedBrandSubtitle}</small></Link>
-      <nav aria-label="主要導覽"><Link href="/#new">本週新藏</Link><Link href="/articles/">收藏誌</Link><DeviceCartLink /><Link href="/service/contact/">聯絡我們</Link></nav>
-    </header>
-    <main>
+    <PublicHeader section="page" />
+    <main id="main-content">
       <nav className={styles.breadcrumb} aria-label="麵包屑">
         <Link href="/">首頁</Link><span>/</span><span aria-current="page">{page.title}</span>
       </nav>
       <PageRenderer data={page.data} products={publishedProducts} articles={publishedArticles} />
     </main>
-    <footer className={styles.footer}>
-      <span>© 2026 {publishedBrandName}</span>
-      <nav><Link href="/service/privacy/">隱私權與訂購資料</Link><Link href="/service/contact/">聯絡與訂單協助</Link></nav>
-    </footer>
+    <PublicFooter />
   </div>;
 }

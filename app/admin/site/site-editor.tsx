@@ -601,9 +601,11 @@ export default function SiteEditor() {
             headerPath={previewHref}
             height="max(640px, calc(100vh - 136px))"
             viewports={[
-              { width: 1440, height: "auto", label: "桌面" },
-              { width: 768, height: "auto", label: "平板" },
-              { width: 390, height: "auto", label: "手機" },
+              { width: 1440, height: "auto", label: "桌面 1440" },
+              { width: 1024, height: "auto", label: "小桌面 1024" },
+              { width: 768, height: "auto", label: "平板 768" },
+              { width: 375, height: "auto", label: "手機 375" },
+              { width: 320, height: "auto", label: "窄手機 320" },
             ]}
             onChange={updatePageData}
             onPublish={(data) => void save("published", data)}

@@ -1,6 +1,7 @@
 export type DatabaseEnv = {
   DB?: D1Database;
   ADMIN_EMAIL_ALLOWLIST?: string;
+  STORE_ORDERS_ENABLED?: string;
 };
 
 export function json(body: unknown, init: ResponseInit = {}) {

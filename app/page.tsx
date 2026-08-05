@@ -6,7 +6,7 @@ import { serializeJsonLd } from "../shared/json-ld";
 
 export const metadata: Metadata = {
   title: "泰國佛牌與聖物收藏",
-  description: `${publishedBrandName}以來源紀錄、實物影像與文化導讀為核心，精選泰國佛牌與聖物。`,
+  description: `${publishedBrandName}以來源欄位與文化導讀為核心，整理泰國佛牌與聖物的展示版型。`,
   robots: {
     index: true,
     follow: true,
@@ -18,6 +18,13 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/",
   );
   const catalogVerified = process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1";
+  const structuredProducts = catalogVerified
+    ? products.filter((product) =>
+      (product.status === "active" || product.status === "sold_out") &&
+      product.seoReady === true &&
+      Boolean(product.imageUrl?.trim()) &&
+      Boolean(product.imageAlt?.trim()))
+    : [];
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -28,10 +35,10 @@ export default function Home() {
         description: "以來源紀錄與文化導讀為核心的泰國佛牌與聖物選物。",
         areaServed: "TW",
       },
-      ...(catalogVerified ? [{
+      ...(structuredProducts.length > 0 ? [{
         "@type": "ItemList",
         name: "本週新藏",
-        itemListElement: products.map((product, index) => ({
+        itemListElement: structuredProducts.map((product, index) => ({
           "@type": "ListItem",
           position: index + 1,
           item: {
@@ -39,11 +46,15 @@ export default function Home() {
             name: product.name,
             category: product.category,
             material: product.material,
+            image: product.imageUrl,
+            url: new URL(`products/${product.slug}/`, siteUrl).toString(),
             offers: {
               "@type": "Offer",
               priceCurrency: "TWD",
               price: product.price,
-              availability: "https://schema.org/InStock",
+              availability: product.stock > 0
+                ? "https://schema.org/InStock"
+                : "https://schema.org/OutOfStock",
             },
           },
         })),

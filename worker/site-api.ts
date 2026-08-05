@@ -20,6 +20,10 @@ import {
   MIN_SITE_THEME_CONTRAST,
   normalizeSiteAppearance,
 } from "../shared/site-settings";
+import {
+  isPublishedArticleIndexable,
+  isPublishedPageIndexable,
+} from "../shared/seo-indexing";
 
 const PAGE_STATUSES = new Set(["draft", "published", "archived"]);
 const PAGE_BLOCK_TYPES = new Set([
@@ -582,26 +586,29 @@ async function exportPublishedSite(request: Request, db: D1Database) {
       .bind(site.id).all<Record<string, unknown>>(),
   ]);
 
-  const publicArticles = articles.results.map((row) => ({
-    id: String(row.id || ""),
-    slug: String(row.slug || ""),
-    title: String(row.title || ""),
-    excerpt: String(row.excerpt || ""),
-    contentJson: parseJson(row.content_json, { type: "doc", content: [] }),
-    status: "published",
-    tag: String(row.tag || "收藏誌"),
-    keywords: parseJson(row.keywords_json, []),
-    heroImageUrl: String(row.hero_image_url || ""),
-    heroImageAlt: String(row.hero_image_alt || ""),
-    seoTitle: String(row.seo_title || ""),
-    seoDescription: String(row.seo_description || ""),
-    canonicalUrl: String(row.canonical_url || ""),
-    ogImageUrl: String(row.og_image_url || ""),
-    noindex: Boolean(row.noindex),
-    version: Number(row.version || 1),
-    publishedAt: row.published_at ? String(row.published_at) : null,
-    updatedAt: String(row.updated_at || ""),
-  }));
+  const publicArticles = articles.results.map((row) => {
+    const article = {
+      id: String(row.id || ""),
+      slug: String(row.slug || ""),
+      title: String(row.title || ""),
+      excerpt: String(row.excerpt || ""),
+      contentJson: parseJson(row.content_json, { type: "doc", content: [] }),
+      status: "published",
+      tag: String(row.tag || "收藏誌"),
+      keywords: parseJson(row.keywords_json, []),
+      heroImageUrl: String(row.hero_image_url || ""),
+      heroImageAlt: String(row.hero_image_alt || ""),
+      seoTitle: String(row.seo_title || ""),
+      seoDescription: String(row.seo_description || ""),
+      canonicalUrl: String(row.canonical_url || ""),
+      ogImageUrl: String(row.og_image_url || ""),
+      noindex: Boolean(row.noindex),
+      version: Number(row.version || 1),
+      publishedAt: row.published_at ? String(row.published_at) : null,
+      updatedAt: String(row.updated_at || ""),
+    };
+    return { ...article, noindex: !isPublishedArticleIndexable(article) };
+  });
   const publicProducts = products.results.map((row) => ({
     id: String(row.id || ""),
     sku: String(row.sku || ""),
@@ -655,7 +662,9 @@ async function exportPublishedSite(request: Request, db: D1Database) {
       currency: String(site.currency || "TWD"),
     },
     siteSettings: publicSettings,
-    pages: pages.results.map(parsePageRow),
+    pages: pages.results
+      .map(parsePageRow)
+      .map((page) => ({ ...page, noindex: !isPublishedPageIndexable(page) })),
     articles: publicArticles,
     products: publicProducts,
   });

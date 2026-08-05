@@ -166,7 +166,7 @@
   .navigation { gap: 22px; }
   .navigation a { min-height: 44px; font-size: 11px; }
   .actionbar { padding: 10px 14px; align-items: flex-start; flex-direction: column; }
-  .actions { width: 100%; justify-content: flex-start; overflow-x: auto; }
+  .actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; overflow: visible; row-gap: 8px; }
   .control { min-height: 44px; }
   .controlIcon { width: 44px; }
 }

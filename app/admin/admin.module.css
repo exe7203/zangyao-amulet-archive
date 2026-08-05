@@ -314,4 +314,5 @@
   .titleInput { font-size: 32px; }
   .editorBody { min-height: 430px; padding: 30px 24px 50px; font-size: 16px; }
   .errorBanner, .noticeBanner { width: calc(100% - 20px); margin-top: 10px; }
+  .shell input, .shell textarea, .shell select { font-size: 16px; }
 }

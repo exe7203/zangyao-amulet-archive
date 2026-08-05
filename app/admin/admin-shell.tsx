@@ -18,6 +18,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { SafePublicImage } from "../product-artwork";
+import {
+  ARTICLE_PUBLISH_ERROR_MESSAGE,
+  ARTICLE_PUBLISH_REQUIREMENTS,
+  evaluateArticlePublishReadiness,
+} from "../../lib/article-content-contract";
 import ArticleEditorToolbar from "./article-editor-toolbar";
 import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
 import {
@@ -354,6 +359,17 @@ export default function AdminShell() {
       setError(mediaFieldError);
       return;
     }
+    const contentJson = editor?.getJSON() || draft.contentJson;
+    if (status === "published" && !evaluateArticlePublishReadiness({
+      excerpt: draft.excerpt,
+      seoTitle: draft.seoTitle,
+      seoDescription: draft.seoDescription,
+      contentJson,
+    }).ok) {
+      setInspectorTab("seo");
+      setError(ARTICLE_PUBLISH_ERROR_MESSAGE);
+      return;
+    }
 
     setSaving(true);
     const savingRevision = editRevision.current;
@@ -368,7 +384,7 @@ export default function AdminShell() {
           siteCode: SITE_CODE,
           slug,
           status,
-          contentJson: editor?.getJSON() || draft.contentJson,
+          contentJson,
         }),
       });
       const payload = await response.json().catch(() => ({})) as {
@@ -461,13 +477,18 @@ export default function AdminShell() {
     }
   };
 
-  const textContent = editor?.getText().trim() || "";
-  const wordCount = useMemo(
-    () => textContent ? textContent.split(/\s+|(?=[\p{Script=Han}])/u).filter(Boolean).length : 0,
+  const publishReadiness = useMemo(
+    () => evaluateArticlePublishReadiness({
+      excerpt: draft.excerpt,
+      seoTitle: draft.seoTitle,
+      seoDescription: draft.seoDescription,
+      contentJson: draft.contentJson,
+    }),
     // editorVersion intentionally refreshes the text-derived count after editor transactions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editorVersion, textContent],
+    [draft.contentJson, draft.excerpt, draft.seoDescription, draft.seoTitle, editorVersion],
   );
+  const wordCount = publishReadiness.bodyTextLength;
   const seoTitle = draft.seoTitle || draft.title || "文章標題";
   const seoDescription = draft.seoDescription || draft.excerpt || "文章摘要會顯示在這裡。";
   const articlePath = `/articles/${slugify(draft.slug || draft.title) || "article-slug"}/`;
@@ -484,9 +505,11 @@ export default function AdminShell() {
   const seoChecks = [
     { label: "標題", pass: Boolean(draft.title.trim()) },
     { label: "固定網址", pass: Boolean(draft.slug.trim()) },
-    { label: "SEO 描述 50–160 字", pass: draft.seoDescription.length >= 50 && draft.seoDescription.length <= 160 },
+    { label: `摘要至少 ${ARTICLE_PUBLISH_REQUIREMENTS.excerptLength} 字`, pass: publishReadiness.excerptReady },
+    { label: `SEO 標題至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength} 字`, pass: publishReadiness.seoTitleReady },
+    { label: `SEO 描述至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength} 字`, pass: publishReadiness.seoDescriptionReady },
     { label: "圖片替代文字", pass: !draft.heroImageUrl || Boolean(draft.heroImageAlt.trim()) },
-    { label: "正文至少 300 字", pass: wordCount >= 300 },
+    { label: `正文至少 ${ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength} 字`, pass: publishReadiness.bodyReady },
   ];
   const handleInspectorTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: InspectorTab) => {
     const currentIndex = INSPECTOR_TABS.indexOf(current);
@@ -663,8 +686,8 @@ export default function AdminShell() {
 
               {inspectorTab === "seo" && <section id="article-panel-seo" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-seo">
                 <div className={styles.panelTitle}><span>搜尋顯示</span><small>{seoChecks.filter((check) => check.pass).length}/{seoChecks.length}</small></div>
-                <label className={styles.field}><span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span><input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder="留白時使用文章標題" /></label>
-                <label className={styles.field}><span>Meta 描述 <small>{draft.seoDescription.length}/160</small></span><textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder="搜尋結果中顯示的文章摘要" /></label>
+                <label className={styles.field}><span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span><input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder={`發布前至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength} 字`} /></label>
+                <label className={styles.field}><span>Meta 描述 <small>{draft.seoDescription.length}/160（建議）</small></span><textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder={`發布前至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength} 字`} /></label>
                 <div className={styles.searchPreview}>
                   <span>taijuda.tw{articlePath}</span>
                   <h2>{seoTitle.slice(0, 70)}</h2>

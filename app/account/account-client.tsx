@@ -21,7 +21,6 @@ import type {
   DeviceOrderReference,
   MemberSessionState,
 } from "../../shared/member-contract";
-import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
 import styles from "./account.module.css";
 
 const EMPTY_PROFILE: DeviceCheckoutProfile = {
@@ -148,12 +147,7 @@ export default function AccountClient() {
   };
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
-        <nav aria-label="會員中心導覽"><Link href="/#new">繼續選藏</Link><Link href="/service/privacy/">資料說明</Link></nav>
-      </header>
-
+    <main className={styles.page} id="main-content">
       <section className={styles.hero}>
         <div><p>DEVICE CUSTOMER CENTRE</p><h1>你的收藏資料，<br />先留在這台裝置。</h1></div>
         <aside><b>此裝置預備版</b><p>這不是正式登入帳號。資料不會跨裝置同步，也沒有把密碼、OTP 或 LINE 登入憑證存進瀏覽器。</p></aside>
@@ -195,7 +189,6 @@ export default function AccountClient() {
       </section>
 
       {feedback && <div className={styles.toast} role="status">{feedback}</div>}
-      <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><p>正式會員功能待驗證服務與資料庫啟用後接上；目前資料均由你在此裝置管理。</p></footer>
     </main>
   );
 }
