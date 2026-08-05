@@ -74,7 +74,7 @@ export default function PublicHeader({
       <div className={styles.utilities}>
         <div className={styles.contextLinks}>{contextLinks.map((link) => <Link key={`${link.href}-${link.label}`} href={link.href}>{link.label}</Link>)}</div>
         <DeviceCartLink className={styles.cartLink} />
-        {memberSurfaceEnabled && <Link className={styles.accountLink} href="/account/" aria-current={ariaCurrent(section === "account")}><span aria-hidden="true">○</span><b>我的資料</b></Link>}
+        {memberSurfaceEnabled && <Link className={styles.accountLink} href="/account/" aria-current={ariaCurrent(section === "account")}><span aria-hidden="true">○</span><b>會員中心</b></Link>}
         <button className={styles.menuButton} type="button" onClick={() => setMenuOpen(true)} aria-label="開啟網站選單" aria-expanded={menuOpen} aria-controls="public-navigation-drawer"><span aria-hidden="true">☰</span></button>
       </div>
     </header>
@@ -101,8 +101,8 @@ export default function PublicHeader({
       <div className={styles.drawerUtilities}>
         {contextLinks.map((link) => <Link key={`${link.href}-${link.label}`} href={link.href} onClick={closeMenu}>{link.label}</Link>)}
         <DeviceCartLink />
-        {memberSurfaceEnabled && <Link href="/account/" onClick={closeMenu}>此裝置資料</Link>}
-        <Link href="/service/contact/" onClick={closeMenu}>聯絡與訂單協助</Link>
+        {memberSurfaceEnabled && <Link href="/account/" onClick={closeMenu}>會員中心</Link>}
+        <Link href="/service/contact/" onClick={closeMenu}>聯絡客服</Link>
       </div>
     </aside>
 
@@ -110,7 +110,7 @@ export default function PublicHeader({
       <Link href="/"><i aria-hidden="true">⌂</i><span>首頁</span></Link>
       <Link href="/#new" aria-current={ariaCurrent(section === "collection")}><i aria-hidden="true">▦</i><span>新藏</span></Link>
       <Link href="/articles/" aria-current={ariaCurrent(section === "journal")}><i aria-hidden="true">▤</i><span>收藏誌</span></Link>
-      {memberSurfaceEnabled && <Link href="/account/" aria-current={ariaCurrent(section === "account")}><i aria-hidden="true">○</i><span>資料</span></Link>}
+      {memberSurfaceEnabled && <Link href="/account/" aria-current={ariaCurrent(section === "account")}><i aria-hidden="true">○</i><span>會員</span></Link>}
       <DeviceCartLink className={styles.mobileCart} />
     </nav>
   </>;

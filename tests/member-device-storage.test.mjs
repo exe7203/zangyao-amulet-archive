@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   DEVICE_ORDER_HISTORY_LIMIT,
@@ -12,6 +13,18 @@ import {
   saveDeviceProfile,
 } from "../app/member/device-storage.ts";
 import { UnavailableMemberGateway } from "../shared/member-contract.ts";
+import {
+  LOCAL_DEMO_CHALLENGE_STORAGE_KEY,
+  LOCAL_DEMO_CHALLENGE_TTL_MS,
+  LOCAL_DEMO_OTP_CODE,
+  LOCAL_DEMO_SESSION_STORAGE_KEY,
+  LOCAL_DEMO_SESSION_TTL_MS,
+  LocalDemoMemberGateway,
+} from "../app/member/local-demo-gateway.ts";
+import {
+  createMemberGateway,
+  isLocalDemoHostname,
+} from "../app/member/member-gateway.ts";
 
 class MemoryStorage {
   values = new Map();
@@ -110,4 +123,124 @@ test("unconfigured member gateway never produces a fake authenticated session", 
   assert.equal((await gateway.verifyEmailOtp("challenge", "123456")).status, "unavailable");
   assert.throws(() => gateway.startLineLogin("/account/"), /尚未設定/);
   await assert.rejects(gateway.requestEmailOtp("member@example.com"), /尚未設定/);
+});
+
+test("local demo email OTP creates an eight-hour session without storing credentials", async () => {
+  const storage = new MemoryStorage();
+  let now = new Date("2026-08-05T00:00:00.000Z");
+  const gateway = new LocalDemoMemberGateway(storage, {
+    now: () => now,
+    createId: () => "challenge_fixed_001",
+  });
+
+  assert.deepEqual(await gateway.getCapabilities(), { enabled: true, line: false, emailOtp: true });
+  await assert.rejects(gateway.requestEmailOtp("not-an-email"), /有效的電子郵件/);
+
+  const challenge = await gateway.requestEmailOtp(" Demo.Member@Example.com ");
+  assert.deepEqual(challenge, {
+    challengeId: "challenge_fixed_001",
+    maskedDestination: "d*****@example.com",
+    expiresAt: "2026-08-05T00:10:00.000Z",
+    retryAfterSeconds: 0,
+  });
+  assert.equal(Date.parse(challenge.expiresAt) - now.getTime(), LOCAL_DEMO_CHALLENGE_TTL_MS);
+  const challengeStorage = storage.getItem(LOCAL_DEMO_CHALLENGE_STORAGE_KEY);
+  assert.doesNotMatch(challengeStorage, new RegExp(LOCAL_DEMO_OTP_CODE));
+  assert.doesNotMatch(challengeStorage, /password|access[_-]?token|refresh[_-]?token/i);
+
+  assert.equal((await gateway.verifyEmailOtp(challenge.challengeId, "111111")).status, "error");
+  assert.equal(storage.getItem(LOCAL_DEMO_SESSION_STORAGE_KEY), null);
+
+  const authenticated = await gateway.verifyEmailOtp(challenge.challengeId, LOCAL_DEMO_OTP_CODE);
+  assert.equal(authenticated.status, "authenticated");
+  assert.equal(authenticated.member.email, "demo.member@example.com");
+  assert.equal(authenticated.member.emailVerified, true);
+  assert.deepEqual(authenticated.member.providers, ["email_otp"]);
+  assert.equal(Date.parse(authenticated.expiresAt) - now.getTime(), LOCAL_DEMO_SESSION_TTL_MS);
+  assert.equal(storage.getItem(LOCAL_DEMO_CHALLENGE_STORAGE_KEY), null);
+
+  const sessionStorage = storage.getItem(LOCAL_DEMO_SESSION_STORAGE_KEY);
+  assert.doesNotMatch(sessionStorage, new RegExp(LOCAL_DEMO_OTP_CODE));
+  assert.doesNotMatch(sessionStorage, /password|access[_-]?token|refresh[_-]?token/i);
+  assert.deepEqual(await gateway.getSession(), authenticated);
+
+  await gateway.signOut();
+  assert.deepEqual(await gateway.getSession(), { status: "anonymous" });
+  assert.equal(storage.getItem(LOCAL_DEMO_SESSION_STORAGE_KEY), null);
+  now = new Date("2026-08-05T00:00:00.000Z");
+});
+
+test("local demo challenges and sessions expire and clear invalid storage", async () => {
+  const storage = new MemoryStorage();
+  let currentTime = Date.parse("2026-08-05T00:00:00.000Z");
+  const gateway = new LocalDemoMemberGateway(storage, {
+    now: () => new Date(currentTime),
+    createId: () => "challenge_expiry_001",
+  });
+
+  const challenge = await gateway.requestEmailOtp("member@example.com");
+  currentTime += LOCAL_DEMO_CHALLENGE_TTL_MS;
+  const expiredChallenge = await gateway.verifyEmailOtp(challenge.challengeId, LOCAL_DEMO_OTP_CODE);
+  assert.equal(expiredChallenge.status, "error");
+  assert.match(expiredChallenge.message, /過期/);
+  assert.equal(storage.getItem(LOCAL_DEMO_CHALLENGE_STORAGE_KEY), null);
+
+  currentTime = Date.parse("2026-08-05T01:00:00.000Z");
+  const fresh = await gateway.requestEmailOtp("member@example.com");
+  assert.equal((await gateway.verifyEmailOtp(fresh.challengeId, LOCAL_DEMO_OTP_CODE)).status, "authenticated");
+  currentTime += LOCAL_DEMO_SESSION_TTL_MS;
+  assert.deepEqual(await gateway.getSession(), { status: "anonymous" });
+  assert.equal(storage.getItem(LOCAL_DEMO_SESSION_STORAGE_KEY), null);
+
+  storage.setItem(LOCAL_DEMO_SESSION_STORAGE_KEY, "{broken");
+  assert.deepEqual(await gateway.getSession(), { status: "anonymous" });
+  assert.equal(storage.getItem(LOCAL_DEMO_SESSION_STORAGE_KEY), null);
+});
+
+test("member gateway enables the demo only for exact loopback hostnames", async () => {
+  const localHosts = ["localhost", "LOCALHOST", "127.0.0.1", "::1", "[::1]"];
+  for (const hostname of localHosts) {
+    assert.equal(isLocalDemoHostname(hostname), true);
+    const gateway = createMemberGateway(hostname, new MemoryStorage(), {
+      createId: () => "challenge_local_001",
+    });
+    assert.deepEqual(await gateway.getCapabilities(), { enabled: true, line: false, emailOtp: true });
+  }
+
+  for (const hostname of ["taijuda.example", "localhost.example", "127.0.0.2", ""]) {
+    assert.equal(isLocalDemoHostname(hostname), false);
+    const storage = new MemoryStorage();
+    const gateway = createMemberGateway(hostname, storage);
+    assert.deepEqual(await gateway.getCapabilities(), { enabled: false, line: false, emailOtp: false });
+    assert.equal(storage.values.size, 0);
+  }
+
+  assert.deepEqual(
+    await createMemberGateway("localhost", null).getCapabilities(),
+    { enabled: false, line: false, emailOtp: false },
+  );
+});
+
+test("member-facing copy stays consumer-friendly instead of exposing storage internals", async () => {
+  const [accountClient, accountPage, publicHeader, storefront] = await Promise.all([
+    readFile(new URL("../app/account/account-client.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/account/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public-header.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/storefront.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(accountClient, /會員登入/);
+  assert.match(accountClient, /會員中心/);
+  assert.match(accountClient, /個人資料/);
+  assert.match(accountClient, /我的訂單/);
+  assert.match(accountClient, /LOCAL_DEMO_OTP_CODE/);
+  assert.match(accountPage, /會員中心/);
+  assert.match(publicHeader, /會員中心/);
+  assert.match(storefront, /會員中心/);
+
+  const memberCopy = [accountClient, accountPage, publicHeader, storefront].join("\n");
+  assert.doesNotMatch(memberCopy, /你的收藏資料/);
+  assert.doesNotMatch(memberCopy, /此裝置預備版/);
+  assert.doesNotMatch(memberCopy, /DEVICE CUSTOMER CENTRE/);
+  assert.doesNotMatch(memberCopy, /送單索引/);
 });
