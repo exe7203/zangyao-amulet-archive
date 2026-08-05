@@ -594,7 +594,7 @@ async function exportPublishedSite(request: Request, db: D1Database) {
       excerpt: String(row.excerpt || ""),
       contentJson: parseJson(row.content_json, { type: "doc", content: [] }),
       status: "published",
-      tag: String(row.tag || "收藏誌"),
+      tag: String(row.tag || "佛牌知識"),
       keywords: parseJson(row.keywords_json, []),
       heroImageUrl: String(row.hero_image_url || ""),
       heroImageAlt: String(row.hero_image_alt || ""),

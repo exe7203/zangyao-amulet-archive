@@ -5,8 +5,8 @@ import { publishedBrandName } from "../shared/published-site";
 import { serializeJsonLd } from "../shared/json-ld";
 
 export const metadata: Metadata = {
-  title: "泰國佛牌與聖物收藏",
-  description: `${publishedBrandName}以來源欄位與文化導讀為核心，整理泰國佛牌與聖物的展示版型。`,
+  title: "泰國佛牌與收藏品",
+  description: `${publishedBrandName}提供泰國佛牌與相關收藏品資訊，整理年份、材質、尺寸、來源與保存狀況，方便查閱與比較。`,
   robots: {
     index: true,
     follow: true,
@@ -18,6 +18,7 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/",
   );
   const catalogVerified = process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1";
+  const organizationId = new URL(catalogVerified ? "#store" : "#organization", siteUrl).toString();
   const structuredProducts = catalogVerified
     ? products.filter((product) =>
       (product.status === "active" || product.status === "sold_out") &&
@@ -29,15 +30,27 @@ export default function Home() {
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "OnlineStore",
-        "@id": new URL("#store", siteUrl).toString(),
+        "@type": "WebSite",
+        "@id": new URL("#website", siteUrl).toString(),
+        url: siteUrl.toString(),
         name: publishedBrandName,
-        description: "以來源紀錄與文化導讀為核心的泰國佛牌與聖物選物。",
+        description: "泰國佛牌與相關收藏品的商品資訊、文化文章與選購服務。",
+        inLanguage: "zh-Hant-TW",
+        publisher: { "@id": organizationId },
+      },
+      {
+        "@type": catalogVerified ? "OnlineStore" : "Organization",
+        "@id": organizationId,
+        url: siteUrl.toString(),
+        name: publishedBrandName,
+        description: catalogVerified
+          ? "提供泰國佛牌與相關收藏品資訊及線上選購服務。"
+          : "提供泰國佛牌與相關收藏品資訊。",
         areaServed: "TW",
       },
       ...(structuredProducts.length > 0 ? [{
         "@type": "ItemList",
-        name: "本週新藏",
+        name: "最新商品",
         itemListElement: structuredProducts.map((product, index) => ({
           "@type": "ListItem",
           position: index + 1,

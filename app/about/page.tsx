@@ -5,14 +5,14 @@ import { publishedBrandName } from "../../shared/published-site";
 
 export const metadata: Metadata = infoPageMetadata(
   `關於${publishedBrandName}`,
-  `認識${publishedBrandName}如何記錄泰國佛牌與聖物的來源、年代、材質與保存資訊。`,
+  `認識${publishedBrandName}的商品整理方式、實物拍攝原則與來源資料標示方式。`,
   "about/",
 );
 
 export default function AboutPage() {
-  return <InfoPage eyebrow="ABOUT" title={`關於${publishedBrandName}`} intro="我們希望收藏的理由能被說清楚：已知的留下證據，未知的誠實標示。" path="about/">
-    <section><h2>來源可讀，收藏可久</h2><p>{publishedBrandName}的正式商品將以藏品履歷為核心，逐件整理名稱、取得地區、寺院或法會說法、佛曆與西元年份、材質、尺寸、保存狀態及實拍日期。目前網站內的商品與視覺是版型示範；履歷完成覆核後才會對外接單，且紀錄不等同真偽保證。</p></section>
-    <section><h2>尊重信仰，也尊重判斷</h2><p>佛牌與聖物承載宗教、民俗與個人信仰。我們提供文化脈絡與收藏資訊，不以保證財運、感情、健康或其他結果作為銷售承諾。</p></section>
-    <section><h2>一物一拍</h2><p>單件藏品會保留專屬編號、正反面及細節影像。相同名稱不代表狀況完全一致，訂單確認時應以該件商品頁與店家覆核結果為準。</p></section>
+  return <InfoPage eyebrow="品牌介紹" title={`關於${publishedBrandName}`} intro="我們整理可確認的商品資料，也清楚標示仍待查證的項目。" path="about/">
+    <section><h2>商品資料清楚透明</h2><p>{publishedBrandName}會在商品上架前核對名稱、來源說明、年份、材質、尺寸與保存狀況。網站目前仍在建置中，資料未確認前不會開放訂購；來源紀錄用於整理現有資訊，不取代專業鑑定。</p></section>
+    <section><h2>尊重信仰，資訊不誇大</h2><p>佛牌與相關收藏品具有宗教、民俗與個人信仰背景。我們提供文化與商品資訊，不以財運、感情、健康或其他特定結果作為銷售保證。</p></section>
+    <section><h2>實物拍攝與單件編號</h2><p>正式上架的單件商品會提供商品編號、正反面與細節照片。相同名稱的商品仍可能有不同保存狀況，下單前請以商品頁標示及客服確認內容為準。</p></section>
   </InfoPage>;
 }

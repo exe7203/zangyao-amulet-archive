@@ -85,7 +85,7 @@ function emptyProduct(): AdminProduct {
     price: 0,
     stock: 1,
     status: "draft",
-    badge: "本週新藏",
+    badge: "新品",
     tone: "sand",
     shape: "arch",
     theme: "守護與安心",
@@ -119,7 +119,7 @@ function deliveryMethodLabel(method: string) {
 
 function eventTypeLabel(eventType: string) {
   return ({
-    order_created: "建立保留單",
+    order_created: "建立訂單",
     order_status_changed: "訂單狀態更新",
     payment_status_changed: "付款狀態更新",
     reservation_expired: "保留逾期",
@@ -262,7 +262,7 @@ function ProductManager() {
     setDraft(emptyProduct()); setDirty(false); setError(""); setNotice("");
   };
   const save = async () => {
-    if (!draft.name.trim() || !draft.slug.trim() || !draft.sku.trim()) { setError("商品名稱、網址 Slug 與典藏編號不可留白"); return; }
+    if (!draft.name.trim() || !draft.slug.trim() || !draft.sku.trim()) { setError("商品名稱、網址 Slug 與商品編號不可留白"); return; }
     if (!Number.isSafeInteger(draft.price) || draft.price < 0 || !Number.isSafeInteger(draft.stock) || draft.stock < 0) { setError("價格與庫存必須是大於或等於 0 的整數"); return; }
     if (draft.stock < (draft.inventory?.reserved ?? 0)) { setError(`實有總數不可低於目前已保留的 ${draft.inventory?.reserved ?? 0} 件`); return; }
     if (productImageError) { setError(productImageError); return; }
@@ -321,8 +321,8 @@ function ProductManager() {
         <AdminButton type="button" variant="primary" onClick={() => void save()} disabled={saving}>{saving ? "處理中…" : "儲存商品"}</AdminButton>
       </AdminActionBar>
       {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
-      <div className={styles.formGrid}><section className={styles.card}><h2>基本資料</h2><div className={styles.twoColumns}><Field label="商品全名"><input value={draft.name} onChange={(event) => update("name", event.target.value)} /></Field><Field label="前台短名"><input value={draft.shortName} onChange={(event) => update("shortName", event.target.value)} /></Field><Field label="典藏編號／SKU"><input value={draft.sku} onChange={(event) => update("sku", event.target.value.toUpperCase())} /></Field><Field label="網址 Slug"><input value={draft.slug} onChange={(event) => update("slug", event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} /></Field><Field label="分類"><select value={draft.category} onChange={(event) => update("category", event.target.value as Product["category"])}><option>佛牌</option><option>神尊</option><option>符印</option></select></Field><Field label="狀態"><select value={draft.status} onChange={(event) => update("status", event.target.value as Product["status"])}><option value="draft">草稿</option><option value="active">上架中</option><option value="sold_out">售罄</option><option value="archived">封存</option></select></Field><Field label="售價（TWD）"><input type="number" min="0" step="1" value={draft.price} onChange={(event) => update("price", Number(event.target.value))} /></Field><Field label="實有總數（含訂單保留）"><input type="number" min={draft.inventory?.reserved ?? 0} step="1" value={draft.stock} onChange={(event) => update("stock", Number(event.target.value))} /></Field><Field label="每筆限購"><input type="number" min="1" step="1" value={draft.purchaseLimit || 1} onChange={(event) => update("purchaseLimit", Number(event.target.value))} /></Field><Field label="前台標籤"><input value={draft.badge} onChange={(event) => update("badge", event.target.value)} /></Field></div><InventorySummary product={draft} /><Field label="商品說明"><textarea rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} /></Field></section>
-        <section className={styles.card}><h2>藏品履歷</h2><div className={styles.twoColumns}><Field label="來源地區"><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></Field><Field label="寺院／來源"><input value={draft.temple} onChange={(event) => update("temple", event.target.value)} /></Field><Field label="佛曆年份"><input value={draft.buddhistYear} onChange={(event) => update("buddhistYear", event.target.value)} /></Field><Field label="西元年份"><input value={draft.westernYear} onChange={(event) => update("westernYear", event.target.value)} /></Field><Field label="材質"><input value={draft.material} onChange={(event) => update("material", event.target.value)} /></Field><Field label="尺寸"><input value={draft.dimensions} onChange={(event) => update("dimensions", event.target.value)} /></Field><Field label="祈願文化主題"><input value={draft.theme} onChange={(event) => update("theme", event.target.value)} /></Field><Field label="視覺形制"><select value={draft.shape} onChange={(event) => update("shape", event.target.value as Product["shape"])}><option value="arch">拱形</option><option value="oval">橢圓</option><option value="round">圓形</option><option value="statue">神尊</option></select></Field></div></section>
+      <div className={styles.formGrid}><section className={styles.card}><h2>基本資料</h2><div className={styles.twoColumns}><Field label="商品全名"><input value={draft.name} onChange={(event) => update("name", event.target.value)} /></Field><Field label="前台短名"><input value={draft.shortName} onChange={(event) => update("shortName", event.target.value)} /></Field><Field label="商品編號／SKU"><input value={draft.sku} onChange={(event) => update("sku", event.target.value.toUpperCase())} /></Field><Field label="網址 Slug"><input value={draft.slug} onChange={(event) => update("slug", event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} /></Field><Field label="分類"><select value={draft.category} onChange={(event) => update("category", event.target.value as Product["category"])}><option>佛牌</option><option>神尊</option><option>符印</option></select></Field><Field label="狀態"><select value={draft.status} onChange={(event) => update("status", event.target.value as Product["status"])}><option value="draft">草稿</option><option value="active">上架中</option><option value="sold_out">售罄</option><option value="archived">封存</option></select></Field><Field label="售價（TWD）"><input type="number" min="0" step="1" value={draft.price} onChange={(event) => update("price", Number(event.target.value))} /></Field><Field label="實有總數（含訂單保留）"><input type="number" min={draft.inventory?.reserved ?? 0} step="1" value={draft.stock} onChange={(event) => update("stock", Number(event.target.value))} /></Field><Field label="每筆限購"><input type="number" min="1" step="1" value={draft.purchaseLimit || 1} onChange={(event) => update("purchaseLimit", Number(event.target.value))} /></Field><Field label="前台標籤"><input value={draft.badge} onChange={(event) => update("badge", event.target.value)} /></Field></div><InventorySummary product={draft} /><Field label="商品說明"><textarea rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} /></Field></section>
+        <section className={styles.card}><h2>來源與規格</h2><div className={styles.twoColumns}><Field label="來源地區"><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></Field><Field label="寺院／來源"><input value={draft.temple} onChange={(event) => update("temple", event.target.value)} /></Field><Field label="佛曆年份"><input value={draft.buddhistYear} onChange={(event) => update("buddhistYear", event.target.value)} /></Field><Field label="西元年份"><input value={draft.westernYear} onChange={(event) => update("westernYear", event.target.value)} /></Field><Field label="材質"><input value={draft.material} onChange={(event) => update("material", event.target.value)} /></Field><Field label="尺寸"><input value={draft.dimensions} onChange={(event) => update("dimensions", event.target.value)} /></Field><Field label="文化主題"><input value={draft.theme} onChange={(event) => update("theme", event.target.value)} /></Field><Field label="外觀形制"><select value={draft.shape} onChange={(event) => update("shape", event.target.value as Product["shape"])}><option value="arch">拱形</option><option value="oval">橢圓</option><option value="round">圓形</option><option value="statue">神尊</option></select></Field></div></section>
         <section className={styles.card}>
           <h2>圖片與 SEO</h2>
           <div className={styles.imagePreview}>
@@ -353,8 +353,8 @@ function ProductManager() {
           {productImageError && <p className={styles.fieldError} role="status">{productImageError}</p>}
           <Field label="SEO 標題"><input value={draft.seoTitle} onChange={(event) => update("seoTitle", event.target.value)} /></Field>
           <Field label="Meta 描述"><textarea rows={4} value={draft.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} /></Field>
-          <label className={styles.field}><span>搜尋收錄狀態</span><span><input type="checkbox" checked={draft.seoReady === true} onChange={(event) => update("seoReady", event.target.checked)} /> 已逐件覆核商品、圖片與 SEO，可以同步到可索引公開版</span></label>
-          <small>勾選前必須有公開主圖與替代文字、至少 8 字 SEO 標題及 50 字 Meta 描述；公開建置仍需設定商品覆核閘門。</small>
+          <label className={styles.field}><span>搜尋收錄狀態</span><span><input type="checkbox" checked={draft.seoReady === true} onChange={(event) => update("seoReady", event.target.checked)} /> 商品、圖片與 SEO 資料已確認，可同步到公開索引</span></label>
+          <small>勾選前必須有公開主圖與替代文字、至少 8 字 SEO 標題及 50 字 Meta 描述；公開建置仍需開啟商品收錄設定。</small>
         </section>
         <section className={`${styles.card} ${styles.historyCard}`}>
           <div className={styles.cardHeading}><div><small>INVENTORY LOG</small><h2>庫存流水</h2></div>{draft.id && <button type="button" onClick={() => void loadMovements(draft.id, movementPagination.page)} disabled={movementsLoading}><RefreshCw size={13} />重新整理</button>}</div>
@@ -534,7 +534,7 @@ function OrderManager() {
         </>}
       </AdminActionBar>
       {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
-      {!selected ? <div className={styles.emptyState}><span>◇</span><h2>{hasOrderFilters ? "沒有符合條件的訂單" : "目前還沒有訂單"}</h2><p>{hasOrderFilters ? "請調整搜尋字詞或狀態篩選。" : "前台送出的商品保留單會保存在本機資料庫。"}</p></div> : <div className={styles.orderGrid}>
+      {!selected ? <div className={styles.emptyState}><span>◇</span><h2>{hasOrderFilters ? "沒有符合條件的訂單" : "目前還沒有訂單"}</h2><p>{hasOrderFilters ? "請調整搜尋字詞或狀態篩選。" : "前台送出的訂單會保存在本機資料庫。"}</p></div> : <div className={styles.orderGrid}>
         <section className={styles.card}>
           <div className={styles.orderTitle}><div><small>ORDER</small><h2>{selected.orderNumber}</h2></div><b>{formatPrice(selected.subtotal)}</b></div>
           <div className={styles.orderItems}>{selected.items.map((item) => <div key={item.id}><span><b>{item.name}</b><small>{item.sku} · {formatPrice(item.unitPrice)} × {item.quantity}</small></span><b>{formatPrice(item.lineTotal)}</b></div>)}</div>

@@ -9,23 +9,23 @@ import PublicHeader from "../public-header";
 
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
 const canonical = new URL("articles/", siteUrl).toString();
-const journalName = `${publishedBrandName}收藏誌`;
+const journalName = `${publishedBrandName}佛牌專欄`;
 
 export const metadata: Metadata = {
-  title: { absolute: `泰國佛牌收藏誌｜${publishedBrandName}` },
-  description: `${publishedBrandName}收藏誌整理泰國佛牌年份、材質、來源、外殼保養與收藏履歷，從可以查證的資料開始認識佛牌文化。`,
+  title: { absolute: `佛牌知識與收藏指南｜${publishedBrandName}` },
+  description: `${publishedBrandName}提供佛牌年份、材質、來源、保存與外殼保養等實用資訊，方便讀者查閱與比較。`,
   alternates: { canonical },
   openGraph: {
     type: "website",
     url: canonical,
-    title: `泰國佛牌收藏誌｜${publishedBrandName}`,
-    description: "從年份、材質、來源與保存紀錄開始認識泰國佛牌收藏。",
-    images: [{ url: new URL("og.png", siteUrl).toString(), alt: `${publishedBrandName}泰國佛牌收藏誌` }],
+    title: `佛牌知識與收藏指南｜${publishedBrandName}`,
+    description: "提供佛牌年份、材質、來源、保存與外殼保養等實用資訊。",
+    images: [{ url: new URL("og.png", siteUrl).toString(), alt: `${publishedBrandName}佛牌知識與收藏指南` }],
   },
   twitter: {
     card: "summary_large_image",
-    title: `泰國佛牌收藏誌｜${publishedBrandName}`,
-    description: "從年份、材質、來源與保存紀錄開始認識泰國佛牌收藏。",
+    title: `佛牌知識與收藏指南｜${publishedBrandName}`,
+    description: "提供佛牌年份、材質、來源、保存與外殼保養等實用資訊。",
     images: [new URL("og.png", siteUrl).toString()],
   },
 };
@@ -55,7 +55,7 @@ export default function ArticlesIndexPage() {
         "@type": "BreadcrumbList",
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
-          { "@type": "ListItem", position: 2, name: "收藏誌", item: canonical },
+          { "@type": "ListItem", position: 2, name: "佛牌專欄", item: canonical },
         ],
       },
     ],
@@ -66,13 +66,13 @@ export default function ArticlesIndexPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
       <PublicHeader section="journal" contextLinks={[{ href: "/#journal", label: "返回首頁 →" }]} />
       <main className={styles.shell} id="main-content">
-        <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">收藏誌</span></nav>
+        <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">佛牌專欄</span></nav>
         <header className={styles.intro}>
-          <p>THE JOURNAL</p>
+          <p>佛牌知識</p>
           <h1>{journalName}</h1>
-          <span>從可以查證的年份、材質、來源與保存紀錄開始，慢慢建立自己的收藏判斷。</span>
+          <span>提供年份、材質、來源與保存方式等入門資訊，方便讀者查閱與比較。</span>
         </header>
-        <section className={styles.grid} aria-label="收藏文章">
+        <section className={styles.grid} aria-label="佛牌文章">
           {fallbackArticles.map((article, index) => (
             <article key={article.id}>
               <p>{String(index + 1).padStart(2, "0")} · {article.tag}</p>

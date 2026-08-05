@@ -180,7 +180,7 @@ export function createStarterPageData(): PageData {
           eyebrow: "NEXT STEP",
           title: "準備好下一步了嗎？",
           body: "前往商品區瀏覽目前可訂藏品，或先與我們確認細節。",
-          buttonLabel: "查看本週新藏",
+          buttonLabel: "查看最新商品",
           buttonHref: "/#new",
           tone: "gold",
         },

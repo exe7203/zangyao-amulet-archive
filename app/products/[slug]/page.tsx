@@ -23,7 +23,7 @@ export const dynamicParams = false;
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const product = products.find((candidate) => candidate.slug === slug);
-  if (!product) return { title: { absolute: `藏品資料｜${publishedBrandName}` }, robots: { index: false, follow: true } };
+  if (!product) return { title: { absolute: `商品資料｜${publishedBrandName}` }, robots: { index: false, follow: true } };
   const canonical = new URL(`products/${product.slug}/`, siteUrl).toString();
   const image = new URL(product.imageUrl || "og.png", siteUrl).toString();
   const indexable = catalogVerified && product.seoReady === true;
@@ -38,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       url: canonical,
       title: product.seoTitle || product.name,
       description: product.seoDescription || product.description,
-      images: [{ url: image, alt: product.imageAlt || `${product.name}｜${publishedBrandName}藏品資料` }],
+      images: [{ url: image, alt: product.imageAlt || `${product.name}｜${publishedBrandName}商品資料` }],
     },
     twitter: {
       card: "summary_large_image",
@@ -68,7 +68,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return <div className={styles.page}>
     {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />}
-    <PublicHeader section="collection" contextLinks={[{ href: "/#new", label: "返回本週新藏 →" }]} />
+    <PublicHeader section="collection" contextLinks={[{ href: "/#new", label: "返回最新商品 →" }]} />
     <main id="main-content"><ProductLiveView slug={slug} initialProduct={product || null} /></main>
     <PublicFooter />
   </div>;

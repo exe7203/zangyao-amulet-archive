@@ -1,19 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import InfoPage from "../../info-page";
 import { infoPageMetadata } from "../../site-metadata";
 import { publishedBrandName } from "../../../shared/published-site";
 
 export const metadata: Metadata = infoPageMetadata(
-  "聯絡與訂單協助",
-  `${publishedBrandName}商品問題、訂單編號與售後協助方式。`,
+  "客服資訊",
+  `${publishedBrandName}客服聯絡方式與服務時間公告。`,
   "service/contact/",
 );
 
 export default function ContactPage() {
-  return <InfoPage eyebrow="CONTACT" title="聯絡與訂單協助" intro="先留下可以核對的商品或訂單資料，處理會更快。" path="service/contact/">
-    <section><h2>商品購買前</h2><p>請從商品頁查看典藏編號、年份、材質、尺寸與來源說明；若仍有疑問，可在保留單備註欄填寫希望確認的項目。</p><p><Link href="/#new">前往本週新藏 →</Link></p></section>
-    <section><h2>已建立保留單</h2><p>聯繫時請準備畫面顯示的訂單編號。店家會使用保留單中提供的電話、電子郵件或 LINE ID 聯繫，不會要求提供信用卡密碼或簡訊驗證碼。</p></section>
-    <section><h2>公開聯絡管道</h2><p>LINE 官方帳號、客服信箱與營業資訊尚未由站主正式設定，因此網站暫不顯示未確認的帳號。完成設定後，本頁可直接更新，不需要重做訂單或文章系統。</p></section>
+  return <InfoPage eyebrow="客服服務" title="客服資訊" intro="客服聯絡方式與服務時間會在正式開放訂購前公布。" path="service/contact/">
+    <section><h2>目前狀態</h2><p>{publishedBrandName}尚未公布正式客服管道，因此本頁目前不提供 LINE 帳號、電子郵件或電話，避免使用未確認的聯絡資料。</p></section>
+    <section><h2>商品諮詢</h2><p>客服服務啟用後，諮詢商品時請提供商品編號及希望確認的項目；訂單查詢則請準備訂單編號。</p></section>
+    <section><h2>安全提醒</h2><p>正式客服不會要求提供信用卡密碼、網路銀行密碼或簡訊驗證碼。客服管道公布後，請以本網站列出的資訊為準。</p></section>
   </InfoPage>;
 }

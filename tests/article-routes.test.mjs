@@ -57,7 +57,7 @@ test("the article index renders a crawlable collection and links every snapshot 
   const response = await renderRoute("/articles/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /<h1[^>]*>泰聚達收藏誌<\/h1>/);
+  assert.match(html, /<h1[^>]*>泰聚達佛牌專欄<\/h1>/);
   assert.match(html, /"@type":"CollectionPage"/);
   assert.match(html, /"@type":"ItemList"/);
   assert.match(html, /"@type":"BreadcrumbList"/);
@@ -90,7 +90,7 @@ test("every published article route renders independent SEO and structured data"
     assert.ok(html.includes(`"datePublished":"${article.publishedAt}"`));
     assert.ok(html.includes(`"dateModified":"${article.updatedAt}"`));
     assert.match(html, /aria-label="麵包屑"/);
-    assert.match(html, /href="[^"]*\/articles\/"[^>]*>← 返回泰聚達收藏誌/);
+    assert.match(html, /href="[^"]*\/articles\/"[^>]*>← 返回泰聚達佛牌專欄/);
   }
 });
 

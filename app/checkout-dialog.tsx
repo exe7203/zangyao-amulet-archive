@@ -111,7 +111,7 @@ export default function CheckoutDialog({
     event.preventDefault();
     setError("");
     if (lines.length === 0) {
-      setError("收藏袋是空的，請先選擇商品。");
+      setError("購物車目前沒有商品，請先選擇商品。");
       return;
     }
     if (name.trim().length < 2) {
@@ -166,7 +166,7 @@ export default function CheckoutDialog({
       };
       if (!response.ok || !payload.order) {
         if (response.status === 404 || response.status === 503) {
-          throw new Error(`目前開啟的是未連接接單服務的展示版，請改用${publishedBrandName}本機版送出訂單。`);
+          throw new Error("目前無法送出訂單，請稍後再試或聯絡客服。");
         }
         throw new Error(payload.error || "訂單送出失敗，請稍後再試。");
       }
@@ -185,14 +185,14 @@ export default function CheckoutDialog({
       <div className="checkout-panel" ref={panelRef}>
         <header>
           <div>
-            <p>RESERVATION ORDER</p>
-            <h2 id={titleId}>填寫收藏訂單</h2>
+            <p>訂購資料</p>
+            <h2 id={titleId}>填寫訂購資料</h2>
           </div>
           <button ref={closeRef} type="button" onClick={onClose} disabled={submitting} aria-label="關閉結帳資料">×</button>
         </header>
 
         <p className="checkout-intro" id={descriptionId}>
-          目前不在線上收款。送出後會建立商品保留單，再由店家確認來源資料、庫存、配送與付款方式。
+          送出後，{publishedBrandName}客服將確認商品、庫存、運費與付款方式；網站目前不直接收款。
         </p>
 
         <form onSubmit={submitOrder}>
@@ -200,7 +200,7 @@ export default function CheckoutDialog({
             <label><span>收件人姓名 *</span><input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required /></label>
             <label><span>聯絡電話 *</span><input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={20} required /></label>
             <label><span>電子郵件</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={160} /></label>
-            <label><span>LINE ID</span><input value={lineId} onChange={(event) => setLineId(event.target.value)} maxLength={80} /></label>
+            <label><span>LINE 聯絡 ID</span><input value={lineId} onChange={(event) => setLineId(event.target.value)} maxLength={80} /></label>
             <label className="checkout-wide"><span>配送方式 *</span><select value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value as DeliveryMethod)}>{Object.entries(DELIVERY_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <label className="checkout-wide"><span>{deliveryMethod === "home_delivery" ? "收件地址 *" : "門市／面交偏好"}</span><input autoComplete="street-address" value={address} onChange={(event) => setAddress(event.target.value)} maxLength={300} required={deliveryMethod === "home_delivery"} placeholder={deliveryMethod === "home_delivery" ? "請填寫郵遞區號與完整地址" : "可先填寫希望的地區或門市"} /></label>
             <label className="checkout-wide"><span>訂單備註</span><textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} placeholder="例如方便聯絡的時間、商品問題或配送需求" /></label>
@@ -221,16 +221,16 @@ export default function CheckoutDialog({
           <div className="checkout-remember">
             <label>
               <input type="checkbox" checked={rememberProfile} onChange={(event) => setRememberProfile(event.target.checked)} />
-              <span>將聯絡與配送資料保存在這台裝置</span>
+              <span>記住收件資料，方便下次結帳</span>
             </label>
-            <small>只在訂單成功後寫入瀏覽器，保存最多 180 天；不會建立登入帳號或跨裝置同步。共用電腦請勿勾選。已有資料可到<a href="/account/" target="_blank" rel="noreferrer">會員中心</a>清除。</small>
+            <small>資料只會保存在目前瀏覽器；不建議在公用裝置使用。</small>
           </div>
 
           {error && <p className="checkout-error" role="alert">{error}</p>}
           <button className="button button--gold checkout-submit" type="submit" disabled={submitting}>
-            {submitting ? "正在建立保留單…" : "送出訂單資料 →"}
+            {submitting ? "正在送出訂單…" : "送出訂單 →"}
           </button>
-          <small className="checkout-consent">送出即表示同意店家依<a href="/service/privacy/" target="_blank" rel="noreferrer">隱私與保留單資料說明</a>，僅為訂單聯繫、配送與售後處理使用上述資料。</small>
+          <small className="checkout-consent">送出即表示同意{publishedBrandName}依<a href="/service/privacy/" target="_blank" rel="noreferrer">隱私權政策</a>，僅為訂單聯繫、配送與售後處理使用上述資料。</small>
         </form>
       </div>
     </div>

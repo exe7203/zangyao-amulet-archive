@@ -219,19 +219,46 @@ function parseSitemap(xml) {
 
 const homeHtml = await readFile(routeFile(""), "utf8");
 assert.match(homeHtml, /<html[^>]*lang="zh-Hant-TW"/i);
-assert.match(homeHtml, /<h1[^>]*><span>把來源說清楚，<\/span><span>才值得長久收藏。<\/span><\/h1>/i);
+assert.match(
+  homeHtml,
+  new RegExp(
+    `<h1[^>]*><span>${escapeRegExp(snapshot.siteSettings.settings.homeHeroTitlePrimary)}</span>` +
+      `<span>${escapeRegExp(snapshot.siteSettings.settings.homeHeroTitleSecondary)}</span></h1>`,
+    "i",
+  ),
+);
 assert.match(homeHtml, /泰聚達/);
 assert.doesNotMatch(homeHtml, /藏曜選物|ZANGYAO|ZAA-2566/);
 assert.ok(homeHtml.includes(`${basePath}/_next/`), "GitHub Pages base path is missing from assets");
 assert.equal(canonicalHref(homeHtml), publicUrl(""), "home canonical URL is incorrect");
 assertMetaEquals(homeHtml, "property", "og:image", publicImage(""), "home");
-assert.ok(jsonLdTypes(homeHtml, "home").has("OnlineStore"), "home JSON-LD is missing OnlineStore");
+const homeTypes = jsonLdTypes(homeHtml, "home");
+assert.ok(homeTypes.has("WebSite"), "home JSON-LD is missing WebSite");
+assert.ok(
+  homeTypes.has(catalogVerified ? "OnlineStore" : "Organization"),
+  `home JSON-LD is missing ${catalogVerified ? "OnlineStore" : "Organization"}`,
+);
+if (!catalogVerified) {
+  assert.ok(!homeTypes.has("OnlineStore"), "an unverified catalog must not claim OnlineStore structured data");
+}
 assert.ok(!homeHtml.includes("example.com"), "placeholder SEO URL remains in export");
 assert.doesNotMatch(
   homeHtml,
-  /收件人姓名|聯絡電話 \*|送出訂單資料|常用結帳資料|將聯絡與配送資料保存在這台裝置|\/api\/store\/orders/,
+  /收件人姓名|聯絡電話 \*|常用結帳資料|checkout-contact|checkout-phone|\/api\/store\/orders/,
   "the static showcase must not render an order or personal-data form",
 );
+for (const product of snapshot.products.filter((candidate) => candidate.seoReady !== true)) {
+  assert.ok(
+    !homeHtml.includes(`${product.origin} · ${product.buddhistYear}`),
+    `unverified product facts are visible on the home page: ${product.slug}`,
+  );
+  if (product.badge) {
+    assert.ok(
+      !homeHtml.includes(`>${product.badge}<`),
+      `an unverified product badge is visible on the home page: ${product.slug}`,
+    );
+  }
+}
 
 await Promise.all([
   assertPathMissing("admin", "the write-enabled admin surface must not be published on GitHub Pages"),
@@ -258,9 +285,9 @@ for (const route of ["about/", "service/shipping/", "service/returns/", "service
 const articleIndexHtml = await readFile(routeFile("articles/"), "utf8");
 assertSeoDocument(articleIndexHtml, {
   label: "article index",
-  title: "泰國佛牌收藏誌｜泰聚達",
-  description: "泰聚達收藏誌整理泰國佛牌年份、材質、來源、外殼保養與收藏履歷，從可以查證的資料開始認識佛牌文化。",
-  socialDescription: "從年份、材質、來源與保存紀錄開始認識泰國佛牌收藏。",
+  title: "佛牌知識與收藏指南｜泰聚達",
+  description: "泰聚達提供佛牌年份、材質、來源、保存與外殼保養等實用資訊，方便讀者查閱與比較。",
+  socialDescription: "提供佛牌年份、材質、來源、保存與外殼保養等實用資訊。",
   canonical: publicUrl("articles/"),
   indexable: true,
   ogType: "website",
@@ -408,6 +435,7 @@ const privateUiMarkers = [
   /泰聚達內容中樞|儲存草稿|發布文章|發布頁面|版本發生衝突/i,
   /收件人姓名|送出訂單資料|\/api\/store\/orders/i,
   /"(?:updatedBy|savedBy|adminEmail|customerEmail|customerPhone|customerAddress|idempotencyKey)"\s*:/i,
+  /收藏袋|保留單|送單索引|版型示範|SEO\s*覆核|商品快照|公開\s*SEO\s*版|OBJECT RECORD|RESERVATION RECEIVED|MEMBER CENTRE/i,
 ];
 for (const entry of publicFiles) {
   if (!entry.isFile() || !/\.(?:html|js|css|json|txt|xml|map|webmanifest)$/i.test(entry.name)) continue;

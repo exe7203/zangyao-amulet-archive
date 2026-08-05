@@ -26,7 +26,7 @@ export default function ProductActions({
 
   const add = () => {
     if (!canOrder) {
-      setMessage("商品或接單狀態尚未完成覆核，目前不可加入收藏袋。");
+      setMessage("這項商品目前暫不開放訂購。");
       return;
     }
     try {
@@ -40,19 +40,19 @@ export default function ProductActions({
       );
       const alreadyInCart = current.some((item) => item.productId === product.id);
       if (!alreadyInCart && current.length >= MAX_CART_DISTINCT_ITEMS) {
-        setMessage(`收藏袋最多可放 ${MAX_CART_DISTINCT_ITEMS} 種商品，請先回首頁移除一件。`);
+        setMessage(`購物車最多可放 ${MAX_CART_DISTINCT_ITEMS} 種商品，請先回首頁移除一項。`);
         return;
       }
       window.localStorage.setItem(CART_STORAGE_KEY, serializeCartItems(addCartItem(current, product)));
       window.dispatchEvent(new Event(CART_CHANGE_EVENT));
-      setMessage("已加入收藏袋。");
+      setMessage("已加入購物車。");
     } catch {
-      setMessage("收藏袋目前無法更新，請稍後再試。");
+      setMessage("購物車目前無法更新，請稍後再試。");
     }
   };
 
   return <div>
-    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "庫存待確認" : !orderReady ? "目前未開放接單" : canOrder ? "加入收藏袋" : "目前不可訂購"}</button>
-    {message && <p role="status">{message} <Link href="/#new">返回首頁查看收藏袋 →</Link></p>}
+    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "商品資料確認中" : !orderReady ? "暫未開放訂購" : canOrder ? "加入購物車" : "目前不可訂購"}</button>
+    {message && <p role="status">{message} <Link href="/?cart=open">查看購物車 →</Link></p>}
   </div>;
 }

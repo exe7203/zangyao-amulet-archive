@@ -15,12 +15,12 @@ export default function PublicFooter({ note }: { note?: ReactNode }) {
         <span className={styles.footerBrandMark} aria-hidden="true">{publishedBrandMark}</span>
         <span className={styles.brandCopy}><b>{publishedBrandName}</b><small>{publishedBrandSubtitle}</small></span>
       </Link>
-      <p>來源可讀，收藏可久。<br />從文化、工藝與紀錄開始認識泰國佛牌。</p>
+      <p>泰國佛牌與相關收藏品。<br />提供商品資訊、文化文章與選購說明。</p>
     </div>
     <nav className={styles.footerLinks} aria-label="頁尾導覽">
-      <div><b>典藏</b><Link href="/#new">本週新藏</Link><Link href="/#collections">佛牌與聖物</Link><Link href="/#archive">來源履歷</Link></div>
-      <div><b>認識</b><Link href="/pages/brand-story/">品牌故事</Link><Link href="/articles/">收藏誌</Link><Link href="/about/">關於{publishedBrandName}</Link></div>
-      <div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/privacy/">隱私說明</Link><Link href="/service/contact/">聯絡我們</Link></div>
+      <div><b>商品</b><Link href="/#new">最新商品</Link><Link href="/#collections">商品分類</Link><Link href="/#archive">商品資訊說明</Link></div>
+      <div><b>關於</b><Link href="/about/">關於{publishedBrandName}</Link><Link href="/articles/">佛牌專欄</Link></div>
+      <div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/privacy/">隱私權政策</Link></div>
     </nav>
     <div className={styles.footerBottom}>
       <span>© 2026 {publishedBrandName}</span>

@@ -247,10 +247,10 @@ function publicOrderReadiness(
         .filter((product) => !orderable.has(product.id))
         .map((product) => product.id),
       reason: access.localDemo
-        ? "本機僅供營運測試；商品、價格、視覺與來源皆不得視為可對外銷售資料。"
+        ? "內部測試模式；商品與訂單資料僅供流程測試。"
         : access.enabled
-          ? "只接受已完成 SEO 覆核、主圖與替代文字的商品。"
-          : "公開接單尚未啟用。",
+          ? "訂單送出後將由客服確認庫存、運費與付款方式。"
+          : "目前未開放線上訂購。",
     },
   };
 }
@@ -525,7 +525,7 @@ async function createOrder(request: Request, db: D1Database, requireVerifiedProd
       return json({ error: `${product.name}目前無法購買` }, { status: 409 });
     }
     if (requireVerifiedProducts && !productMeetsPublicOrderRequirements(product)) {
-      return json({ error: `${product.name}尚未完成商品、圖片與 SEO 覆核，目前不可對外接單` }, { status: 409 });
+      return json({ error: `${product.name}目前暫不開放訂購` }, { status: 409 });
     }
     if (item.quantity > product.purchaseLimit) {
       return json({ error: `${product.name}每筆訂單最多 ${product.purchaseLimit} 件` }, { status: 409 });
@@ -630,7 +630,7 @@ async function createOrder(request: Request, db: D1Database, requireVerifiedProd
     eventType: "order_created",
     fromValue: "",
     toValue: "new",
-    note: `建立 ${RESERVATION_HOLD_HOURS} 小時商品保留單`,
+    note: `建立訂單並保留庫存 ${RESERVATION_HOLD_HOURS} 小時`,
     actor: "store-api",
     createdAt: now,
     expectedOrderStatus: "new",
@@ -1395,7 +1395,7 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
       const orderAccess = publicOrderAccess(request, env);
       if (!orderAccess.enabled) {
         return json({
-          error: "公開接單尚未啟用；目前商品、價格、視覺與來源皆為版型示範或待覆核資料。",
+          error: "目前未開放線上訂購。",
           ordersEnabled: false,
           readiness: {
             mode: "disabled",
@@ -1403,7 +1403,7 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
             requiresVerifiedProducts: true,
             orderableProductIds: [],
             blockedProductIds: [],
-            reason: "公開接單尚未啟用。",
+            reason: "目前未開放線上訂購。",
           },
         }, { status: 503 });
       }

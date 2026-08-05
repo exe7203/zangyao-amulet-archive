@@ -45,7 +45,7 @@ export default function InfoPage({
   return (
     <div className={styles.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
-      <PublicHeader section="info" contextLinks={[{ href: "/", label: "返回典藏首頁 →" }]} />
+      <PublicHeader section="info" contextLinks={[{ href: "/", label: "返回首頁 →" }]} />
       <main id="main-content">
         <article className={styles.article}>
           <nav aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">{title}</span></nav>

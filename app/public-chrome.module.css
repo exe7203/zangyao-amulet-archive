@@ -219,7 +219,7 @@
   .mobileNavigation i { font-size: 17px; font-style: normal; line-height: 1; }
   .mobileCart { font-size: 0 !important; }
   .mobileCart::before { content: "◇"; font-size: 17px; line-height: 1; }
-  .mobileCart::after { content: "收藏袋"; font-size: 9px; line-height: 1.4; }
+  .mobileCart::after { content: "購物車"; font-size: 9px; line-height: 1.4; }
 
   .footer {
     padding: 58px 22px calc(112px + env(safe-area-inset-bottom, 0px));

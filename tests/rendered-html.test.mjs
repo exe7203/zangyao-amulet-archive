@@ -36,9 +36,9 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /<html[^>]*lang="zh-Hant-TW"/i);
   assert.match(html, /泰聚達/);
   assert.doesNotMatch(html, /藏曜選物|ZANGYAO|ZAA-2566/);
-  assert.match(html, /把來源說清楚/);
+  assert.match(html, /清楚的商品資訊/);
   assert.match(html, /application\/ld\+json/);
-  assert.match(html, /本週新藏/);
+  assert.match(html, /最新商品/);
   assert.ok(publishedSnapshot.articles.length > 0, "the public snapshot has no articles");
   assert.ok(html.includes(publishedSnapshot.articles[0].title));
   assert.ok(html.includes(`/articles/${publishedSnapshot.articles[0].slug}/`));

@@ -19,10 +19,10 @@ export type PublicHeaderLink = {
 export type PublicSection = "collection" | "journal" | "account" | "info" | "page";
 
 const PRIMARY_LINKS: PublicHeaderLink[] = [
-  { href: "/#new", label: "本週新藏" },
-  { href: "/#collections", label: "佛牌與聖物" },
-  { href: "/articles/", label: "收藏誌" },
-  { href: "/pages/brand-story/", label: "品牌故事" },
+  { href: "/#new", label: "最新商品" },
+  { href: "/#collections", label: "商品分類" },
+  { href: "/articles/", label: "佛牌專欄" },
+  { href: "/about/", label: "關於泰聚達" },
 ];
 
 function ariaCurrent(active: boolean) {
@@ -39,9 +39,11 @@ export default function PublicHeader({
   mainId?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [memberSurfaceEnabled, setMemberSurfaceEnabled] = useState(
+    process.env.NEXT_PUBLIC_STORE_MODE === "live",
+  );
   const menuRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const memberSurfaceEnabled = process.env.NEXT_PUBLIC_STORE_MODE === "live";
 
   useModalFocus(menuOpen, menuRef, closeRef, () => setMenuOpen(false));
 
@@ -49,6 +51,12 @@ export default function PublicHeader({
     document.body.classList.toggle("no-scroll", menuOpen);
     return () => document.body.classList.remove("no-scroll");
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(window.location.hostname)) return;
+    const timer = window.setTimeout(() => setMemberSurfaceEnabled(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const closeMenu = () => setMenuOpen(false);
 
@@ -108,8 +116,8 @@ export default function PublicHeader({
 
     <nav className={styles.mobileNavigation} aria-label="手機快速導覽">
       <Link href="/"><i aria-hidden="true">⌂</i><span>首頁</span></Link>
-      <Link href="/#new" aria-current={ariaCurrent(section === "collection")}><i aria-hidden="true">▦</i><span>新藏</span></Link>
-      <Link href="/articles/" aria-current={ariaCurrent(section === "journal")}><i aria-hidden="true">▤</i><span>收藏誌</span></Link>
+      <Link href="/#new" aria-current={ariaCurrent(section === "collection")}><i aria-hidden="true">▦</i><span>商品</span></Link>
+      <Link href="/articles/" aria-current={ariaCurrent(section === "journal")}><i aria-hidden="true">▤</i><span>專欄</span></Link>
       {memberSurfaceEnabled && <Link href="/account/" aria-current={ariaCurrent(section === "account")}><i aria-hidden="true">○</i><span>會員</span></Link>}
       <DeviceCartLink className={styles.mobileCart} />
     </nav>

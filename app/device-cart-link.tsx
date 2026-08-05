@@ -34,5 +34,5 @@ export default function DeviceCartLink({ className }: { className?: string }) {
     };
   }, []);
 
-  return <Link className={className} href="/?cart=open" aria-label={`收藏袋，共 ${count} 件商品`}>收藏袋{count > 0 ? `（${count}）` : ""}</Link>;
+  return <Link className={className} href="/?cart=open" aria-label={`購物車，共 ${count} 件商品`}>購物車{count > 0 ? `（${count}）` : ""}</Link>;
 }

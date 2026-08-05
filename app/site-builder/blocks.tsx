@@ -155,11 +155,11 @@ export function ProductShowcaseBlock(
               fallback={<span aria-hidden="true">泰</span>}
             />
           </a>
-          <p>{[item.origin, item.material].filter(Boolean).join(" · ") || "藏品資料"}</p>
+          <p>{[item.origin, item.material].filter(Boolean).join(" · ") || "商品資料"}</p>
           <h3><a href={`/products/${encodeURIComponent(item.slug)}/`}>{item.name}</a></h3>
           <div><b>{formatPrice(item.price)}</b>{typeof item.stock === "number" && <small>{item.stock > 0 ? `現貨 ${item.stock} 件` : "目前無庫存"}</small>}</div>
         </article>)}
-      </div> : <div className={styles.emptyState}>商品資料會在公開頁由已發布的商品快照帶入。</div>}
+      </div> : <div className={styles.emptyState}>商品資料會依目前已發布內容顯示。</div>}
       <div className={styles.sectionAction}><ActionLink href={props.viewAllHref} label={props.viewAllLabel} secondary /></div>
     </div>
   </section>;
@@ -178,7 +178,7 @@ export function ArticleShowcaseBlock(
       {items.length > 0 ? <div className={styles.articleGrid}>
         {items.map((item, index) => <article key={item.id}>
           <div className={styles.articleArt}><span>{String(index + 1).padStart(2, "0")}</span><i aria-hidden="true" /></div>
-          <p>{item.tag || "收藏誌"}</p>
+          <p>{item.tag || "佛牌知識"}</p>
           <h3><a href={`/articles/${encodeURIComponent(item.slug)}/`}>{item.title}</a></h3>
           {item.excerpt && <div>{item.excerpt}</div>}
           <a href={`/articles/${encodeURIComponent(item.slug)}/`}>閱讀文章 →</a>

@@ -205,7 +205,7 @@ export default function AdminDashboard() {
               <div><dt>訂單保留</dt><dd>{status.commerce.inventory.reserved}</dd></div>
               <div><dt>目前可售</dt><dd>{status.commerce.inventory.available}</dd></div>
               <div><dt>低庫存商品</dt><dd>{status.commerce.inventory.lowStock}</dd></div>
-              <div><dt>SEO 已覆核商品</dt><dd>{status.commerce.products.seoReady}/{status.commerce.products.total}</dd></div>
+              <div><dt>可供搜尋收錄商品</dt><dd>{status.commerce.products.seoReady}/{status.commerce.products.total}</dd></div>
             </dl>
           </section>
 

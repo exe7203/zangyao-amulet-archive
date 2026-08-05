@@ -181,7 +181,7 @@ export const pageBuilderConfig: Config<PageComponents> = {
         eyebrow: "NEXT STEP",
         title: "準備好下一步了嗎？",
         body: "把訪客帶到最重要的下一個動作。",
-        buttonLabel: "查看本週新藏",
+        buttonLabel: "查看最新商品",
         buttonHref: "/#new",
         tone: "gold",
       },
@@ -201,11 +201,11 @@ export const pageBuilderConfig: Config<PageComponents> = {
       },
       defaultProps: {
         eyebrow: "NEW ARRIVALS",
-        title: "本週新藏",
-        intro: "商品內容由已發布的商品快照帶入，不在頁面編輯器重複維護。",
+        title: "最新商品",
+        intro: "商品內容使用目前已發布的商品資料，不在頁面編輯器重複維護。",
         category: "all",
         limit: "4",
-        viewAllLabel: "查看全部典藏",
+        viewAllLabel: "查看全部商品",
         viewAllHref: "/#new",
         tone: "ivory",
       },
@@ -227,7 +227,7 @@ export const pageBuilderConfig: Config<PageComponents> = {
       },
       defaultProps: {
         eyebrow: "JOURNAL",
-        title: "收藏誌",
+        title: "佛牌專欄",
         intro: "文章內容由已發布的文章快照帶入。",
         limit: "3",
         viewAllLabel: "閱讀所有文章",
@@ -253,6 +253,6 @@ export const editorPreviewMetadata: PageRenderMetadata = {
   articles: [
     { id: "preview-article-1", slug: "preview-article-1", title: "第一次接觸泰國佛牌：先看懂年份、材質與來源", excerpt: "先從可以查證的資料開始。", tag: "新手指南", status: "published" },
     { id: "preview-article-2", slug: "preview-article-2", title: "佛牌外殼只是保護嗎？常見材質與收藏方式", excerpt: "從日常配戴到長期保存。", tag: "收藏保養", status: "published" },
-    { id: "preview-article-3", slug: "preview-article-3", title: "一件聖物的履歷應包含什麼？", excerpt: "把取得、轉手與保存資訊留下來。", tag: "來源紀錄", status: "published" },
+    { id: "preview-article-3", slug: "preview-article-3", title: "佛牌來源紀錄應包含哪些資料？", excerpt: "整理取得、保存與轉手資訊，方便日後查詢。", tag: "來源紀錄", status: "published" },
   ],
 };

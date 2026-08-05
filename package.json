@@ -20,7 +20,7 @@
     "content:sync": "node scripts/sync-published-content.mjs",
     "build:publish": "npm run content:sync && npm run build:pages",
     "test": "npm run build && npm run test:core",
-    "test:core": "node --import tsx --test tests/rendered-html.test.mjs tests/article-routes.test.mjs tests/article-editor-contract.test.mjs tests/published-snapshot.test.mjs tests/commerce-core.test.mjs tests/content-core.test.mjs tests/site-builder-core.test.mjs tests/admin-system.test.mjs tests/admin-chrome-contract.test.mjs tests/member-device-storage.test.mjs tests/seo-runtime.test.mjs",
+    "test:core": "node --import tsx --test tests/rendered-html.test.mjs tests/article-routes.test.mjs tests/article-editor-contract.test.mjs tests/published-snapshot.test.mjs tests/public-copy-contract.test.mjs tests/commerce-core.test.mjs tests/content-core.test.mjs tests/site-builder-core.test.mjs tests/admin-system.test.mjs tests/admin-chrome-contract.test.mjs tests/member-device-storage.test.mjs tests/seo-runtime.test.mjs",
     "test:pages": "npm run build:pages && node scripts/verify-pages-export.mjs",
     "audit:prod": "npm audit --omit=dev",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

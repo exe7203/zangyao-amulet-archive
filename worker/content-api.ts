@@ -84,7 +84,7 @@ function parseArticleRow(row: Record<string, unknown>) {
     seoDescription: row.seo_description,
     canonicalUrl: row.canonical_url,
     ogImageUrl: row.og_image_url,
-    tag: row.tag || "收藏誌",
+    tag: row.tag || "佛牌知識",
     keywords: (() => {
       try {
         const value = JSON.parse(String(row.keywords_json || "[]"));
@@ -199,7 +199,7 @@ async function saveArticle(request: Request, db: D1Database, savedBy: string) {
     seoDescription,
     canonicalUrl,
     ogImageUrl,
-    tag: cleanText(payload.tag, 80) || "收藏誌",
+    tag: cleanText(payload.tag, 80) || "佛牌知識",
     keywordsJson: JSON.stringify(normalizeKeywords(payload.keywords)),
     heroImageUrl,
     heroImageAlt,
@@ -406,7 +406,7 @@ function parseRevisionRow(row: Record<string, unknown>) {
     seoDescription: String(row.seo_description || ""),
     canonicalUrl: String(row.canonical_url || ""),
     ogImageUrl: String(row.og_image_url || ""),
-    tag: String(row.tag || "收藏誌"),
+    tag: String(row.tag || "佛牌知識"),
     keywords: (() => {
       try {
         const value = JSON.parse(String(row.keywords_json || "[]"));

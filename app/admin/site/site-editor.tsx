@@ -408,7 +408,7 @@ export default function SiteEditor() {
       if (editRevision.current === savingRevision) setDirty(false);
       setAuthRequired(false);
       setNotice(status === "published"
-        ? "頁面已發布至內容資料庫；公開 SEO 版仍須同步快照並重新建置。"
+        ? "頁面已發布至內容資料庫；請同步公開內容並重新建置網站。"
         : "草稿已儲存。");
       await loadPageRevisions(saved.id);
     } catch (cause) {

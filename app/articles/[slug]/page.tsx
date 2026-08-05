@@ -23,7 +23,7 @@ type ArticlePageProps = {
   params: Promise<{ slug: string }>;
 };
 
-const journalName = `${publishedBrandName}收藏誌`;
+const journalName = `${publishedBrandName}佛牌專欄`;
 
 function getSiteUrl(): URL {
   try {
@@ -116,7 +116,7 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
         url: ogImageUrl,
         width: 1731,
         height: 909,
-        alt: `${article.title}｜${publishedBrandName}收藏誌`,
+        alt: `${article.title}｜${publishedBrandName}佛牌專欄`,
       }],
     },
     twitter: {
@@ -160,7 +160,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         "@id": `${canonicalUrl}#breadcrumb`,
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
-          { "@type": "ListItem", position: 2, name: "收藏誌", item: new URL("articles/", siteUrl).toString() },
+          { "@type": "ListItem", position: 2, name: "佛牌專欄", item: new URL("articles/", siteUrl).toString() },
           { "@type": "ListItem", position: 3, name: article.title, item: canonicalUrl },
         ],
       },
@@ -173,14 +173,14 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
-      <PublicHeader section="journal" mainId="article-content" contextLinks={[{ href: "/articles/", label: "返回收藏誌 →" }]} />
+      <PublicHeader section="journal" mainId="article-content" contextLinks={[{ href: "/articles/", label: "返回佛牌專欄 →" }]} />
 
       <main className={styles.shell} id="article-content">
         <nav className={styles.breadcrumb} aria-label="麵包屑">
           <ol>
             <li><Link href="/">首頁</Link></li>
             <li aria-hidden="true">/</li>
-            <li><Link href="/articles/">收藏誌</Link></li>
+            <li><Link href="/articles/">佛牌專欄</Link></li>
             <li aria-hidden="true">/</li>
             <li><span aria-current="page">{article.title}</span></li>
           </ol>
@@ -225,7 +225,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
           <ArticleContent className={styles.content} content={article.contentJson} />
 
           <div className={styles.returnBlock}>
-            <p>從來源、材質與保存紀錄開始認識每一件藏品。</p>
+            <p>查看更多佛牌文化、商品資料與保存方式相關文章。</p>
             <Link href="/articles/">{`← 返回${journalName}`}</Link>
           </div>
         </article>

@@ -82,4 +82,3 @@ export function getPublishedArticle(slug: string) {
 export function getPublishedProduct(slug: string) {
   return publishedProducts.find((product) => product.slug === slug);
 }
-

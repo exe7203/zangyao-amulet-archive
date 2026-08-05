@@ -1,60 +1,83 @@
-# 泰聚達 THAI AMULET ARCHIVE
+# 泰聚達
 
-泰國佛牌與聖物電商前台與可重用營運後台。泰聚達是第一個示範前台；文章、商品、庫存、訂單與 SEO 能力則以可支援多站台的共用核心發展。
+泰國佛牌與相關收藏品的公司形象、商品展示與內容管理網站。泰聚達是第一個前台品牌；文章、商品、庫存、訂單、網站編輯器與 SEO 則以可重用的共用核心建置。
 
 ## 目前功能
 
-- 前台購物車會依站台保存在瀏覽器，只保存商品 ID 與數量，顯示價格一律由目前商品資料重建。
-- `/account/` 是「此裝置會員預備版」：使用者主動同意後才保存常用聯絡與配送資料（最長 180 天），並保留不含地址、備註的本機送單索引。它不是登入帳號，也不會跨裝置同步。
-- 結帳會預填此裝置已保存的資料；成功送單後才依勾選狀態保存，會員驗證則以可替換 gateway 預留 LINE Login 與 Email OTP，未設定時不會模擬登入成功。
-- 「一物一拍」商品限制單次只能加入 1 件。
-- 本機版可送出不含線上付款的商品保留單；伺服器會重新核對價格、庫存與限購數量，支援重複送單防護、72 小時保留到期及庫存釋放。
-- 每張保留單最多 10 種不同商品；遠端逾期清理與顧客／後台請求完全分離，採小批次每分鐘排程，避免超出 Cloudflare 免費 D1 的單次查詢額度。本機沒有 Cron Trigger，因此瀏覽商品與開啟後台會順帶清理到期保留。
-- `/admin/articles/` 採用 Tiptap 富文字核心與選擇性整合的成熟編輯介面，提供 H2–H4、文字格式、清單、引用、程式碼、分隔線、安全連結、草稿／發布、版本紀錄及 SEO 欄位。
-- `/admin/` 是營運總覽，可直接確認內容、商品、庫存、訂單、資料庫版本與尚待正式上線的功能。
-- `/admin/site/` 使用 Puck 結構化網站編輯器，提供 8 種安全區塊、桌機／平板／手機預覽、草稿／發布及 SEO 檢查。
-- 網站編輯器另提供全站品牌名稱、公告、頁尾、安全配色與首頁固定版型文案；同步快照與重建後，前台畫面、SEO metadata、文章、商品及自訂頁面會一起更新，避免同站出現兩套品牌。首頁只開放文字，不讓導覽、按鈕目的地或區塊順序被任意拖動；自訂專題頁仍使用 Puck。頁面版本可查閱並還原為新草稿。
-- `/admin/products/` 提供商品、藏品履歷、圖片安全預覽、替代文字、庫存與商品 SEO 覆核管理；庫存分開顯示實有、訂單保留與可用數量，並可查詢分頁庫存流水。
-- `/admin/orders/` 提供訂單搜尋、訂單／付款狀態篩選、分頁事件時間軸，以及受狀態機限制的確認、處理、出貨、完成、退款及取消流程。
-- D1 儲存站台、頁面與文章版本、商品、分類、庫存、訂單、訂單事件及庫存流水，各資料以 `site_id` 隔離。
-- `/api/content/articles` 提供已發布文章的唯讀內容 API；後台寫入 API 在非本機環境要求已驗證的管理員身分。
-- 公開內容會先匯出成不含後台身分與訂單資料的版本化快照，再產生完整 HTML、sitemap 與 robots.txt。
-- 文章、商品及自訂頁面有獨立網址、canonical、Open Graph、Twitter Card、可見麵包屑及對應 JSON-LD；尚未逐件覆核的商品會保持 `noindex`，不會誤送進 sitemap。
-- 商品主圖、文章首圖與 Puck 商品展示已接上安全網址驗證及失敗備援；沒有實圖的展示資料仍會使用品牌示意圖，不會冒充商品實拍。
+- 公開前台包含首頁、商品列表與商品頁、佛牌專欄、品牌介紹及購物服務說明。
+- 購物車只在瀏覽器保存商品 ID 與數量；價格、庫存與限購數量會重新以目前商品資料核對。
+- 本機版可測試無金流訂單，具備重複送單防護、庫存保留、逾期釋放與訂單狀態流程。
+- `/admin/articles/` 使用 Tiptap 編輯文章，支援結構化內容、草稿／發布、版本紀錄與 SEO 欄位。
+- `/admin/site/` 使用 Puck 編輯結構化頁面與全站文字、配色，並保留安全的區塊與連結限制。
+- `/admin/products/` 管理商品、來源與規格、圖片、替代文字、庫存及 SEO 上架狀態。
+- `/admin/orders/` 管理訂單、付款狀態、事件紀錄與庫存異動。
+- D1 schema 可保存多站台內容、商品、庫存與訂單；資料以 `site_id` 隔離。
+- 公開內容會輸出成版本化快照，再產生 HTML、canonical、Open Graph、JSON-LD、sitemap 與 robots.txt。
+- 尚未完成照片、來源與 SEO 檢查的商品會遮蔽價格及未確認資料、保持 `noindex`，也不會進入 sitemap。
 
-## 本機開發
+## 會員功能現況
 
-```bash
-npm ci
-npm run dev
-```
+`/account/` 目前只供本機流程測試。Email 驗證碼是本機模擬，不是真正寄信服務；個人資料、購物車與訂單摘要仍保存在同一瀏覽器，尚未依登入帳號隔離，也不會跨裝置同步。
 
-## Windows 本機部署版
+正式會員上線前仍須完成：
 
-一般使用請直接雙擊 `啟動泰聚達本機版.cmd`。啟動器會準備最新版網站，使用本機 Worker 與獨立的 `.local-data` 資料庫，並在背景持續運行：
+- 伺服器端登入、Session 與 Email OTP 或 LINE Login。
+- 會員資料表及訂單的 `member_id` 關聯。
+- 每個帳號獨立的個人資料、購物車與訂單查詢權限。
+- Rate Limiting、機器人防護、備份與個資保存規則。
+
+既定介面位於 `shared/member-contract.ts`；正式實作不得將 token、OTP、OAuth state 或 Session ID 寫入 Web Storage。
+
+## Windows 本機版
+
+一般操作可雙擊專案根目錄的「啟動泰聚達本機版.cmd」。主要網址：
 
 - 前台：`http://127.0.0.1:3000/`
 - 營運總覽：`http://127.0.0.1:3000/admin/`
-- 文章管理後台：`http://127.0.0.1:3000/admin/articles/`
+- 文章管理：`http://127.0.0.1:3000/admin/articles/`
 - 商品與庫存：`http://127.0.0.1:3000/admin/products/`
 - 訂單管理：`http://127.0.0.1:3000/admin/orders/`
 - 網站編輯器：`http://127.0.0.1:3000/admin/site/`
-- 此裝置會員中心：`http://127.0.0.1:3000/account/`
+- 本機會員測試：`http://127.0.0.1:3000/account/`
 
-另提供 `停止泰聚達本機版.cmd`、`查看泰聚達本機版狀態.cmd` 與 `備份泰聚達本機資料.cmd`。備份時啟動器會暫停本機站、完整複製資料，再自動重新啟動，避免複製到寫入一半的 SQLite 狀態。完整操作方式請見 `本機版使用說明.md`。
+也可使用：
 
-## GitHub Pages
+    npm ci
+    npm run local:start
+    npm run local:status
+    npm run local:stop
 
-完成後台編輯與發布後，執行 `npm run build:publish`，或雙擊 `同步並建立泰聚達公開版.cmd`。這會從本機後台匯出公開快照、驗證內容並重建 `out/`；將更新後的快照推送到 `main`，GitHub Actions 就會建立並發布 GitHub Pages。
+本機資料位於專案的 `.local-data`，備份請使用「備份泰聚達本機資料.cmd」，避免複製到寫入中的資料檔。
 
-GitHub Pages 建置會明確排除 `/admin/`、`/account/`、寫入 API 與訂單個資表單，因為純靜態主機無法提供安全登入、D1 或寫入 API；管理後台與正式會員必須部署在可執行 Worker、驗證服務與 D1 的環境。
+## GitHub Pages 公開版
 
-目前 Windows 本機版使用 Cloudflare D1 的本機資料檔，不需要付費資料庫。日後可把相同 schema 與 Worker API 遷移到 Cloudflare D1 免費額度環境；公開接單前仍須設定 `ADMIN_EMAIL_ALLOWLIST`，並加入 Rate Limiting 或 Turnstile。
+推送到 `main` 後，GitHub Actions 會建立並發布靜態公開版。公開版會排除：
 
-> 後台發布不等於公開站完成更新；執行公開同步與建置後，文章、商品、自訂頁面、sitemap 與結構化資料才會使用同一份快照。此設計避免搜尋引擎看到與前台列表不同步的內容。
+- `/admin/`
+- `/account/`
+- Worker API 與登入端點
+- 結帳個資表單、OTP 與文章編輯器程式
 
-Puck、Tiptap 與 Lucide 都是開源模組。文章編輯器採增量整合，沒有直接搬入整套外部 CMS，因此既有 D1、版本、SEO 與靜態輸出流程仍維持一致。現在圖片採網址欄位；要提供檔案上傳與媒體庫，正式雲端版仍需接上 R2 或其他物件儲存。線上金流依目前需求保留為下一階段。
+因此 GitHub Pages 是可分享的公司形象、商品展示與 SEO 靜態站，不是可對外接單的完整商店。正式會員、後台與訂單功能必須部署在能執行 Worker、驗證服務與 D1 的環境。
 
-正式會員啟用時請替換 `app/member/member-gateway.ts` 的 disabled adapter，並由伺服器 Session 推導會員 ID；LINE／Email token、OTP、OAuth state 與 Session ID 不得寫入 Web Storage。`shared/member-contract.ts` 是登入、購物車合併與會員訂單的既定介面，前台裝置資料實作位於 `app/member/device-storage.ts`。
+手動建立公開版：
 
-> 品牌、商品與來源內容目前皆為展示資料，正式上架前需逐件覆核。
+    npm run build:publish
+    npm run test:pages
+
+## 品質檢查
+
+發布流程會執行型別、Lint、核心測試、靜態建置與公開輸出檢查。完整本機檢查：
+
+若本機網站正在運行，請先執行 `npm run local:stop`；檢查完成後再執行 `npm run local:start`。
+
+    npx tsc --noEmit
+    npm run lint
+    npm run build
+    npm run test:core
+    npm run test:pages
+    npm audit --omit=dev --audit-level=high
+
+公開用詞規則請見 [docs/public-copy-guide.md](docs/public-copy-guide.md)。Puck、Tiptap 與 Lucide 均為開源模組；圖片上傳與媒體庫仍需在正式雲端版串接 R2 或其他物件儲存，線上金流則保留為後續階段。
+
+> 現有品牌故事、商品來源、圖片、客服管道與交易政策仍含待確認資料；正式營運前必須由站主逐項核對。

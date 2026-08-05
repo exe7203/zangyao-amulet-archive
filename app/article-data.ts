@@ -84,7 +84,7 @@ export function normalizePublishedArticle(value: unknown, index: number): Journa
     status: "published",
     publishedAt: cleanString(value.publishedAt) || null,
     updatedAt: cleanString(value.updatedAt) || null,
-    tag: cleanString(value.tag) || "收藏誌",
+    tag: cleanString(value.tag) || "佛牌知識",
     time: cleanString(value.time) || estimateReadingTime(value.contentJson),
     art: artStyles.includes(value.art as ArticleArt) ? value.art as ArticleArt : artStyles[index % artStyles.length],
     seoTitle: cleanString(value.seoTitle),

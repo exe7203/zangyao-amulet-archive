@@ -319,7 +319,7 @@ test("public products expose fail-closed order readiness and remote orders requi
     items: [{ productId: "product-public-unready", quantity: 1 }],
   }), { DB: db, STORE_ORDERS_ENABLED: "1" });
   assert.equal(unreadyOrder.status, 409);
-  assert.match((await unreadyOrder.json()).error, /尚未完成.*覆核/);
+  assert.match((await unreadyOrder.json()).error, /目前暫不開放訂購/);
 
   const readyOrder = await handleStoreApi(remoteOrderRequest({
     ...baseOrder,
@@ -345,7 +345,7 @@ test("admin product writes persist image SEO fields and advance product and inve
     material: "聖粉",
     dimensions: "3 cm",
     price: 2680,
-    badge: "本週新藏",
+    badge: "新品",
     tone: "sand",
     shape: "arch",
     theme: "守護",
@@ -353,7 +353,7 @@ test("admin product writes persist image SEO fields and advance product and inve
     stock: 1,
     status: "active",
     seoTitle: "SEO 已覆核佛牌商品｜泰聚達",
-    seoDescription: "這是一段超過五十個字的商品搜尋摘要，用於確認後台商品儲存時會完整保存主圖、替代文字、SEO 覆核狀態與版本資料，並可安全地提供公開頁面使用。",
+    seoDescription: "這是一段超過五十個字的商品搜尋摘要，用於確認後台商品儲存時會完整保存主圖、替代文字、SEO 狀態與版本資料，並可安全地提供公開頁面使用。",
     imageUrl: "https://example.com/amulet.webp",
     imageAlt: "SEO 已覆核佛牌正面實拍",
     seoReady: true,

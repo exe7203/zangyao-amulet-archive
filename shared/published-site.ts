@@ -9,4 +9,4 @@ export const publishedSiteAppearance = normalizeSiteAppearance(
 export const publishedBrandName = publishedSiteAppearance.settings.brandName;
 export const publishedBrandSubtitle = publishedSiteAppearance.settings.brandSubtitle;
 export const publishedBrandMark = Array.from(publishedBrandName)[0] || "T";
-export const publishedEditorName = `${publishedBrandName}編輯部`;
+export const publishedEditorName = publishedBrandName;
