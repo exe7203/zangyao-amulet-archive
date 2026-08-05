@@ -36,6 +36,11 @@ function publicCanonical(configured, fallbackRoute) {
   return url.toString();
 }
 
+function hasMatchingCanonical(configured, route) {
+  if (!configured) return true;
+  return publicCanonical(configured, route) === publicUrl(route);
+}
+
 function publicImage(configured) {
   const url = new URL(configured || "og.png", siteBase);
   assert.ok(["http:", "https:"].includes(url.protocol), `social image uses an unsafe scheme: ${configured}`);
@@ -224,16 +229,25 @@ assert.ok(jsonLdTypes(homeHtml, "home").has("OnlineStore"), "home JSON-LD is mis
 assert.ok(!homeHtml.includes("example.com"), "placeholder SEO URL remains in export");
 assert.doesNotMatch(
   homeHtml,
-  /收件人姓名|聯絡電話 \*|送出訂單資料|\/api\/store\/orders/,
+  /收件人姓名|聯絡電話 \*|送出訂單資料|常用結帳資料|將聯絡與配送資料保存在這台裝置|\/api\/store\/orders/,
   "the static showcase must not render an order or personal-data form",
 );
 
 await Promise.all([
   assertPathMissing("admin", "the write-enabled admin surface must not be published on GitHub Pages"),
+  assertPathMissing("account", "the device profile and order-history surface must not be published on GitHub Pages"),
   assertPathMissing("api", "Worker API routes must not be published as static Pages files"),
   assertPathMissing("signin-with-chatgpt", "the admin sign-in route must not be published"),
   assertPathMissing("signout-with-chatgpt", "the admin sign-out route must not be published"),
 ]);
+
+for (const route of ["about/", "service/shipping/", "service/returns/", "service/contact/", "service/privacy/"]) {
+  const html = await readFile(routeFile(route), "utf8");
+  assert.match(html, /<nav\b[^>]*aria-label="麵包屑"/i, `${route} is missing a visible breadcrumb`);
+  const types = jsonLdTypes(html, route);
+  assert.ok(types.has("WebPage"), `${route} JSON-LD is missing WebPage`);
+  assert.ok(types.has("BreadcrumbList"), `${route} JSON-LD is missing BreadcrumbList`);
+}
 
 const articleIndexHtml = await readFile(routeFile("articles/"), "utf8");
 assertSeoDocument(articleIndexHtml, {
@@ -345,10 +359,12 @@ const expectedSitemap = new Map([
   [publicUrl("service/contact/"), null],
   [publicUrl("service/privacy/"), null],
 ]);
-for (const page of snapshot.pages.filter((candidate) => !candidate.noindex)) {
+for (const page of snapshot.pages.filter((candidate) =>
+  !candidate.noindex && hasMatchingCanonical(candidate.canonicalUrl, `pages/${candidate.slug}/`))) {
   expectedSitemap.set(publicUrl(`pages/${page.slug}/`), page.updatedAt || null);
 }
-for (const article of snapshot.articles.filter((candidate) => !candidate.noindex)) {
+for (const article of snapshot.articles.filter((candidate) =>
+  !candidate.noindex && hasMatchingCanonical(candidate.canonicalUrl, `articles/${candidate.slug}/`))) {
   expectedSitemap.set(publicUrl(`articles/${article.slug}/`), article.updatedAt || null);
 }
 if (catalogVerified) {

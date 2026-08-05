@@ -7,6 +7,18 @@ export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
+  const hasMatchingCanonical = (configured: string, path: string) => {
+    if (!configured) return true;
+    try {
+      const expected = new URL(path, siteUrl);
+      const canonical = new URL(configured, siteUrl);
+      canonical.hash = "";
+      expected.hash = "";
+      return canonical.toString() === expected.toString();
+    } catch {
+      return false;
+    }
+  };
   const entry = (
     path: string,
     priority: number,
@@ -26,8 +38,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     entry("service/returns/", 0.5, "yearly"),
     entry("service/contact/", 0.5, "yearly"),
     entry("service/privacy/", 0.4, "yearly"),
-    ...publishedPages.filter((page) => !page.noindex).map((page) => entry(`pages/${page.slug}/`, 0.65, "monthly", page.updatedAt)),
-    ...fallbackArticles.filter((article) => !article.noindex).map((article) => entry(`articles/${article.slug}/`, 0.75, "monthly", article.updatedAt)),
+    ...publishedPages
+      .filter((page) => !page.noindex && hasMatchingCanonical(page.canonicalUrl, `pages/${page.slug}/`))
+      .map((page) => entry(`pages/${page.slug}/`, 0.65, "monthly", page.updatedAt)),
+    ...fallbackArticles
+      .filter((article) => !article.noindex && hasMatchingCanonical(article.canonicalUrl, `articles/${article.slug}/`))
+      .map((article) => entry(`articles/${article.slug}/`, 0.75, "monthly", article.updatedAt)),
   ];
   if (process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1") {
     baseEntries.push(...products

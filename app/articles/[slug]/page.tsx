@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleContent from "../../article-content";
+import { SafePublicImage } from "../../product-artwork";
+import DeviceCartLink from "../../device-cart-link";
 import {
   fallbackArticles,
   getFallbackArticle,
@@ -12,6 +14,7 @@ import {
   publishedBrandName,
   publishedEditorName,
 } from "../../../shared/published-site";
+import { serializeJsonLd } from "../../../shared/json-ld";
 import styles from "../../article-page.module.css";
 
 type ArticlePageProps = {
@@ -64,13 +67,6 @@ function formatPublishedDate(value: string | null): string | null {
     month: "long",
     day: "numeric",
   }).format(date);
-}
-
-function serializeJsonLd(value: unknown): string {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
 }
 
 // The project currently exports static HTML, while D1 is only available to the
@@ -180,7 +176,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <Link className={styles.brand} href="/" aria-label={`${publishedBrandName}首頁`}>
           <span aria-hidden="true">{publishedBrandMark}</span><b>{publishedBrandName}</b>
         </Link>
-        <Link className={styles.homeLink} href="/articles/">返回收藏誌 →</Link>
+        <nav className={styles.headerActions} aria-label="網站工具"><DeviceCartLink className={styles.homeLink} /><Link className={styles.homeLink} href="/articles/">返回收藏誌 →</Link></nav>
       </header>
 
       <main className={styles.shell} id="article-content">
@@ -206,6 +202,29 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
               )}
             </p>
           </header>
+
+          {article.heroImageUrl && (
+            <figure className={styles.heroMedia}>
+              <SafePublicImage
+                src={article.heroImageUrl}
+                alt={article.heroImageAlt || `${article.title}文章首圖`}
+                className={styles.heroImage}
+                loading="eager"
+                fetchPriority="high"
+                fallback={(
+                  <div
+                    className={styles.heroFallback}
+                    role="img"
+                    aria-label={`${article.title}首圖暫時無法顯示`}
+                  >
+                    <span aria-hidden="true">{publishedBrandMark}</span>
+                    <p>文章首圖暫時無法顯示</p>
+                  </div>
+                )}
+              />
+              <figcaption>{article.heroImageAlt || article.title}</figcaption>
+            </figure>
+          )}
 
           <ArticleContent className={styles.content} content={article.contentJson} />
 

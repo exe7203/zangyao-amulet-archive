@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SafePublicImage, safePublicImageUrl } from "../app/product-artwork.tsx";
 
 const snapshot = JSON.parse(await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -101,4 +104,46 @@ test("Tiptap renderer never inserts editor HTML directly", async () => {
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|innerHTML\s*=|javascript:/i);
   assert.match(source, /safeArticleLinkHref/);
   assert.match(source, /MAX_DOCUMENT_DEPTH/);
+});
+
+test("public image fields accept only safe HTTP sources and preserve a Pages base path", () => {
+  assert.equal(safePublicImageUrl("/media/amulet.webp"), "/media/amulet.webp");
+  assert.equal(
+    safePublicImageUrl("/media/amulet.webp", "https://example.com/archive/"),
+    "https://example.com/archive/media/amulet.webp",
+  );
+  assert.equal(
+    safePublicImageUrl("https://cdn.example.com/article.webp"),
+    "https://cdn.example.com/article.webp",
+  );
+  for (const unsafe of [
+    "javascript:alert(1)",
+    "data:image/svg+xml,<svg/>",
+    "//cdn.example.com/image.webp",
+    "/\\cdn.example.com/image.webp",
+    "https://user:secret@example.com/image.webp",
+    "https://example.com/image.webp\u0000",
+  ]) assert.equal(safePublicImageUrl(unsafe), "", unsafe);
+
+  const imageHtml = renderToStaticMarkup(createElement(SafePublicImage, {
+    src: "https://cdn.example.com/amulet.webp",
+    alt: "佛牌正面實拍",
+  }));
+  assert.match(imageHtml, /<img[^>]+src="https:\/\/cdn\.example\.com\/amulet\.webp"/);
+  assert.match(imageHtml, /alt="佛牌正面實拍"/);
+
+  const fallbackHtml = renderToStaticMarkup(createElement(SafePublicImage, {
+    src: "data:image/svg+xml,<svg/>",
+    alt: "不安全圖片",
+    fallback: createElement("span", null, "圖片載入失敗"),
+  }));
+  assert.equal(fallbackHtml, "<span>圖片載入失敗</span>");
+});
+
+test("article routes connect hero image fields to the safe image fallback", async () => {
+  const source = await readFile(new URL("../app/articles/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /article\.heroImageUrl/);
+  assert.match(source, /article\.heroImageAlt/);
+  assert.match(source, /<SafePublicImage/);
+  assert.match(source, /首圖暫時無法顯示/);
 });

@@ -6,6 +6,7 @@ import path from "node:path";
 
 const projectRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 const adminDir = path.resolve(projectRoot, "app", "admin");
+const accountDir = path.resolve(projectRoot, "app", "account");
 const buildRoot = path.resolve(projectRoot, ".pages-build-work");
 const buildOut = path.resolve(buildRoot, "out");
 const projectOut = path.resolve(projectRoot, "out");
@@ -67,7 +68,10 @@ let buildSucceeded = false;
 try {
   await copySourceDirectory("app", (source) => {
     const resolved = path.resolve(source);
-    return resolved !== adminDir && !resolved.startsWith(`${adminDir}${path.sep}`);
+    return ![
+      adminDir,
+      accountDir,
+    ].some((privateDir) => resolved === privateDir || resolved.startsWith(`${privateDir}${path.sep}`));
   });
   await writeFile(
     path.resolve(buildRoot, "app", "checkout-dialog.tsx"),
@@ -77,14 +81,41 @@ type DemoCheckoutProps = {
   lines: unknown[];
   open: boolean;
   subtotal: number;
+  initialProfile?: import("../shared/member-contract").DeviceCheckoutProfile | null;
   onClose(): void;
-  onCompleted(order: { id: string; orderNumber: string; status: string; total: number }): void;
+  onCompleted(
+    order: CheckoutResult,
+    profile: import("../shared/member-contract").DeviceCheckoutProfile,
+    rememberProfile: boolean,
+  ): void;
+};
+
+export type CheckoutResult = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+  currency?: "TWD";
+  createdAt?: string;
+  reservedUntil?: string | null;
 };
 
 export default function CheckoutDialog(props: DemoCheckoutProps) {
   void props;
   return null;
 }
+`,
+    "utf8",
+  );
+  await writeFile(
+    path.resolve(buildRoot, "app", "member", "device-storage.ts"),
+    `import type { DeviceCheckoutProfile } from "../../shared/member-contract";
+
+export const DEVICE_PROFILE_STORAGE_KEY = "taijuda:device-profile:disabled";
+export function readDeviceProfile(_storage: unknown): DeviceCheckoutProfile | null { return null; }
+export function saveDeviceProfile(_storage: unknown, _profile: unknown, _remember: boolean): false { return false; }
+export function clearDeviceProfile(_storage: unknown): void {}
+export function rememberDeviceOrder(_storage: unknown, _order: unknown, _now?: Date): false { return false; }
 `,
     "utf8",
   );

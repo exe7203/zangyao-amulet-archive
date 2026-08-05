@@ -17,12 +17,17 @@ test("all backoffice modules render the same global chrome and page action bar",
 
   assert.match(chrome, /data-admin-topbar/);
   assert.match(chrome, /data-admin-actionbar/);
+  assert.match(chrome, /hasUnsavedChanges/);
+  assert.match(chrome, /onClick=\{area\.key === active \? undefined : confirmNavigation\}/);
   assert.match(dashboard, /<AdminTopbar active="dashboard"/);
   assert.match(articles, /<AdminTopbar[\s\S]*active="articles"/);
+  assert.match(articles, /hasUnsavedChanges=\{dirty\}/);
   assert.match(articles, /<AdminActionBar/);
-  assert.match(commerce, /<AdminTopbar active=\{active\}/);
+  assert.match(commerce, /<AdminTopbar active="products" hasUnsavedChanges=\{dirty\}/);
+  assert.match(commerce, /<AdminTopbar active="orders"/);
   assert.equal((commerce.match(/<AdminActionBar/g) || []).length, 2);
   assert.match(site, /<AdminTopbar active="site"/);
+  assert.match(site, /hasUnsavedChanges=\{dirty \|\| siteSettingsDirty\}/);
   assert.match(site, /<AdminActionBar/);
 });
 
@@ -40,4 +45,33 @@ test("shared chrome keeps navigation visible and uses stable desktop dimensions"
   assert.match(css, /\.control\s*\{[\s\S]*?min-height:\s*36px/);
   assert.doesNotMatch(css, /\.navigation\s*\{[^}]*display:\s*none/);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.control\s*\{\s*min-height:\s*44px/);
+});
+
+test("commerce admin separates inventory quantities and limits order operations to server transitions", async () => {
+  const [commerce, storeApi] = await Promise.all([
+    source("app/admin/store-manager.tsx"),
+    source("worker/store-api.ts"),
+  ]);
+
+  assert.match(commerce, /實有 onHand/);
+  assert.match(commerce, /訂單保留 reserved/);
+  assert.match(commerce, /可用 available/);
+  assert.match(commerce, /實有總數（含訂單保留）/);
+  assert.match(commerce, /PAYMENT_TRANSITIONS\[order\.paymentStatus\]\.has\(paymentStatus\)/);
+  assert.match(commerce, /PAYMENT_STATUS_OPTIONS\.filter\(\(paymentStatus\) => paymentChangeAllowed\(selected, paymentStatus\)\)/);
+  assert.doesNotMatch(commerce, /<option value="uncollected">尚未收款<\/option><option value="pending">/);
+  for (const transition of [
+    'uncollected: new Set(["uncollected", "pending", "paid", "failed"])',
+    'pending: new Set(["pending", "paid", "failed"])',
+    'failed: new Set(["failed", "pending", "paid"])',
+    'paid: new Set(["paid", "refunded"])',
+    'refunded: new Set(["refunded"])',
+  ]) {
+    assert.ok(commerce.includes(transition), `admin is missing ${transition}`);
+    assert.ok(storeApi.includes(transition), `server is missing ${transition}`);
+  }
+  assert.match(commerce, /home_delivery: "台灣本島宅配"/);
+  assert.match(commerce, /convenience_store: "超商取貨（門市稍後確認）"/);
+  assert.match(commerce, /appointment: "預約面交"/);
+  assert.match(commerce, /deliveryMethodLabel\(selected\.deliveryMethod\)/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
@@ -22,13 +22,20 @@ export function AdminTopbar({
   previewHref = "/",
   onRefresh,
   refreshing = false,
+  hasUnsavedChanges = false,
 }: {
   active: AdminArea;
   previewHref?: string;
   onRefresh?: () => void;
   refreshing?: boolean;
+  hasUnsavedChanges?: boolean;
 }) {
+  const confirmDiscard = () => !hasUnsavedChanges || window.confirm("目前有未儲存變更，確定要離開這個後台模組嗎？");
+  const confirmNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (!confirmDiscard()) event.preventDefault();
+  };
   const refresh = () => {
+    if (!confirmDiscard()) return;
     if (onRefresh) {
       onRefresh();
       return;
@@ -38,7 +45,7 @@ export function AdminTopbar({
 
   return (
     <header className={styles.topbar} data-admin-topbar>
-      <Link className={styles.brand} href="/admin/" aria-label={`${publishedBrandName}後台總覽`}>
+      <Link className={styles.brand} href="/admin/" aria-label={`${publishedBrandName}後台總覽`} onClick={active === "dashboard" ? undefined : confirmNavigation}>
         <span>{publishedBrandMark}</span>
         <span>
           <b>{publishedBrandName}營運中樞</b>
@@ -52,6 +59,7 @@ export function AdminTopbar({
             className={area.key === active ? styles.navigationActive : undefined}
             href={area.href}
             aria-current={area.key === active ? "page" : undefined}
+            onClick={area.key === active ? undefined : confirmNavigation}
           >
             {area.label}
           </Link>

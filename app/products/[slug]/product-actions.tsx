@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   CART_STORAGE_KEY,
+  CART_CHANGE_EVENT,
   MAX_CART_DISTINCT_ITEMS,
   addCartItem,
   parseCartStorage,
@@ -11,9 +12,9 @@ import {
 } from "../../cart";
 import { products, type Product } from "../../data";
 
-export default function ProductActions({ product }: { product: Product }) {
+export default function ProductActions({ product, availabilityConfirmed = true }: { product: Product; availabilityConfirmed?: boolean }) {
   const [message, setMessage] = useState("");
-  const canOrder = product.status === "active" && product.stock > 0;
+  const canOrder = availabilityConfirmed && product.status === "active" && product.stock > 0;
 
   const add = () => {
     try {
@@ -31,6 +32,7 @@ export default function ProductActions({ product }: { product: Product }) {
         return;
       }
       window.localStorage.setItem(CART_STORAGE_KEY, serializeCartItems(addCartItem(current, product)));
+      window.dispatchEvent(new Event(CART_CHANGE_EVENT));
       setMessage("已加入收藏袋。");
     } catch {
       setMessage("收藏袋目前無法更新，請稍後再試。");
@@ -38,7 +40,7 @@ export default function ProductActions({ product }: { product: Product }) {
   };
 
   return <div>
-    <button type="button" onClick={add} disabled={!canOrder}>{canOrder ? "加入收藏袋" : "目前不可訂購"}</button>
+    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "庫存待確認" : canOrder ? "加入收藏袋" : "目前不可訂購"}</button>
     {message && <p role="status">{message} <Link href="/#new">返回首頁查看收藏袋 →</Link></p>}
   </div>;
 }

@@ -70,7 +70,9 @@
 
 .cardGrid, .articleGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--block-line); border: 1px solid var(--block-line); }
 .productCard, .articleGrid article { padding: 22px; background: var(--block-paper); color: var(--block-ink); }
-.productArt { min-height: 260px; display: grid; place-items: center; background: #e7dfcf; color: #755a2c; text-decoration: none; }
+.productArt { min-height: 260px; display: grid; place-items: center; overflow: hidden; background: #e7dfcf; color: #755a2c; text-decoration: none; }
+.productPhoto { width: 100%; height: 260px; display: block; object-fit: cover; transition: transform .35s ease; }
+.productArt:hover .productPhoto, .productArt:focus-visible .productPhoto { transform: scale(1.025); }
 .productArt span { width: 105px; height: 142px; display: grid; place-items: center; border: 7px double #a68143; border-radius: 48% 48% 25% 25%; background: linear-gradient(145deg, #d7c282, #74572c); color: #4d3717; font-family: "Noto Serif TC", serif; }
 .productCard > p, .articleGrid article > p { margin-top: 22px; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .productCard h3, .articleGrid h3 { margin: 9px 0 16px; font-size: 18px; }

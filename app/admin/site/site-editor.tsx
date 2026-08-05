@@ -460,7 +460,7 @@ export default function SiteEditor() {
   const previewHref = `/pages/${encodeURIComponent(previewSlug)}/`;
 
   return <main className={styles.shell}>
-    <AdminTopbar active="site" previewHref={previewHref} />
+    <AdminTopbar active="site" previewHref={previewHref} hasUnsavedChanges={dirty || siteSettingsDirty} />
 
     <div className={styles.workspace}>
       <aside className={styles.pageSidebar}>

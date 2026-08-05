@@ -320,6 +320,12 @@ test("order creation persists a deadline, replays the same request, and rejects 
   const createdPayload = await created.json();
   assert.equal(createdPayload.replayed, false);
   assert.match(createdPayload.order.reservedUntil, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(createdPayload.order.createdAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(createdPayload.order.items[0].productId, "product-order");
+  assert.equal(createdPayload.order.items[0].quantity, 1);
+  for (const privateField of ["customer", "customerName", "customerPhone", "customerEmail", "address", "note"]) {
+    assert.equal(Object.hasOwn(createdPayload.order, privateField), false, `public receipt leaked ${privateField}`);
+  }
 
   const replay = await handleStoreApi(orderRequest(body), { DB: db });
   assert.equal(replay.status, 200);

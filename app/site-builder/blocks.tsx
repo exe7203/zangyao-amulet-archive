@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 import type {
   PageComponents,
   ShowcaseArticle,
@@ -6,6 +5,7 @@ import type {
 } from "./types";
 import styles from "./blocks.module.css";
 import { publishedBrandName } from "../../shared/published-site";
+import { SafePublicImage } from "../product-artwork";
 
 function sectionClass(tone: string, extra?: string) {
   return [styles.section, styles[`tone_${tone}`], extra].filter(Boolean).join(" ");
@@ -29,16 +29,6 @@ function safeHref(value: string) {
       : "#";
   } catch {
     return "#";
-  }
-}
-
-function safeImageUrl(value: string) {
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? value : "";
-  } catch {
-    return "";
   }
 }
 
@@ -77,13 +67,14 @@ export function TextBlock(props: PageComponents["Text"]) {
 }
 
 export function ImageFeatureBlock(props: PageComponents["ImageFeature"]) {
-  const imageUrl = safeImageUrl(props.imageUrl);
   return <section className={sectionClass(props.tone)}>
     <div className={`${styles.imageFeature} ${props.imagePosition === "right" ? styles.imageRight : ""}`}>
       <div className={styles.imageFrame}>
-        {imageUrl
-          ? <img src={imageUrl} alt={props.imageAlt} loading="lazy" />
-          : <div className={styles.imagePlaceholder} role="img" aria-label="尚未設定圖片"><span>IMAGE</span><b>加入系列主視覺</b></div>}
+        <SafePublicImage
+          src={props.imageUrl}
+          alt={props.imageAlt || `${props.title}系列主視覺`}
+          fallback={<div className={styles.imagePlaceholder} role="img" aria-label="圖片尚未設定或無法載入"><span>IMAGE</span><b>加入系列主視覺</b></div>}
+        />
       </div>
       <div className={styles.featureCopy}>
         <SectionHeading eyebrow={props.eyebrow} title={props.title} />
@@ -157,7 +148,12 @@ export function ProductShowcaseBlock(
       {items.length > 0 ? <div className={styles.cardGrid}>
         {items.map((item) => <article className={styles.productCard} key={item.id}>
           <a className={styles.productArt} href={`/products/${encodeURIComponent(item.slug)}/`} aria-label={`查看${item.name}`}>
-            <span aria-hidden="true">泰</span>
+            <SafePublicImage
+              src={item.imageUrl}
+              alt={item.imageAlt?.trim() || `${item.name}商品照片`}
+              className={styles.productPhoto}
+              fallback={<span aria-hidden="true">泰</span>}
+            />
           </a>
           <p>{[item.origin, item.material].filter(Boolean).join(" · ") || "藏品資料"}</p>
           <h3><a href={`/products/${encodeURIComponent(item.slug)}/`}>{item.name}</a></h3>

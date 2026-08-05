@@ -272,6 +272,7 @@ function publicOrderReceipt(order: NonNullable<Awaited<ReturnType<typeof orderWi
     total: order.subtotal,
     currency: order.currency,
     paymentStatus: order.paymentStatus,
+    createdAt: order.createdAt,
     reservedUntil: order.reservedUntil,
     expiredAt: order.expiredAt,
     items: order.items.map((item) => ({

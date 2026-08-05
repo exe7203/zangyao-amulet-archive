@@ -10,6 +10,8 @@ import {
 } from "../../../shared/published-content";
 import { publishedBrandMark, publishedBrandName, publishedBrandSubtitle } from "../../../shared/published-site";
 import styles from "./page.module.css";
+import DeviceCartLink from "../../device-cart-link";
+import { serializeJsonLd } from "../../../shared/json-ld";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -105,11 +107,11 @@ export default async function PublishedPage({ params }: PageProps) {
   return <div className={styles.page}>
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c") }}
+      dangerouslySetInnerHTML={{ __html: serializeJsonLd({ "@context": "https://schema.org", "@graph": graph }) }}
     />
     <header className={styles.header}>
       <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b><small>{publishedBrandSubtitle}</small></Link>
-      <nav aria-label="主要導覽"><Link href="/#new">本週新藏</Link><Link href="/articles/">收藏誌</Link><Link href="/service/contact/">聯絡我們</Link></nav>
+      <nav aria-label="主要導覽"><Link href="/#new">本週新藏</Link><Link href="/articles/">收藏誌</Link><DeviceCartLink /><Link href="/service/contact/">聯絡我們</Link></nav>
     </header>
     <main>
       <nav className={styles.breadcrumb} aria-label="麵包屑">

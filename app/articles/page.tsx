@@ -3,6 +3,8 @@ import Link from "next/link";
 import { fallbackArticles } from "../article-data";
 import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
 import styles from "./articles-index.module.css";
+import DeviceCartLink from "../device-cart-link";
+import { serializeJsonLd } from "../../shared/json-ld";
 
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
 const canonical = new URL("articles/", siteUrl).toString();
@@ -60,10 +62,10 @@ export default function ArticlesIndexPage() {
 
   return (
     <div className={styles.page}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
       <header className={styles.header}>
         <Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link>
-        <Link href="/#journal">返回首頁 →</Link>
+        <nav className={styles.headerActions} aria-label="網站工具"><DeviceCartLink /><Link href="/#journal">返回首頁 →</Link></nav>
       </header>
       <main className={styles.shell}>
         <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">收藏誌</span></nav>

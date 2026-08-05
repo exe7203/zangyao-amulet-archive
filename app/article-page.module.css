@@ -50,6 +50,7 @@
   font-weight: 800;
   letter-spacing: .08em;
 }
+.headerActions { display: flex; align-items: center; gap: 22px; }
 
 .homeLink:hover,
 .homeLink:focus-visible { color: #963a2b; }
@@ -127,6 +128,59 @@
   color: #766b5c;
   font-size: 11px;
   letter-spacing: .04em;
+}
+
+.heroMedia {
+  margin: 54px 0 0;
+}
+
+.heroImage,
+.heroFallback {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+}
+
+.heroImage {
+  object-fit: cover;
+  background: #e3dccd;
+}
+
+.heroFallback {
+  display: grid;
+  place-content: center;
+  gap: 14px;
+  border: 1px solid rgba(27, 27, 23, .12);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, .85), transparent 28%),
+    linear-gradient(145deg, #e8dfcf, #cbbb9a);
+  color: #725b34;
+  text-align: center;
+}
+
+.heroFallback span {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-family: Georgia, "Noto Serif TC", serif;
+  font-size: 24px;
+}
+
+.heroFallback p,
+.heroMedia figcaption {
+  margin: 0;
+  color: #766b5c;
+  font-size: 11px;
+  letter-spacing: .05em;
+}
+
+.heroMedia figcaption {
+  padding-top: 10px;
+  line-height: 1.6;
 }
 
 .content {
@@ -212,7 +266,7 @@
 
 @media (max-width: 620px) {
   .header { align-items: flex-start; }
-  .homeLink { margin-top: 13px; }
+  .headerActions { align-items: flex-end; flex-direction: column; gap: 4px; margin-top: 8px; }
   .shell { width: min(calc(100% - 32px), 900px); padding-top: 36px; }
   .breadcrumb { margin-bottom: 36px; }
   .articleHeader { padding-bottom: 38px; }

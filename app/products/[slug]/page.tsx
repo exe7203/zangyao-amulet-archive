@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { products } from "../../data";
+import { serializeJsonLd } from "../../../shared/json-ld";
 import { publishedBrandMark, publishedBrandName } from "../../../shared/published-site";
 import ProductLiveView from "./product-live-view";
+import DeviceCartLink from "../../device-cart-link";
 import styles from "./page.module.css";
 
 const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
@@ -64,10 +66,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     ],
   } : null;
 
-  return <main className={styles.page}>
-    {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />}
-    <header className={styles.header}><Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link><Link href="/#new">返回本週新藏 →</Link></header>
-    <ProductLiveView slug={slug} initialProduct={product || null} />
+  return <div className={styles.page}>
+    <a className={styles.skipLink} href="#main-content">跳至主要內容</a>
+    {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />}
+    <header className={styles.header}><Link className={styles.brand} href="/"><span>{publishedBrandMark}</span><b>{publishedBrandName}</b></Link><nav className={styles.headerActions} aria-label="網站工具"><DeviceCartLink /><Link href="/#new">返回本週新藏 →</Link></nav></header>
+    <main id="main-content"><ProductLiveView slug={slug} initialProduct={product || null} /></main>
     <footer className={styles.footer}><span>© 2026 {publishedBrandName}</span><Link href="/service/shipping/">配送與付款</Link></footer>
-  </main>;
+  </div>;
 }

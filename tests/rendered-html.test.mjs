@@ -9,6 +9,7 @@ import {
   parseCartStorage,
   serializeCartItems,
 } from "../app/cart.ts";
+import { serializeJsonLd } from "../shared/json-ld.ts";
 
 const publishedSnapshot = JSON.parse(await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -42,6 +43,28 @@ test("server-renders the storefront and SEO content", async () => {
   assert.ok(html.includes(publishedSnapshot.articles[0].title));
   assert.ok(html.includes(`/articles/${publishedSnapshot.articles[0].slug}/`));
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("public catalog JSON-LD cannot be closed by stored text", async () => {
+  const storedText = "藏品</script><script>globalThis.compromised=true</script>\u2028補充\u2029";
+  const serialized = serializeJsonLd({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: storedText,
+  });
+
+  assert.doesNotMatch(serialized, /</);
+  assert.match(serialized, /\\u003c\/script>/);
+  assert.match(serialized, /\\u2028/);
+  assert.match(serialized, /\\u2029/);
+  assert.equal(JSON.parse(serialized).name, storedText);
+
+  const [homeSource, productSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/products/[slug]/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(homeSource, /serializeJsonLd\(structuredData\)/);
+  assert.match(productSource, /serializeJsonLd\(structuredData\)/);
 });
 
 test("cart storage keeps only product ids and safe quantities", () => {

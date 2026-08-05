@@ -1,6 +1,7 @@
 import type { Product } from "./data";
 
 export const CART_STORAGE_KEY = "taijuda-amulet-archive:cart:v1";
+export const CART_CHANGE_EVENT = "taijuda:cart-change";
 export const MAX_CART_DISTINCT_ITEMS = 10;
 const DEFAULT_PURCHASE_LIMIT = 10;
 

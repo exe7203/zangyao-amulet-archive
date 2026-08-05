@@ -470,8 +470,8 @@ export default function AdminShell() {
       <AdminTopbar
         active="articles"
         refreshing={loading}
+        hasUnsavedChanges={dirty}
         onRefresh={() => {
-          if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
           void loadArticles(draft.id || undefined);
         }}
       />

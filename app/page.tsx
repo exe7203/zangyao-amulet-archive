@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Storefront from "./storefront";
 import { products } from "./data";
 import { publishedBrandName } from "../shared/published-site";
+import { serializeJsonLd } from "../shared/json-ld";
 
 export const metadata: Metadata = {
   title: "泰國佛牌與聖物收藏",
@@ -52,7 +53,7 @@ export default function Home() {
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
       <Storefront />
     </>
   );

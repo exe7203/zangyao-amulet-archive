@@ -117,6 +117,8 @@ export type ShowcaseProduct = {
   price?: number;
   stock?: number;
   status?: string;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 
 export type ShowcaseArticle = {

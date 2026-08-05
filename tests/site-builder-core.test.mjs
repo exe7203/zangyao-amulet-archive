@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { createStarterPageData } from "../app/site-builder/types.ts";
 import { validatePageData } from "../app/site-builder/validation.ts";
@@ -96,6 +97,24 @@ test("Puck page validation rejects unsafe or ambiguous block documents", () => {
   const arbitraryHtml = structuredClone(valid);
   arbitraryHtml.content.push({ type: "RawHtml", props: { id: "raw", html: "<script>alert(1)</script>" } });
   assert.equal(validatePageData(arbitraryHtml).ok, false);
+});
+
+test("Puck product showcase renders stored product artwork through the safe image leaf", async () => {
+  const [blockSource, typeSource, imageSource] = await Promise.all([
+    readFile(new URL("../app/site-builder/blocks.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/site-builder/types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/product-artwork.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(typeSource, /imageUrl\?: string/);
+  assert.match(typeSource, /imageAlt\?: string/);
+  assert.match(blockSource, /src=\{item\.imageUrl\}/);
+  assert.match(blockSource, /item\.imageAlt/);
+  assert.match(blockSource, /<SafePublicImage/);
+  assert.match(blockSource, /src=\{props\.imageUrl\}/);
+  assert.match(blockSource, /圖片尚未設定或無法載入/);
+  assert.match(imageSource, /onError=\{\(\) => setFailedSrc\(safeSrc\)\}/);
+  assert.doesNotMatch(imageSource, /javascript:|data:image/);
 });
 
 test("site editor publishes a versioned page and protects stale writes", async () => {

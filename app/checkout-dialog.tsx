@@ -2,14 +2,17 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { publishedBrandName } from "../shared/published-site";
+import type { DeliveryMethod, DeviceCheckoutProfile } from "../shared/member-contract";
 import type { CartLine } from "./cart";
 import { formatPrice } from "./data";
 
-type CheckoutResult = {
+export type CheckoutResult = {
   id: string;
   orderNumber: string;
   status: string;
   total: number;
+  currency?: "TWD";
+  createdAt?: string;
   reservedUntil?: string | null;
 };
 
@@ -17,8 +20,9 @@ type CheckoutDialogProps = {
   lines: CartLine[];
   open: boolean;
   subtotal: number;
+  initialProfile?: DeviceCheckoutProfile | null;
   onClose(): void;
-  onCompleted(order: CheckoutResult): void;
+  onCompleted(order: CheckoutResult, profile: DeviceCheckoutProfile, rememberProfile: boolean): void;
 };
 
 const DELIVERY_LABELS = {
@@ -27,12 +31,11 @@ const DELIVERY_LABELS = {
   appointment: "預約面交",
 } as const;
 
-type DeliveryMethod = keyof typeof DELIVERY_LABELS;
-
 export default function CheckoutDialog({
   lines,
   open,
   subtotal,
+  initialProfile,
   onClose,
   onCompleted,
 }: CheckoutDialogProps) {
@@ -48,6 +51,7 @@ export default function CheckoutDialog({
   const [address, setAddress] = useState("");
   const [note, setNote] = useState("");
   const [website, setWebsite] = useState("");
+  const [rememberProfile, setRememberProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const idempotencyKeyRef = useRef("");
@@ -87,6 +91,20 @@ export default function CheckoutDialog({
     };
   }, [onClose, open, submitting]);
 
+  useEffect(() => {
+    if (!open || !initialProfile) return;
+    const timer = window.setTimeout(() => {
+      setName((current) => current || initialProfile.contactName);
+      setPhone((current) => current || initialProfile.phone);
+      setEmail((current) => current || initialProfile.email);
+      setLineId((current) => current || initialProfile.lineId);
+      setAddress((current) => current || initialProfile.address);
+      setDeliveryMethod(initialProfile.deliveryMethod);
+      setRememberProfile(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialProfile, open]);
+
   if (!open) return null;
 
   const submitOrder = async (event: FormEvent<HTMLFormElement>) => {
@@ -108,6 +126,14 @@ export default function CheckoutDialog({
       setError("宅配訂單請填寫完整收件地址。");
       return;
     }
+    const profile: DeviceCheckoutProfile = {
+      contactName: name.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      lineId: lineId.trim(),
+      deliveryMethod,
+      address: address.trim(),
+    };
 
     setSubmitting(true);
     try {
@@ -145,7 +171,7 @@ export default function CheckoutDialog({
         throw new Error(payload.error || "訂單送出失敗，請稍後再試。");
       }
       idempotencyKeyRef.current = "";
-      onCompleted(payload.order);
+      onCompleted(payload.order, profile, rememberProfile);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "訂單送出失敗，請稍後再試。");
     } finally {
@@ -191,6 +217,14 @@ export default function CheckoutDialog({
             <div className="checkout-total"><span>商品小計</span><b>{formatPrice(subtotal)}</b></div>
             <small>運費與最終付款金額由店家確認後通知；送出不代表已完成付款。</small>
           </section>
+
+          <div className="checkout-remember">
+            <label>
+              <input type="checkbox" checked={rememberProfile} onChange={(event) => setRememberProfile(event.target.checked)} />
+              <span>將聯絡與配送資料保存在這台裝置</span>
+            </label>
+            <small>只在訂單成功後寫入瀏覽器，保存最多 180 天；不會建立登入帳號或跨裝置同步。共用電腦請勿勾選。已有資料可到<a href="/account/" target="_blank" rel="noreferrer">會員中心</a>清除。</small>
+          </div>
 
           {error && <p className="checkout-error" role="alert">{error}</p>}
           <button className="button button--gold checkout-submit" type="submit" disabled={submitting}>

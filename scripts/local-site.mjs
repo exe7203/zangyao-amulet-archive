@@ -91,15 +91,39 @@ function managedProcessIsRunning(record) {
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
     windowsHide: true,
+    timeout: 5_000,
   });
-  if (result.status !== 0) return false;
+  if (result.status === 0) {
+    try {
+      const info = JSON.parse(result.stdout);
+      const commandLine = normalizePath(info.CommandLine);
+      return normalizePath(info.ExecutablePath) === normalizePath(process.execPath) &&
+        commandLine.includes(normalizePath(wranglerCli)) &&
+        commandLine.includes(normalizePath(wranglerConfig));
+    } catch {
+      // Windows WMI 偶爾無回應；下方以 PID 啟動時間做保守備援驗證。
+    }
+  }
 
+  const fallbackScript = [
+    "$process = Get-Process -Id " + record.pid + " -ErrorAction SilentlyContinue",
+    "if ($null -eq $process) { exit 3 }",
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+    "[pscustomobject]@{ ExecutablePath = $process.Path; StartedAt = $process.StartTime.ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress",
+  ].join("; ");
+  const fallback = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", fallbackScript], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 5_000,
+  });
+  if (fallback.status !== 0) return false;
   try {
-    const info = JSON.parse(result.stdout);
-    const commandLine = normalizePath(info.CommandLine);
+    const info = JSON.parse(fallback.stdout);
+    const expectedStart = Date.parse(record.startedAt);
+    const actualStart = Date.parse(info.StartedAt);
     return normalizePath(info.ExecutablePath) === normalizePath(process.execPath) &&
-      commandLine.includes(normalizePath(wranglerCli)) &&
-      commandLine.includes(normalizePath(wranglerConfig));
+      Number.isFinite(expectedStart) && Number.isFinite(actualStart) &&
+      Math.abs(actualStart - expectedStart) < 15_000;
   } catch {
     return false;
   }
