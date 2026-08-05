@@ -1,24 +1,24 @@
 .section {
-  --block-ink: #171713;
-  --block-muted: #6d6a61;
-  --block-line: rgba(23, 23, 19, .16);
-  --block-paper: #fbf9f2;
-  --block-gold: #c5a15a;
+  --block-ink: var(--site-ink, #171713);
+  --block-muted: var(--site-ink, #171713);
+  --block-line: color-mix(in srgb, var(--site-ink, #171713) 16%, transparent);
+  --block-paper: var(--site-surface, #fbf9f2);
+  --block-gold: var(--site-accent, #c5a15a);
   padding: clamp(72px, 9vw, 132px) clamp(24px, 7vw, 112px);
   color: var(--block-ink);
   background: var(--block-paper);
   font-family: Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
 
-.tone_paper { background: #fbf9f2; }
-.tone_ivory { background: #eee8dc; }
-.tone_gold { background: #c5a15a; }
-.tone_ink { --block-muted: rgba(255,255,255,.65); --block-line: rgba(255,255,255,.17); color: #fff; background: #171713; }
+.tone_paper { background: var(--block-paper); }
+.tone_ivory { background: color-mix(in srgb, var(--block-gold) 12%, var(--block-paper)); }
+.tone_gold { color: var(--block-ink); background: var(--block-gold); }
+.tone_ink { --block-muted: var(--site-surface, #fbf9f2); --block-line: color-mix(in srgb, var(--site-surface, #fbf9f2) 17%, transparent); color: var(--site-surface, #fbf9f2); background: var(--block-ink); }
 
 .shell { width: min(1240px, 100%); margin: 0 auto; }
 .heading { max-width: 780px; margin-bottom: 48px; }
-.heading > p, .eyebrow { margin: 0 0 16px; color: #8f6d32; font-size: 11px; font-weight: 800; letter-spacing: .22em; }
-.tone_ink .heading > p, .tone_ink .eyebrow { color: #e0c67f; }
+.heading > p, .eyebrow { margin: 0 0 16px; color: var(--block-ink); font-size: 11px; font-weight: 800; letter-spacing: .22em; }
+.tone_ink .heading > p, .tone_ink .eyebrow { color: var(--block-gold); }
 .heading h2, .cta h2 { margin: 0; font-family: "Iowan Old Style", "Palatino Linotype", "Noto Serif TC", serif; font-size: clamp(34px, 4.2vw, 58px); font-weight: 500; line-height: 1.25; letter-spacing: .025em; }
 .intro { max-width: 640px; margin-top: 20px; color: var(--block-muted); font-size: 15px; line-height: 1.9; white-space: pre-line; }
 
@@ -28,7 +28,7 @@
 .heroLead { max-width: 640px; margin: 28px 0 0; color: var(--block-muted); font-size: 16px; line-height: 1.9; white-space: pre-line; }
 .actions { margin-top: 40px; display: flex; align-items: center; flex-wrap: wrap; gap: 22px; }
 .primaryAction, .secondaryAction { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 18px; color: inherit; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-decoration: none; }
-.primaryAction { padding: 0 22px; background: var(--block-gold); color: #171713; }
+.primaryAction { padding: 0 22px; background: var(--block-gold); color: var(--block-ink); }
 .secondaryAction { border-bottom: 1px solid currentColor; }
 .heroMotif { position: relative; min-height: 420px; display: grid; place-items: center; }
 .orbit { position: absolute; width: min(390px, 80%); aspect-ratio: 1; border: 1px solid var(--block-line); border-radius: 50%; box-shadow: 0 0 0 46px color-mix(in srgb, currentColor 4%, transparent), 0 0 0 92px color-mix(in srgb, currentColor 2%, transparent); }
@@ -51,7 +51,7 @@
 
 .featureGrid { --columns: 3; display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); border-top: 1px solid var(--block-line); border-left: 1px solid var(--block-line); }
 .featureGrid article { min-height: 240px; padding: 34px; border-right: 1px solid var(--block-line); border-bottom: 1px solid var(--block-line); }
-.featureGrid span { color: #98743a; font-family: "Iowan Old Style", serif; font-size: 11px; }
+.featureGrid span { color: var(--block-ink); font-family: "Iowan Old Style", serif; font-size: 11px; }
 .featureGrid h3, .cardGrid h3, .articleGrid h3 { margin: 54px 0 12px; font-family: "Iowan Old Style", "Noto Serif TC", serif; font-size: 22px; line-height: 1.45; }
 .featureGrid p, .cardGrid p, .articleGrid p { margin: 0; color: var(--block-muted); font-size: 13px; line-height: 1.8; }
 
@@ -81,7 +81,7 @@
 .productCard small { color: var(--block-muted); }
 .articleGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .articleArt { position: relative; min-height: 190px; display: grid; place-items: center; overflow: hidden; background: #ded5c3; }
-.articleArt span { position: absolute; top: 16px; left: 16px; color: #90713b; font-size: 10px; }
+.articleArt span { position: absolute; top: 16px; left: 16px; color: var(--block-ink); font-size: 10px; }
 .articleArt i { width: 90px; height: 120px; background: #f7f1e5; box-shadow: 10px 14px 28px rgba(50,35,15,.18); transform: rotate(-4deg); }
 .articleGrid article > div:not(.articleArt) { min-height: 48px; color: var(--block-muted); font-size: 13px; line-height: 1.7; }
 .articleGrid article > a { display: inline-block; margin-top: 18px; color: inherit; font-size: 11px; font-weight: 800; text-decoration: none; border-bottom: 1px solid currentColor; }

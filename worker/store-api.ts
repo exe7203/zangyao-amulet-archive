@@ -31,6 +31,11 @@ const PAYMENT_STATUSES = new Set(["uncollected", "pending", "paid", "failed", "r
 export const RESERVATION_HOLD_HOURS = 72;
 export const ORDER_CONSENT_VERSION = "local-reservation-v1";
 export const MAX_ORDER_DISTINCT_ITEMS = 10;
+const ADMIN_PRODUCT_LIST_LIMIT = 200;
+const ADMIN_ORDER_LIST_DEFAULT_LIMIT = 50;
+const ADMIN_ORDER_LIST_MAX_LIMIT = 50;
+const ADMIN_HISTORY_DEFAULT_LIMIT = 20;
+const ADMIN_HISTORY_MAX_LIMIT = 50;
 // Workers Free currently allows 50 D1 queries per invocation. Two worst-case
 // ten-item expiries plus their lookup queries stay within that ceiling.
 const EXPIRY_BATCH_LIMIT = 2;
@@ -241,6 +246,46 @@ function integerInRange(value: unknown, minimum: number, maximum: number) {
 function cleanIdentifier(value: unknown, maxLength = 100) {
   const identifier = cleanText(value, maxLength);
   return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(identifier) ? identifier : "";
+}
+
+function adminPageRequest(url: URL, defaultLimit: number, maxLimit: number) {
+  const requestedPage = Number(url.searchParams.get("page") || 1);
+  const requestedLimit = Number(url.searchParams.get("limit") || defaultLimit);
+  return {
+    page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, 10_000) : 1,
+    limit: Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, maxLimit)
+      : defaultLimit,
+    maxLimit,
+  };
+}
+
+function resolvedAdminPage(requestedPage: number, limit: number, total: number, maxLimit: number) {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, totalPages);
+  return {
+    page,
+    limit,
+    maxLimit,
+    total,
+    totalPages,
+    offset: (page - 1) * limit,
+  };
+}
+
+function escapeLikeValue(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+function adminPaginationPayload(page: ReturnType<typeof resolvedAdminPage>, returned: number) {
+  return {
+    page: page.page,
+    limit: page.limit,
+    maxLimit: page.maxLimit,
+    total: page.total,
+    totalPages: page.totalPages,
+    returned,
+  };
 }
 
 function emailIsValid(value: string) {
@@ -670,10 +715,57 @@ async function listAdminProducts(request: Request, db: D1Database) {
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
   const rows = await db.prepare(`${productSelect}
-    WHERE p.site_id = ? ORDER BY p.updated_at DESC, p.created_at DESC LIMIT 200`)
-    .bind(site.id)
+    WHERE p.site_id = ? ORDER BY p.updated_at DESC, p.created_at DESC LIMIT ?`)
+    .bind(site.id, ADMIN_PRODUCT_LIST_LIMIT)
     .all<Record<string, unknown>>();
-  return json({ site, products: rows.results.map(parseProductRow) });
+  return json({
+    site,
+    products: rows.results.map(parseProductRow),
+    listing: { returned: rows.results.length, limit: ADMIN_PRODUCT_LIST_LIMIT },
+  });
+}
+
+async function listAdminInventoryMovements(request: Request, db: D1Database, productId: string) {
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const id = cleanIdentifier(productId);
+  if (!id) return json({ error: "商品編號不正確" }, { status: 400 });
+  const product = await db.prepare("SELECT id FROM products WHERE id = ? AND site_id = ? LIMIT 1")
+    .bind(id, site.id)
+    .first<Record<string, unknown>>();
+  if (!product) return json({ error: "找不到商品" }, { status: 404 });
+
+  const requested = adminPageRequest(url, ADMIN_HISTORY_DEFAULT_LIMIT, ADMIN_HISTORY_MAX_LIMIT);
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM inventory_movements
+    WHERE site_id = ? AND product_id = ?`)
+    .bind(site.id, id)
+    .first<Record<string, unknown>>();
+  const page = resolvedAdminPage(requested.page, requested.limit, numberValue(countRow?.total), requested.maxLimit);
+  const rows = await db.prepare(`SELECT id, movement_type, quantity, on_hand_after, reserved_after,
+      reason, actor, order_id, created_at
+    FROM inventory_movements WHERE site_id = ? AND product_id = ?
+    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .bind(site.id, id, page.limit, page.offset)
+    .all<Record<string, unknown>>();
+
+  return json({
+    productId: id,
+    movements: rows.results.map((row) => ({
+      id: String(row.id),
+      movementType: String(row.movement_type),
+      quantity: numberValue(row.quantity),
+      onHandAfter: numberValue(row.on_hand_after),
+      reservedAfter: numberValue(row.reserved_after),
+      availableAfter: Math.max(0, numberValue(row.on_hand_after) - numberValue(row.reserved_after)),
+      reason: String(row.reason || ""),
+      actor: String(row.actor || "system"),
+      orderId: row.order_id ? String(row.order_id) : null,
+      createdAt: String(row.created_at),
+    })),
+    pagination: adminPaginationPayload(page, rows.results.length),
+  });
 }
 
 function normalizeProductPayload(payload: Record<string, unknown>) {
@@ -887,14 +979,49 @@ async function archiveAdminProduct(request: Request, db: D1Database, productId: 
 }
 
 async function listAdminOrders(request: Request, db: D1Database) {
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
-  const rows = await db.prepare(`SELECT * FROM orders WHERE site_id = ?
-    ORDER BY created_at DESC LIMIT 200`)
-    .bind(site.id)
+  const query = cleanText(url.searchParams.get("q"), 100);
+  const orderStatus = cleanText(url.searchParams.get("orderStatus"), 30);
+  const paymentStatus = cleanText(url.searchParams.get("paymentStatus"), 30);
+  if ((orderStatus && !ORDER_STATUSES.has(orderStatus)) || (paymentStatus && !PAYMENT_STATUSES.has(paymentStatus))) {
+    return json({ error: "訂單篩選狀態不正確" }, { status: 400 });
+  }
+
+  const where = ["site_id = ?"];
+  const bindings: unknown[] = [site.id];
+  if (query) {
+    const pattern = `%${escapeLikeValue(query)}%`;
+    where.push(`(order_number LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR customer_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR customer_phone LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR customer_email LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR customer_line_id LIKE ? ESCAPE '\\' COLLATE NOCASE)`);
+    bindings.push(pattern, pattern, pattern, pattern, pattern);
+  }
+  if (orderStatus) {
+    where.push("order_status = ?");
+    bindings.push(orderStatus);
+  }
+  if (paymentStatus) {
+    where.push("payment_status = ?");
+    bindings.push(paymentStatus);
+  }
+
+  const requested = adminPageRequest(url, ADMIN_ORDER_LIST_DEFAULT_LIMIT, ADMIN_ORDER_LIST_MAX_LIMIT);
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM orders WHERE ${where.join(" AND ")}`)
+    .bind(...bindings)
+    .first<Record<string, unknown>>();
+  const page = resolvedAdminPage(requested.page, requested.limit, numberValue(countRow?.total), requested.maxLimit);
+  const rows = await db.prepare(`SELECT * FROM orders WHERE ${where.join(" AND ")}
+    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .bind(...bindings, page.limit, page.offset)
     .all<Record<string, unknown>>();
-  if (rows.results.length === 0) return json({ site, orders: [] });
+  if (rows.results.length === 0) {
+    return json({ site, orders: [], pagination: adminPaginationPayload(page, 0) });
+  }
 
   const placeholders = rows.results.map(() => "?").join(", ");
   const itemRows = await db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})
@@ -915,6 +1042,46 @@ async function listAdminOrders(request: Request, db: D1Database) {
       ...parseOrderRow(row),
       items: itemsByOrder.get(String(row.id)) || [],
     })),
+    pagination: adminPaginationPayload(page, rows.results.length),
+  });
+}
+
+async function listAdminOrderEvents(request: Request, db: D1Database, orderId: string) {
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const id = cleanIdentifier(orderId);
+  if (!id) return json({ error: "訂單編號不正確" }, { status: 400 });
+  const order = await db.prepare("SELECT id FROM orders WHERE id = ? AND site_id = ? LIMIT 1")
+    .bind(id, site.id)
+    .first<Record<string, unknown>>();
+  if (!order) return json({ error: "找不到訂單" }, { status: 404 });
+
+  const requested = adminPageRequest(url, ADMIN_HISTORY_DEFAULT_LIMIT, ADMIN_HISTORY_MAX_LIMIT);
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM order_events
+    WHERE site_id = ? AND order_id = ?`)
+    .bind(site.id, id)
+    .first<Record<string, unknown>>();
+  const page = resolvedAdminPage(requested.page, requested.limit, numberValue(countRow?.total), requested.maxLimit);
+  const rows = await db.prepare(`SELECT id, event_type, from_value, to_value, note, actor, created_at
+    FROM order_events WHERE site_id = ? AND order_id = ?
+    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .bind(site.id, id, page.limit, page.offset)
+    .all<Record<string, unknown>>();
+
+  return json({
+    orderId: id,
+    events: rows.results.map((row) => ({
+      id: String(row.id),
+      eventType: String(row.event_type),
+      fromValue: String(row.from_value || ""),
+      toValue: String(row.to_value || ""),
+      note: String(row.note || ""),
+      actor: String(row.actor || "system"),
+      createdAt: String(row.created_at),
+    })),
+    pagination: adminPaginationPayload(page, rows.results.length),
   });
 }
 
@@ -1138,6 +1305,8 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
     url.pathname.startsWith("/api/admin/products/");
   const isAdminOrders = url.pathname === "/api/admin/orders" ||
     url.pathname.startsWith("/api/admin/orders/");
+  const adminProductMovements = url.pathname.match(/^\/api\/admin\/products\/([^/]+)\/movements$/);
+  const adminOrderEvents = url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/events$/);
   if (!isPublicProducts && !isPublicOrders && !isAdminProducts && !isAdminOrders) return null;
 
   if (!env.DB) return json({ error: "商店資料庫尚未連線" }, { status: 503 });
@@ -1174,6 +1343,12 @@ export async function handleStoreApi(request: Request, env: DatabaseEnv) {
       await expireStaleReservations(env.DB);
     }
 
+    if (adminProductMovements && request.method === "GET") {
+      return listAdminInventoryMovements(request, env.DB, decodeURIComponent(adminProductMovements[1]));
+    }
+    if (adminOrderEvents && request.method === "GET") {
+      return listAdminOrderEvents(request, env.DB, decodeURIComponent(adminOrderEvents[1]));
+    }
     if (url.pathname === "/api/admin/products" && request.method === "GET") {
       return listAdminProducts(request, env.DB);
     }

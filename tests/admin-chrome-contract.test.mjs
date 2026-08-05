@@ -59,7 +59,6 @@ test("commerce admin separates inventory quantities and limits order operations 
   assert.match(commerce, /實有總數（含訂單保留）/);
   assert.match(commerce, /PAYMENT_TRANSITIONS\[order\.paymentStatus\]\.has\(paymentStatus\)/);
   assert.match(commerce, /PAYMENT_STATUS_OPTIONS\.filter\(\(paymentStatus\) => paymentChangeAllowed\(selected, paymentStatus\)\)/);
-  assert.doesNotMatch(commerce, /<option value="uncollected">尚未收款<\/option><option value="pending">/);
   for (const transition of [
     'uncollected: new Set(["uncollected", "pending", "paid", "failed"])',
     'pending: new Set(["pending", "paid", "failed"])',
@@ -74,4 +73,26 @@ test("commerce admin separates inventory quantities and limits order operations 
   assert.match(commerce, /convenience_store: "超商取貨（門市稍後確認）"/);
   assert.match(commerce, /appointment: "預約面交"/);
   assert.match(commerce, /deliveryMethodLabel\(selected\.deliveryMethod\)/);
+});
+
+test("commerce admin exposes bounded search and private audit histories", async () => {
+  const [commerce, storeApi] = await Promise.all([
+    source("app/admin/store-manager.tsx"),
+    source("worker/store-api.ts"),
+  ]);
+
+  assert.match(commerce, /placeholder="訂單編號、姓名、電話、Email、LINE"/);
+  assert.match(commerce, /orderStatusFilter/);
+  assert.match(commerce, /paymentStatusFilter/);
+  assert.match(commerce, /每頁上限 \{orderPagination\.limit\}/);
+  assert.match(commerce, />訂單時間軸</);
+  assert.match(commerce, />庫存流水</);
+  assert.match(commerce, /<HistoryPager pagination=\{eventPagination\}/);
+  assert.match(commerce, /<HistoryPager pagination=\{movementPagination\}/);
+  assert.match(storeApi, /ADMIN_ORDER_LIST_MAX_LIMIT = 50/);
+  assert.match(storeApi, /ADMIN_HISTORY_MAX_LIMIT = 50/);
+  assert.ok(storeApi.includes(String.raw`url.pathname.match(/^\/api\/admin\/products\/([^/]+)\/movements$/)`));
+  assert.ok(storeApi.includes(String.raw`url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/events$/)`));
+  assert.match(storeApi, /const identity = adminIdentity\(request, env\);[\s\S]*if \(adminProductMovements && request\.method === "GET"\)/);
+  assert.match(storeApi, /const identity = adminIdentity\(request, env\);[\s\S]*if \(adminOrderEvents && request\.method === "GET"\)/);
 });

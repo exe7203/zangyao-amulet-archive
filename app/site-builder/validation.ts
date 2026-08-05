@@ -70,6 +70,7 @@ function isSafeLink(value: string) {
   if (value.startsWith("#")) return true;
   try {
     const url = new URL(value);
+    if ((url.protocol === "http:" || url.protocol === "https:") && (url.username || url.password)) return false;
     return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:";
   } catch {
     return false;
@@ -82,7 +83,7 @@ function isSafeImage(value: string) {
   if (value.startsWith("/") && !value.startsWith("//")) return true;
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password;
   } catch {
     return false;
   }

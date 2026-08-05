@@ -15,7 +15,11 @@ import {
   findSite,
   type DatabaseEnv,
 } from "./database";
-import { normalizeSiteAppearance } from "../shared/site-settings";
+import {
+  evaluateSiteThemeContrast,
+  MIN_SITE_THEME_CONTRAST,
+  normalizeSiteAppearance,
+} from "../shared/site-settings";
 
 const PAGE_STATUSES = new Set(["draft", "published", "archived"]);
 const PAGE_BLOCK_TYPES = new Set([
@@ -62,10 +66,13 @@ type PagePayload = {
 function cleanPageHref(value: string) {
   const candidate = value.trim();
   if (!candidate) return "";
+  if (candidate.length > 1000 || /[\u0000-\u001f\u007f]/u.test(candidate)) return "";
   if (/^(?:https?:\/\/|mailto:|tel:)/i.test(candidate)) {
     try {
       const url = new URL(candidate);
-      return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol) ? candidate : "";
+      if (!["http:", "https:", "mailto:", "tel:"].includes(url.protocol)) return "";
+      if ((url.protocol === "http:" || url.protocol === "https:") && (url.username || url.password)) return "";
+      return candidate;
     } catch {
       return "";
     }
@@ -76,13 +83,31 @@ function cleanPageHref(value: string) {
   return "";
 }
 
+function cleanPageImageHref(value: string) {
+  const candidate = value.trim();
+  if (!candidate) return "";
+  if (candidate.length > 1000 || /[\u0000-\u001f\u007f]/u.test(candidate)) return "";
+  if (candidate.startsWith("/") && !candidate.startsWith("//") && !candidate.includes("\\")) {
+    return candidate;
+  }
+  try {
+    const url = new URL(candidate);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password
+      ? candidate
+      : "";
+  } catch {
+    return "";
+  }
+}
+
 function validatePageValue(value: unknown, depth: number, key = ""): boolean {
   if (depth > MAX_VALUE_DEPTH) return false;
   if (value === null || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "string") {
     if (value.length > 20_000) return false;
-    if (/(?:href|url)$/i.test(key) && value && !cleanPageHref(value)) return false;
+    if (/imageurl$/i.test(key) && value && !cleanPageImageHref(value)) return false;
+    if (!/imageurl$/i.test(key) && /(?:href|url)$/i.test(key) && value && !cleanPageHref(value)) return false;
     return true;
   }
   if (Array.isArray(value)) {
@@ -126,9 +151,9 @@ function normalizePageData(value: unknown, status: string) {
       throw new Error("頁面區塊包含不安全或過大的欄位");
     }
     if (block.type === "Hero") heroCount += 1;
-    const imageUrl = cleanText(block.props.imageUrl, 2000);
-    const imageAlt = cleanText(block.props.imageAlt, 300);
-    if (imageUrl && (!cleanPageHref(imageUrl) || !imageAlt)) {
+    const imageUrl = typeof block.props.imageUrl === "string" ? block.props.imageUrl.trim() : "";
+    const imageAlt = typeof block.props.imageAlt === "string" ? block.props.imageAlt.trim() : "";
+    if (imageAlt.length > 180 || (imageUrl && (!cleanPageImageHref(imageUrl) || !imageAlt))) {
       throw new Error("每張圖片都必須使用安全網址並填寫替代文字");
     }
   }
@@ -492,6 +517,18 @@ async function saveSiteSettings(request: Request, db: D1Database, savedBy: strin
     return json({ error: "全站設定格式不正確" }, { status: 400 });
   }
   const appearance = normalizeSiteAppearance(parsed.value.settings, parsed.value.theme);
+  const contrast = evaluateSiteThemeContrast(appearance.theme);
+  if (!contrast.ok) {
+    const failedPairs = [
+      !contrast.passesInkSurface ? `主要文字／頁面底色 ${contrast.inkSurface.toFixed(2)}:1` : "",
+      !contrast.passesInkAccent ? `主要文字／品牌重點色 ${contrast.inkAccent.toFixed(2)}:1` : "",
+      !contrast.passesArchivePalette ? "固定版型只支援淺色頁面底與深色主要文字" : "",
+    ].filter(Boolean).join("、");
+    return json({
+      error: `配色對比不足（${failedPairs}）；兩組都必須至少 ${MIN_SITE_THEME_CONTRAST}:1。`,
+      contrast,
+    }, { status: 400 });
+  }
   const settingsJson = JSON.stringify(appearance.settings);
   const themeJson = JSON.stringify(appearance.theme);
   if (settingsJson.length + themeJson.length > 100_000) {

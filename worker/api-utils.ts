@@ -38,11 +38,15 @@ export function cleanSlug(value: unknown) {
 }
 
 export function cleanUrl(value: unknown) {
-  const candidate = cleanText(value, 1000);
+  if (typeof value !== "string") return "";
+  const candidate = value.trim();
   if (!candidate) return "";
+  if (candidate.length > 1000) return "";
   try {
     const url = new URL(candidate);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+      ? url.toString()
+      : "";
   } catch {
     return "";
   }

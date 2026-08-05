@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import "./globals.css";
-import { publishedBrandName } from "../shared/published-site";
+import { publishedBrandName, publishedSiteAppearance } from "../shared/published-site";
 
 const siteUrl = new URL(
   process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/",
 );
 const socialImageUrl = new URL("og.png", siteUrl).toString();
 const brandName = publishedBrandName;
+const themeVariables = {
+  "--site-accent": publishedSiteAppearance.theme.accent,
+  "--site-surface": publishedSiteAppearance.theme.surface,
+  "--site-ink": publishedSiteAppearance.theme.ink,
+} as CSSProperties;
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
@@ -28,5 +34,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-Hant-TW"><body>{children}</body></html>;
+  return <html lang="zh-Hant-TW" style={themeVariables}><body>{children}</body></html>;
 }

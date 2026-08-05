@@ -24,9 +24,13 @@ import styles from "./site-editor.module.css";
 import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "../admin-chrome";
 import {
   DEFAULT_SITE_APPEARANCE,
+  evaluateSiteThemeContrast,
+  MIN_SITE_THEME_CONTRAST,
   normalizeSiteAppearance,
   type SiteAppearance,
 } from "../../../shared/site-settings";
+import { SafePublicImage } from "../../product-artwork";
+import { ADMIN_IMAGE_URL_MAX_LENGTH, validateHttpUrlField } from "../image-field-contract";
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
@@ -100,14 +104,8 @@ function statusLabel(status: PageStatus) {
   return "草稿";
 }
 
-function isHttpUrlOrEmpty(value: string) {
-  if (!value.trim()) return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+function formatContrastRatio(value: number) {
+  return `${value.toFixed(2)}:1`;
 }
 
 export default function SiteEditor() {
@@ -131,7 +129,14 @@ export default function SiteEditor() {
   const [revisions, setRevisions] = useState<PageRevision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const editRevision = useRef(0);
+  const siteSettingsEditRevision = useRef(0);
   const initialLoadStarted = useRef(false);
+  const siteThemeContrast = useMemo(
+    () => evaluateSiteThemeContrast(siteAppearance.theme),
+    [siteAppearance.theme],
+  );
+  const pageCanonicalError = validateHttpUrlField(draft.canonicalUrl, "Canonical URL");
+  const pageOgImageError = validateHttpUrlField(draft.ogImageUrl, "社群圖片 URL");
 
   const markDirty = useCallback(() => {
     editRevision.current += 1;
@@ -284,6 +289,7 @@ export default function SiteEditor() {
   }, [dirty, siteSettingsDirty]);
 
   const updateIdentitySetting = (key: keyof SiteAppearance["settings"], value: string) => {
+    siteSettingsEditRevision.current += 1;
     setSiteAppearance((current) => ({
       ...current,
       settings: { ...current.settings, [key]: value },
@@ -293,6 +299,7 @@ export default function SiteEditor() {
   };
 
   const updateThemeSetting = (key: keyof SiteAppearance["theme"], value: string) => {
+    siteSettingsEditRevision.current += 1;
     setSiteAppearance((current) => ({
       ...current,
       theme: { ...current.theme, [key]: value },
@@ -303,9 +310,18 @@ export default function SiteEditor() {
 
   const saveSiteSettings = async () => {
     const normalized = normalizeSiteAppearance(siteAppearance.settings, siteAppearance.theme);
+    const contrast = evaluateSiteThemeContrast(normalized.theme);
+    if (!contrast.ok) {
+      setError(contrast.passesArchivePalette
+        ? `配色對比不足。主要文字與頁面底色、品牌重點色都必須至少 ${MIN_SITE_THEME_CONTRAST}:1。`
+        : "目前固定版型只支援淺色頁面底與深色主要文字，請調整後再儲存。");
+      setNotice("");
+      return;
+    }
     setSiteSettingsSaving(true);
     setError("");
     setNotice("");
+    const savingRevision = siteSettingsEditRevision.current;
     try {
       const response = await fetch(`${API_BASE}/api/admin/site-settings`, {
         method: "POST",
@@ -323,10 +339,16 @@ export default function SiteEditor() {
       };
       if (response.status === 401) setAuthRequired(true);
       if (!response.ok || !payload.siteSettings) throw new Error(payload.error || "全站設定儲存失敗");
-      setSiteAppearance(normalizeSiteAppearance(payload.siteSettings.settings, payload.siteSettings.theme));
+      const savedAppearance = normalizeSiteAppearance(payload.siteSettings.settings, payload.siteSettings.theme);
       setSiteSettingsVersion(Number(payload.siteSettings.version || siteSettingsVersion + 1));
-      setSiteSettingsDirty(false);
-      setNotice("全站品牌與配色已儲存為待發布設定；編輯器預覽已更新。同步建置後才會套用前台與 SEO，避免兩者不一致。");
+      if (siteSettingsEditRevision.current === savingRevision) {
+        setSiteAppearance(savedAppearance);
+        setSiteSettingsDirty(false);
+        setNotice("全站品牌、配色與首頁文案已儲存為待發布設定。同步建置後才會套用前台與 SEO，避免兩者不一致。");
+      } else {
+        setSiteSettingsDirty(true);
+        setNotice("送出時的版本已儲存；等待期間新增的修改仍保留，請再按一次儲存。");
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "全站設定儲存失敗");
     } finally {
@@ -352,8 +374,8 @@ export default function SiteEditor() {
     if (!slug) return setError("請先填寫可用的頁面網址");
     if (isReservedPageSlug(slug)) return setError("這個網址是系統保留路徑，請改用其他網址");
     if (!validation.ok) return setError(`頁面區塊尚未通過安全檢查：${validation.issues[0]}`);
-    if (!isHttpUrlOrEmpty(draft.canonicalUrl)) return setError("Canonical URL 必須是完整的 http(s) 網址");
-    if (!isHttpUrlOrEmpty(draft.ogImageUrl)) return setError("社群圖片 URL 必須是完整的 http(s) 網址");
+    if (pageCanonicalError) return setError(pageCanonicalError);
+    if (pageOgImageError) return setError(pageOgImageError);
 
     setSaving(true);
     setError("");
@@ -452,7 +474,8 @@ export default function SiteEditor() {
     { label: "頁面恰好有一個 H1 主視覺", pass: heroCount === 1 },
     { label: "SEO 標題建議 10–60 字", pass: draft.seoTitle.trim().length >= 10 && draft.seoTitle.trim().length <= 60 },
     { label: "Meta 描述建議 50–160 字", pass: draft.seoDescription.trim().length >= 50 && draft.seoDescription.trim().length <= 160 },
-    { label: "Canonical URL 格式正確", pass: isHttpUrlOrEmpty(draft.canonicalUrl) },
+    { label: "Canonical URL 格式正確", pass: !pageCanonicalError },
+    { label: "社群圖片 URL 格式正確", pass: !pageOgImageError },
     { label: "所有區塊通過安全檢查", pass: pageValidation.ok },
   ];
   const seoPassCount = seoChecks.filter((check) => check.pass).length;
@@ -504,9 +527,9 @@ export default function SiteEditor() {
           </div>
         </section>}
 
-        {showSiteSettings && <section className={`${styles.settingsPanel} ${styles.siteSettingsPanel}`} aria-label="全站品牌與配色">
+        {showSiteSettings && <section className={`${styles.settingsPanel} ${styles.siteSettingsPanel}`} aria-label="全站品牌、配色與首頁內容">
           <div>
-            <div className={styles.settingsTitle}><div><small>SITE IDENTITY</small><h2>全站品牌與配色</h2></div><span>{siteSettingsDirty ? "尚未儲存" : `版本 ${siteSettingsVersion}`}</span></div>
+            <div className={styles.settingsTitle}><div><small>SITE IDENTITY</small><h2>全站品牌、配色與首頁內容</h2></div><span>{siteSettingsDirty ? "尚未儲存" : `版本 ${siteSettingsVersion}`}</span></div>
             <div className={styles.basicFields}>
               <label><span>品牌名稱</span><input value={siteAppearance.settings.brandName} maxLength={80} onChange={(event) => updateIdentitySetting("brandName", event.target.value)} /></label>
               <label><span>英文副標</span><input value={siteAppearance.settings.brandSubtitle} maxLength={120} onChange={(event) => updateIdentitySetting("brandSubtitle", event.target.value)} /></label>
@@ -515,14 +538,31 @@ export default function SiteEditor() {
               <label className={styles.colorField}><span>品牌金色</span><div><input type="color" value={siteAppearance.theme.accent} onChange={(event) => updateThemeSetting("accent", event.target.value)} /><code>{siteAppearance.theme.accent}</code></div></label>
               <label className={styles.colorField}><span>頁面底色</span><div><input type="color" value={siteAppearance.theme.surface} onChange={(event) => updateThemeSetting("surface", event.target.value)} /><code>{siteAppearance.theme.surface}</code></div></label>
               <label className={styles.colorField}><span>主要文字</span><div><input type="color" value={siteAppearance.theme.ink} onChange={(event) => updateThemeSetting("ink", event.target.value)} /><code>{siteAppearance.theme.ink}</code></div></label>
+              <div className={styles.settingsGroupTitle}><b>首頁固定版型文案</b><small>只修改文字，不改導覽、按鈕目的地或區塊順序。</small></div>
+              <label><span>首頁眉題 <small>{siteAppearance.settings.homeHeroEyebrow.length}/80</small></span><input value={siteAppearance.settings.homeHeroEyebrow} maxLength={80} onChange={(event) => updateIdentitySetting("homeHeroEyebrow", event.target.value)} /></label>
+              <label><span>主標第一行 <small>{siteAppearance.settings.homeHeroTitlePrimary.length}/80</small></span><input value={siteAppearance.settings.homeHeroTitlePrimary} maxLength={80} onChange={(event) => updateIdentitySetting("homeHeroTitlePrimary", event.target.value)} /></label>
+              <label><span>主標第二行 <small>{siteAppearance.settings.homeHeroTitleSecondary.length}/80</small></span><input value={siteAppearance.settings.homeHeroTitleSecondary} maxLength={80} onChange={(event) => updateIdentitySetting("homeHeroTitleSecondary", event.target.value)} /></label>
+              <label className={styles.wideField}><span>首頁引言 <small>{siteAppearance.settings.homeHeroLead.length}/300</small></span><textarea rows={3} value={siteAppearance.settings.homeHeroLead} maxLength={300} onChange={(event) => updateIdentitySetting("homeHeroLead", event.target.value)} /></label>
+              <label><span>主要按鈕文字 <small>{siteAppearance.settings.homePrimaryCtaLabel.length}/40</small></span><input value={siteAppearance.settings.homePrimaryCtaLabel} maxLength={40} onChange={(event) => updateIdentitySetting("homePrimaryCtaLabel", event.target.value)} /></label>
+              <label><span>次要按鈕文字 <small>{siteAppearance.settings.homeSecondaryCtaLabel.length}/40</small></span><input value={siteAppearance.settings.homeSecondaryCtaLabel} maxLength={40} onChange={(event) => updateIdentitySetting("homeSecondaryCtaLabel", event.target.value)} /></label>
+              <label><span>典藏導覽標題 <small>{siteAppearance.settings.homeCollectionsTitle.length}/80</small></span><input value={siteAppearance.settings.homeCollectionsTitle} maxLength={80} onChange={(event) => updateIdentitySetting("homeCollectionsTitle", event.target.value)} /></label>
+              <label className={styles.wideField}><span>典藏導覽說明 <small>{siteAppearance.settings.homeCollectionsIntro.length}/300</small></span><textarea rows={3} value={siteAppearance.settings.homeCollectionsIntro} maxLength={300} onChange={(event) => updateIdentitySetting("homeCollectionsIntro", event.target.value)} /></label>
+              <label><span>商品區標題 <small>{siteAppearance.settings.homeArrivalsTitle.length}/80</small></span><input value={siteAppearance.settings.homeArrivalsTitle} maxLength={80} onChange={(event) => updateIdentitySetting("homeArrivalsTitle", event.target.value)} /></label>
             </div>
           </div>
           <aside className={styles.siteSettingsSummary}>
             <span>SAFE TEMPLATE</span>
             <h3>保留商店骨架，只開放安全欄位</h3>
-            <p>品牌、公告、頁尾與配色會套用到首頁；商品流程、SEO 結構與行動版版型不會被任意拖曳破壞。</p>
+            <p>品牌、公告、頁尾、配色與首頁文案會套用到全站前台；商品流程、SEO 結構與行動版版型不會被任意拖曳破壞。</p>
             <div className={styles.colorPreview} style={{ background: siteAppearance.theme.surface, color: siteAppearance.theme.ink, borderColor: siteAppearance.theme.accent }}><i style={{ background: siteAppearance.theme.accent }} />{siteAppearance.settings.brandName || "品牌預覽"}</div>
-            <button type="button" onClick={() => void saveSiteSettings()} disabled={siteSettingsSaving || !siteSettingsDirty}>{siteSettingsSaving ? "儲存中…" : "儲存全站設定"}</button>
+            <div className={`${styles.contrastStatus} ${siteThemeContrast.ok ? styles.contrastPass : styles.contrastFail}`} role="status" aria-live="polite">
+              <b>{siteThemeContrast.ok ? "主要配色對比檢查通過" : "主要配色對比不足，暫時不能儲存"}</b>
+              <span data-pass={siteThemeContrast.passesInkSurface}>文字／底色 <strong>{formatContrastRatio(siteThemeContrast.inkSurface)}</strong></span>
+              <span data-pass={siteThemeContrast.passesInkAccent}>文字／重點色 <strong>{formatContrastRatio(siteThemeContrast.inkAccent)}</strong></span>
+              <span data-pass={siteThemeContrast.passesArchivePalette}>固定版型明暗 <strong>{siteThemeContrast.passesArchivePalette ? "適用" : "不適用"}</strong></span>
+              <small>兩組對比都必須至少 {MIN_SITE_THEME_CONTRAST}:1，並維持淺底深字。</small>
+            </div>
+            <button type="button" onClick={() => void saveSiteSettings()} disabled={siteSettingsSaving || !siteSettingsDirty || !siteThemeContrast.ok}>{siteSettingsSaving ? "儲存中…" : "儲存全站設定"}</button>
           </aside>
         </section>}
 
@@ -536,8 +576,11 @@ export default function SiteEditor() {
             <label><span>頁面網址</span><div className={styles.slugField}><small>/pages/</small><input value={draft.slug} onChange={(event) => updateDraft("slug", normalizePageSlug(event.target.value))} placeholder="page-slug" /><small>/</small></div></label>
             <label><span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span><input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder="搜尋結果顯示的標題" /></label>
             <label><span>Meta 描述 <small>{draft.seoDescription.length}/160</small></span><textarea rows={3} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder="用一段話說明這頁能解決什麼問題" /></label>
-            <label><span>Canonical URL</span><input type="url" value={draft.canonicalUrl} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/pages/.../" /></label>
-            <label><span>社群圖片 URL</span><input type="url" value={draft.ogImageUrl} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/page.jpg" /></label>
+            <label><span>Canonical URL <small>{draft.canonicalUrl.length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small></span><input type="url" value={draft.canonicalUrl} maxLength={ADMIN_IMAGE_URL_MAX_LENGTH} aria-invalid={Boolean(pageCanonicalError)} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/pages/.../" />{pageCanonicalError && <small className={styles.fieldError} role="status">{pageCanonicalError}</small>}</label>
+            <label><span>社群圖片 URL <small>{draft.ogImageUrl.length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small></span><input type="url" value={draft.ogImageUrl} maxLength={ADMIN_IMAGE_URL_MAX_LENGTH} aria-invalid={Boolean(pageOgImageError)} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/page.jpg" />{pageOgImageError && <small className={styles.fieldError} role="status">{pageOgImageError}</small>}</label>
+            <div className={styles.ogImagePreview}>
+              <SafePublicImage src={draft.ogImageUrl} alt={`${draft.title || "自訂頁面"}社群圖片預覽`} fallback={<span role="img" aria-label="社群圖片尚未設定或無法載入">社群圖片尚未設定或無法載入</span>} />
+            </div>
             <label className={styles.checkbox}><input type="checkbox" checked={draft.noindex} onChange={(event) => updateDraft("noindex", event.target.checked)} /><span><b>禁止搜尋引擎收錄</b><small>測試頁、短期活動或未完成內容可暫時開啟。</small></span></label>
           </div>
           <aside className={styles.seoReadiness}>

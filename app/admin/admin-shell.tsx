@@ -17,8 +17,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { SafePublicImage } from "../product-artwork";
 import ArticleEditorToolbar from "./article-editor-toolbar";
 import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
+import {
+  ADMIN_IMAGE_ALT_MAX_LENGTH,
+  ADMIN_IMAGE_URL_MAX_LENGTH,
+  validateHttpUrlField,
+  validateImagePair,
+} from "./image-field-contract";
 import styles from "./admin.module.css";
 
 type ArticleDocument = JSONContent;
@@ -126,6 +133,23 @@ function normalizeArticle(value: Article): Article {
     heroImageAlt: value.heroImageAlt || "",
     version: Number.isSafeInteger(value.version) ? value.version : 1,
   };
+}
+
+function ArticleMediaPreview({ src, alt, label }: { src: string; alt: string; label: string }) {
+  return <div className={styles.mediaPreview}>
+    <SafePublicImage
+      key={src}
+      src={src}
+      alt={alt}
+      className={styles.mediaPreviewImage}
+      fallback={(
+        <div className={styles.mediaPreviewFallback} role="img" aria-label={`${label}尚未設定或無法載入`}>
+          <ImageIcon size={24} aria-hidden="true" />
+          <span>{label}尚未設定或無法載入</span>
+        </div>
+      )}
+    />
+  </div>;
 }
 
 export default function AdminShell() {
@@ -280,6 +304,14 @@ export default function AdminShell() {
     setDraft((current) => ({ ...current, [key]: value }));
     markDirty();
   };
+  const heroImageError = validateImagePair({
+    url: draft.heroImageUrl,
+    alt: draft.heroImageAlt,
+    urlLabel: "文章首圖 URL",
+    altLabel: "首圖替代文字",
+  });
+  const ogImageError = validateHttpUrlField(draft.ogImageUrl, "社群分享圖 URL");
+  const canonicalUrlError = validateHttpUrlField(draft.canonicalUrl, "Canonical URL");
 
   const loadRevisions = useCallback(async (articleId: string) => {
     setRevisionsLoading(true);
@@ -315,6 +347,11 @@ export default function AdminShell() {
     }
     if (!slug) {
       setError("請填寫可使用的文章網址");
+      return;
+    }
+    const mediaFieldError = heroImageError || ogImageError || canonicalUrlError;
+    if (mediaFieldError) {
+      setError(mediaFieldError);
       return;
     }
 
@@ -636,7 +673,18 @@ export default function AdminShell() {
                 <ul className={styles.seoChecks}>{seoChecks.map((check) => <li key={check.label} className={check.pass ? styles.checkPass : ""}>{check.label}</li>)}</ul>
                 <details className={styles.advancedSettings}>
                   <summary>進階設定</summary>
-                  <label className={styles.field}><span>Canonical URL</span><input type="url" value={draft.canonicalUrl} onChange={(event) => updateDraft("canonicalUrl", event.target.value)} placeholder="https://example.com/articles/..." /></label>
+                  <label className={styles.field}>
+                    <span>Canonical URL <small>{draft.canonicalUrl.length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small></span>
+                    <input
+                      type="url"
+                      value={draft.canonicalUrl}
+                      maxLength={ADMIN_IMAGE_URL_MAX_LENGTH}
+                      aria-invalid={Boolean(canonicalUrlError)}
+                      onChange={(event) => updateDraft("canonicalUrl", event.target.value)}
+                      placeholder="https://example.com/articles/..."
+                    />
+                    {canonicalUrlError && <small className={styles.fieldError} role="status">{canonicalUrlError}</small>}
+                  </label>
                   <label className={styles.checkField}>
                     <input type="checkbox" checked={draft.noindex} onChange={(event) => updateDraft("noindex", event.target.checked)} />
                     <span><b>不要讓搜尋引擎收錄</b><small>適合測試頁或尚未完成的文章</small></span>
@@ -647,9 +695,42 @@ export default function AdminShell() {
               {inspectorTab === "media" && <section id="article-panel-media" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-media">
                 <div className={styles.panelTitle}><span>文章圖片</span><small>網址模式</small></div>
                 <div className={styles.mediaNotice}><ImageIcon size={18} /><span><b>目前僅支援公開圖片網址</b><small>檔案上傳需啟用雲端儲存。</small></span></div>
-                <label className={styles.field}><span>文章首圖 URL</span><input type="url" value={draft.heroImageUrl} onChange={(event) => updateDraft("heroImageUrl", event.target.value)} placeholder="https://example.com/articles/photo.jpg" /></label>
-                <label className={styles.field}><span>首圖替代文字</span><input value={draft.heroImageAlt} onChange={(event) => updateDraft("heroImageAlt", event.target.value)} placeholder="描述圖片內容與角度" /></label>
-                <label className={styles.field}><span>社群分享圖 URL</span><input type="url" value={draft.ogImageUrl} onChange={(event) => updateDraft("ogImageUrl", event.target.value)} placeholder="https://example.com/og/article.jpg" /></label>
+                <ArticleMediaPreview src={draft.heroImageUrl} alt={draft.heroImageAlt || "文章首圖預覽"} label="文章首圖" />
+                <label className={styles.field}>
+                  <span>文章首圖 URL <small>{draft.heroImageUrl.length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small></span>
+                  <input
+                    type="url"
+                    value={draft.heroImageUrl}
+                    maxLength={ADMIN_IMAGE_URL_MAX_LENGTH}
+                    aria-invalid={Boolean(heroImageError)}
+                    onChange={(event) => updateDraft("heroImageUrl", event.target.value)}
+                    placeholder="https://example.com/articles/photo.jpg"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>首圖替代文字 <small>{draft.heroImageAlt.length}/{ADMIN_IMAGE_ALT_MAX_LENGTH}</small></span>
+                  <input
+                    value={draft.heroImageAlt}
+                    maxLength={ADMIN_IMAGE_ALT_MAX_LENGTH}
+                    aria-invalid={Boolean(heroImageError)}
+                    onChange={(event) => updateDraft("heroImageAlt", event.target.value)}
+                    placeholder="描述圖片內容與角度"
+                  />
+                </label>
+                {heroImageError && <p className={styles.fieldError} role="status">{heroImageError}</p>}
+                <ArticleMediaPreview src={draft.ogImageUrl} alt="社群分享圖預覽" label="社群分享圖" />
+                <label className={styles.field}>
+                  <span>社群分享圖 URL <small>{draft.ogImageUrl.length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small></span>
+                  <input
+                    type="url"
+                    value={draft.ogImageUrl}
+                    maxLength={ADMIN_IMAGE_URL_MAX_LENGTH}
+                    aria-invalid={Boolean(ogImageError)}
+                    onChange={(event) => updateDraft("ogImageUrl", event.target.value)}
+                    placeholder="https://example.com/og/article.jpg"
+                  />
+                </label>
+                {ogImageError && <p className={styles.fieldError} role="status">{ogImageError}</p>}
               </section>}
 
               {inspectorTab === "history" && <section id="article-panel-history" className={styles.inspectorBody} role="tabpanel" aria-labelledby="article-tab-history">

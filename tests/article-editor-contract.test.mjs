@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ArticleContent from "../app/article-content.tsx";
+import {
+  ADMIN_IMAGE_ALT_MAX_LENGTH,
+  ADMIN_IMAGE_URL_MAX_LENGTH,
+  validateHttpUrlField,
+  validateImagePair,
+} from "../app/admin/image-field-contract.ts";
 import {
   ARTICLE_HEADING_LEVELS,
   ARTICLE_MAX_DOCUMENT_DEPTH,
@@ -84,4 +91,61 @@ test("shared validation rejects content deeper than the public renderer", () => 
     nested = { type: "paragraph", content: [nested] };
   }
   assert.equal(validateArticleDocument({ type: "doc", content: [nested] }), false);
+});
+
+test("admin image fields reject unsafe or overlong values before submission", () => {
+  assert.equal(ADMIN_IMAGE_URL_MAX_LENGTH, 1000);
+  assert.equal(ADMIN_IMAGE_ALT_MAX_LENGTH, 300);
+  assert.equal(validateHttpUrlField("", "圖片 URL"), null);
+  assert.equal(validateHttpUrlField("https://cdn.example.com/image.webp", "圖片 URL"), null);
+  assert.equal(validateHttpUrlField("http://cdn.example.com/image.webp", "圖片 URL"), null);
+
+  for (const unsafe of [
+    "/local/image.webp",
+    "//cdn.example.com/image.webp",
+    "javascript:alert(1)",
+    "data:image/svg+xml,<svg/>",
+    "https://user:secret@cdn.example.com/image.webp",
+  ]) assert.match(validateHttpUrlField(unsafe, "圖片 URL") || "", /http 或 https 公開網址/);
+
+  assert.match(
+    validateHttpUrlField(`https://example.com/${"a".repeat(1000)}`, "圖片 URL") || "",
+    /不可超過 1000 個字元/,
+  );
+  assert.match(validateImagePair({
+    url: "https://cdn.example.com/image.webp",
+    alt: "",
+    urlLabel: "商品主圖 URL",
+    altLabel: "主圖替代文字",
+  }) || "", /主圖替代文字不可留白/);
+  assert.match(validateImagePair({
+    url: "",
+    alt: "替".repeat(301),
+    urlLabel: "文章首圖 URL",
+    altLabel: "首圖替代文字",
+  }) || "", /不可超過 300 個字元/);
+  assert.equal(validateImagePair({
+    url: "https://cdn.example.com/image.webp",
+    alt: "佛牌正面實拍",
+    urlLabel: "商品主圖 URL",
+    altLabel: "主圖替代文字",
+  }), null);
+});
+
+test("product and article editors wire safe previews, limits, and pre-save errors", async () => {
+  const [productSource, articleSource] = await Promise.all([
+    readFile(new URL("../app/admin/store-manager.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/admin-shell.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(productSource, /<ProductArtwork/);
+  assert.match(productSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
+  assert.match(productSource, /maxLength=\{ADMIN_IMAGE_ALT_MAX_LENGTH\}/);
+  assert.match(productSource, /if \(productImageError\) \{ setError\(productImageError\); return; \}/);
+
+  assert.match(articleSource, /function ArticleMediaPreview/);
+  assert.match(articleSource, /<SafePublicImage/);
+  assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
+  assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_ALT_MAX_LENGTH\}/);
+  assert.match(articleSource, /const mediaFieldError = heroImageError \|\| ogImageError \|\| canonicalUrlError/);
 });

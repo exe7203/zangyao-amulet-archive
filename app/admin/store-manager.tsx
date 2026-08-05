@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import type { Product } from "../data";
 import { formatPrice } from "../data";
+import ProductArtwork from "../product-artwork";
 import styles from "./store-manager.module.css";
 import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
+import {
+  ADMIN_IMAGE_ALT_MAX_LENGTH,
+  ADMIN_IMAGE_URL_MAX_LENGTH,
+  validateImagePair,
+} from "./image-field-contract";
 
 const SITE_CODE = "taijuda";
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
@@ -30,6 +36,14 @@ type Order = {
   items: OrderItem[];
 };
 type AdminProduct = Product & { inventory?: { onHand: number; reserved: number; available: number; version: number } };
+type AdminPagination = { page: number; limit: number; maxLimit: number; total: number; totalPages: number; returned: number };
+type OrderEvent = { id: string; eventType: string; fromValue: string; toValue: string; note: string; actor: string; createdAt: string };
+type InventoryMovement = { id: string; movementType: string; quantity: number; onHandAfter: number; reservedAfter: number; availableAfter: number; reason: string; actor: string; orderId: string | null; createdAt: string };
+
+const PRODUCT_LIST_LIMIT = 200;
+const ORDER_LIST_LIMIT = 50;
+const HISTORY_LIMIT = 20;
+const EMPTY_PAGINATION: AdminPagination = { page: 1, limit: HISTORY_LIMIT, maxLimit: 50, total: 0, totalPages: 1, returned: 0 };
 
 const ORDER_TRANSITIONS: Record<OrderStatus, ReadonlySet<OrderStatus>> = {
   new: new Set(["confirmed", "cancelled"]),
@@ -103,6 +117,35 @@ function deliveryMethodLabel(method: string) {
   return DELIVERY_METHOD_LABELS[method] || `未辨識的配送方式（${method}）`;
 }
 
+function eventTypeLabel(eventType: string) {
+  return ({
+    order_created: "建立保留單",
+    order_status_changed: "訂單狀態更新",
+    payment_status_changed: "付款狀態更新",
+    reservation_expired: "保留逾期",
+  } as Record<string, string>)[eventType] || eventType;
+}
+
+function movementTypeLabel(movementType: string) {
+  return ({
+    seed: "初始庫存",
+    adjustment: "手動調整",
+    reservation: "訂單保留",
+    release: "釋放保留",
+    sale: "完成扣庫",
+  } as Record<string, string>)[movementType] || movementType;
+}
+
+function actorLabel(actor: string) {
+  return ({
+    system: "系統",
+    "system-expiry": "逾期處理",
+    "store-api": "前台訂單",
+    "local-preview": "本機後台",
+    "catalog-seed": "初始資料",
+  } as Record<string, string>)[actor] || actor;
+}
+
 function paymentChangeAllowed(order: Order, paymentStatus: PaymentStatus) {
   if (!PAYMENT_TRANSITIONS[order.paymentStatus].has(paymentStatus)) return false;
   const projectedOrderStatus = paymentStatus === "refunded" && order.orderStatus !== "completed"
@@ -124,19 +167,60 @@ function ProductManager() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [productListLimit, setProductListLimit] = useState(PRODUCT_LIST_LIMIT);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [movementPagination, setMovementPagination] = useState<AdminPagination>(EMPTY_PAGINATION);
+  const [movementsLoading, setMovementsLoading] = useState(false);
+  const [movementError, setMovementError] = useState("");
   const editRevision = useRef(0);
+  const movementRequestRevision = useRef(0);
+
+  const loadMovements = useCallback(async (productId: string, page = 1) => {
+    if (!productId) {
+      movementRequestRevision.current += 1;
+      setMovements([]);
+      setMovementPagination(EMPTY_PAGINATION);
+      setMovementError("");
+      setMovementsLoading(false);
+      return;
+    }
+    const requestRevision = ++movementRequestRevision.current;
+    setMovements([]);
+    setMovementPagination({ ...EMPTY_PAGINATION, page });
+    setMovementsLoading(true); setMovementError("");
+    try {
+      const params = new URLSearchParams({ site: SITE_CODE, page: String(page), limit: String(HISTORY_LIMIT) });
+      const response = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(productId)}/movements?${params}`, { headers: { accept: "application/json" }, cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { movements?: InventoryMovement[]; pagination?: AdminPagination; error?: string };
+      if (!response.ok) throw new Error(payload.error || "庫存流水讀取失敗");
+      if (movementRequestRevision.current !== requestRevision) return;
+      setMovements(payload.movements || []);
+      setMovementPagination(payload.pagination || EMPTY_PAGINATION);
+    } catch (cause) {
+      if (movementRequestRevision.current === requestRevision) setMovementError(cause instanceof Error ? cause.message : "庫存流水讀取失敗");
+    } finally {
+      if (movementRequestRevision.current === requestRevision) setMovementsLoading(false);
+    }
+  }, []);
+  const productImageError = validateImagePair({
+    url: draft.imageUrl || "",
+    alt: draft.imageAlt || "",
+    urlLabel: "商品主圖 URL",
+    altLabel: "主圖替代文字",
+  });
 
   const load = useCallback(async (preferredId?: string) => {
     setLoading(true); setError("");
     try {
       const response = await fetch(`${API_BASE}/api/admin/products?site=${SITE_CODE}`, { headers: { accept: "application/json" }, cache: "no-store" });
-      const payload = await response.json().catch(() => ({})) as { products?: AdminProduct[]; error?: string };
+      const payload = await response.json().catch(() => ({})) as { products?: AdminProduct[]; listing?: { returned: number; limit: number }; error?: string };
       if (!response.ok) throw new Error(payload.error || "商品資料讀取失敗");
       const next = (payload.products || []).map((product) => ({
         ...product,
         stock: product.inventory?.onHand ?? product.stock,
       }));
       setProducts(next);
+      setProductListLimit(payload.listing?.limit || PRODUCT_LIST_LIMIT);
       const selected = next.find((product) => product.id === preferredId) || next[0];
       setDraft(selected || emptyProduct());
       setDirty(false);
@@ -148,6 +232,10 @@ function ProductManager() {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadMovements(draft.id, 1), 0);
+    return () => window.clearTimeout(timer);
+  }, [draft.id, loadMovements]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (!dirty) return;
@@ -177,6 +265,7 @@ function ProductManager() {
     if (!draft.name.trim() || !draft.slug.trim() || !draft.sku.trim()) { setError("商品名稱、網址 Slug 與典藏編號不可留白"); return; }
     if (!Number.isSafeInteger(draft.price) || draft.price < 0 || !Number.isSafeInteger(draft.stock) || draft.stock < 0) { setError("價格與庫存必須是大於或等於 0 的整數"); return; }
     if (draft.stock < (draft.inventory?.reserved ?? 0)) { setError(`實有總數不可低於目前已保留的 ${draft.inventory?.reserved ?? 0} 件`); return; }
+    if (productImageError) { setError(productImageError); return; }
     setSaving(true); setError(""); setNotice("");
     const savingRevision = editRevision.current;
     try {
@@ -200,6 +289,7 @@ function ProductManager() {
         }));
         setNotice("已儲存送出時的版本；你後續輸入的內容仍保留，請再次儲存。");
       }
+      await loadMovements(normalizedSaved.id, 1);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "商品儲存失敗"); }
     finally { setSaving(false); }
   };
@@ -220,7 +310,7 @@ function ProductManager() {
     <aside className={styles.listPane}><div className={styles.listHead}><div><small>CATALOG</small><h1>商品與庫存</h1></div><button type="button" onClick={createProduct}><Plus size={14} />新增</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{products.map((product) => {
       const inventory = inventoryBreakdown(product);
       return <button type="button" className={product.id === draft.id ? styles.selected : ""} key={product.id} onClick={() => selectProduct(product)}><span className={`${styles.dot} ${styles[`dot_${product.status}`]}`} /><span><b>{product.shortName}</b><small>{product.sku} · {statusLabel(product.status)}</small><small>可用 {inventory.available} · 實有 {inventory.onHand} · 保留 {inventory.reserved}</small></span></button>;
-    })}</div><div className={styles.listFoot}>共 {products.length} 件商品</div></aside>
+    })}</div><div className={styles.listFoot}>目前顯示 {products.length} 件 · 列表上限 {productListLimit}</div></aside>
     <section className={styles.mainPane}>
       <AdminActionBar
         status={<AdminStatus tone={draft.status === "active" ? "success" : draft.status === "sold_out" ? "danger" : draft.status === "draft" ? "warning" : "neutral"}>{statusLabel(draft.status)}</AdminStatus>}
@@ -233,7 +323,44 @@ function ProductManager() {
       {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
       <div className={styles.formGrid}><section className={styles.card}><h2>基本資料</h2><div className={styles.twoColumns}><Field label="商品全名"><input value={draft.name} onChange={(event) => update("name", event.target.value)} /></Field><Field label="前台短名"><input value={draft.shortName} onChange={(event) => update("shortName", event.target.value)} /></Field><Field label="典藏編號／SKU"><input value={draft.sku} onChange={(event) => update("sku", event.target.value.toUpperCase())} /></Field><Field label="網址 Slug"><input value={draft.slug} onChange={(event) => update("slug", event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} /></Field><Field label="分類"><select value={draft.category} onChange={(event) => update("category", event.target.value as Product["category"])}><option>佛牌</option><option>神尊</option><option>符印</option></select></Field><Field label="狀態"><select value={draft.status} onChange={(event) => update("status", event.target.value as Product["status"])}><option value="draft">草稿</option><option value="active">上架中</option><option value="sold_out">售罄</option><option value="archived">封存</option></select></Field><Field label="售價（TWD）"><input type="number" min="0" step="1" value={draft.price} onChange={(event) => update("price", Number(event.target.value))} /></Field><Field label="實有總數（含訂單保留）"><input type="number" min={draft.inventory?.reserved ?? 0} step="1" value={draft.stock} onChange={(event) => update("stock", Number(event.target.value))} /></Field><Field label="每筆限購"><input type="number" min="1" step="1" value={draft.purchaseLimit || 1} onChange={(event) => update("purchaseLimit", Number(event.target.value))} /></Field><Field label="前台標籤"><input value={draft.badge} onChange={(event) => update("badge", event.target.value)} /></Field></div><InventorySummary product={draft} /><Field label="商品說明"><textarea rows={5} value={draft.description} onChange={(event) => update("description", event.target.value)} /></Field></section>
         <section className={styles.card}><h2>藏品履歷</h2><div className={styles.twoColumns}><Field label="來源地區"><input value={draft.origin} onChange={(event) => update("origin", event.target.value)} /></Field><Field label="寺院／來源"><input value={draft.temple} onChange={(event) => update("temple", event.target.value)} /></Field><Field label="佛曆年份"><input value={draft.buddhistYear} onChange={(event) => update("buddhistYear", event.target.value)} /></Field><Field label="西元年份"><input value={draft.westernYear} onChange={(event) => update("westernYear", event.target.value)} /></Field><Field label="材質"><input value={draft.material} onChange={(event) => update("material", event.target.value)} /></Field><Field label="尺寸"><input value={draft.dimensions} onChange={(event) => update("dimensions", event.target.value)} /></Field><Field label="祈願文化主題"><input value={draft.theme} onChange={(event) => update("theme", event.target.value)} /></Field><Field label="視覺形制"><select value={draft.shape} onChange={(event) => update("shape", event.target.value as Product["shape"])}><option value="arch">拱形</option><option value="oval">橢圓</option><option value="round">圓形</option><option value="statue">神尊</option></select></Field></div></section>
-        <section className={styles.card}><h2>圖片與 SEO</h2><Field label="商品主圖 URL"><input type="url" value={draft.imageUrl || ""} onChange={(event) => update("imageUrl", event.target.value)} placeholder="https://..." /></Field><Field label="主圖替代文字"><input value={draft.imageAlt || ""} onChange={(event) => update("imageAlt", event.target.value)} placeholder="清楚描述實拍商品與角度" /></Field><Field label="SEO 標題"><input value={draft.seoTitle} onChange={(event) => update("seoTitle", event.target.value)} /></Field><Field label="Meta 描述"><textarea rows={4} value={draft.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} /></Field><label className={styles.field}><span>搜尋收錄狀態</span><span><input type="checkbox" checked={draft.seoReady === true} onChange={(event) => update("seoReady", event.target.checked)} /> 已逐件覆核商品、圖片與 SEO，可以同步到可索引公開版</span></label><small>勾選前必須有公開主圖與替代文字、至少 8 字 SEO 標題及 50 字 Meta 描述；公開建置仍需設定商品覆核閘門。</small></section>
+        <section className={styles.card}>
+          <h2>圖片與 SEO</h2>
+          <div className={styles.imagePreview}>
+            <ProductArtwork key={`${draft.id || "new"}:${draft.imageUrl || ""}`} product={draft} large />
+          </div>
+          <p className={styles.previewNote}>安全預覽會使用前台相同規則；網址無效或圖片載入失敗時顯示藏品示意圖。</p>
+          <Field label="商品主圖 URL">
+            <input
+              type="url"
+              value={draft.imageUrl || ""}
+              maxLength={ADMIN_IMAGE_URL_MAX_LENGTH}
+              aria-invalid={Boolean(productImageError)}
+              onChange={(event) => update("imageUrl", event.target.value)}
+              placeholder="https://..."
+            />
+            <small className={styles.fieldCounter}>{(draft.imageUrl || "").length}/{ADMIN_IMAGE_URL_MAX_LENGTH}</small>
+          </Field>
+          <Field label="主圖替代文字">
+            <input
+              value={draft.imageAlt || ""}
+              maxLength={ADMIN_IMAGE_ALT_MAX_LENGTH}
+              aria-invalid={Boolean(productImageError)}
+              onChange={(event) => update("imageAlt", event.target.value)}
+              placeholder="清楚描述實拍商品與角度"
+            />
+            <small className={styles.fieldCounter}>{(draft.imageAlt || "").length}/{ADMIN_IMAGE_ALT_MAX_LENGTH}</small>
+          </Field>
+          {productImageError && <p className={styles.fieldError} role="status">{productImageError}</p>}
+          <Field label="SEO 標題"><input value={draft.seoTitle} onChange={(event) => update("seoTitle", event.target.value)} /></Field>
+          <Field label="Meta 描述"><textarea rows={4} value={draft.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} /></Field>
+          <label className={styles.field}><span>搜尋收錄狀態</span><span><input type="checkbox" checked={draft.seoReady === true} onChange={(event) => update("seoReady", event.target.checked)} /> 已逐件覆核商品、圖片與 SEO，可以同步到可索引公開版</span></label>
+          <small>勾選前必須有公開主圖與替代文字、至少 8 字 SEO 標題及 50 字 Meta 描述；公開建置仍需設定商品覆核閘門。</small>
+        </section>
+        <section className={`${styles.card} ${styles.historyCard}`}>
+          <div className={styles.cardHeading}><div><small>INVENTORY LOG</small><h2>庫存流水</h2></div>{draft.id && <button type="button" onClick={() => void loadMovements(draft.id, movementPagination.page)} disabled={movementsLoading}><RefreshCw size={13} />重新整理</button>}</div>
+          {!draft.id ? <p className={styles.historyEmpty}>商品儲存後，這裡會顯示初始入庫、調整、訂單保留、釋放與完成扣庫紀錄。</p> : movementError ? <p className={styles.historyError} role="status">{movementError}</p> : movementsLoading && movements.length === 0 ? <p className={styles.historyEmpty}>讀取庫存流水…</p> : movements.length === 0 ? <p className={styles.historyEmpty}>這項商品目前沒有庫存流水。</p> : <div className={styles.timeline}>{movements.map((movement) => <article key={movement.id}><span className={styles.timelineDot} /><div><div className={styles.timelineTitle}><b>{movementTypeLabel(movement.movementType)}</b><time dateTime={movement.createdAt}>{dateTime(movement.createdAt)}</time></div><p>{movement.reason || "未填寫原因"}</p><small>異動 {movement.quantity > 0 ? "+" : ""}{movement.quantity} · 實有 {movement.onHandAfter} · 保留 {movement.reservedAfter} · 可用 {movement.availableAfter}</small><small>{actorLabel(movement.actor)}{movement.orderId ? ` · 訂單 ${movement.orderId}` : ""}</small></div></article>)}</div>}
+          {draft.id && !movementsLoading && <HistoryPager pagination={movementPagination} loading={false} onPage={(page) => void loadMovements(draft.id, page)} />}
+        </section>
       </div>
     </section>
   </div></>;
@@ -251,6 +378,13 @@ function InventorySummary({ product }: { product: AdminProduct }) {
   </section>;
 }
 
+function HistoryPager({ pagination, loading, onPage }: { pagination: AdminPagination; loading: boolean; onPage: (page: number) => void }) {
+  return <div className={styles.historyPager}>
+    <span>顯示 {pagination.returned} / {pagination.total} 筆 · 每頁上限 {pagination.limit}</span>
+    <div><button type="button" onClick={() => onPage(pagination.page - 1)} disabled={loading || pagination.page <= 1}>上一頁</button><span>{pagination.page} / {pagination.totalPages}</span><button type="button" onClick={() => onPage(pagination.page + 1)} disabled={loading || pagination.page >= pagination.totalPages}>下一頁</button></div>
+  </div>;
+}
+
 function OrderManager() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -258,28 +392,85 @@ function OrderManager() {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+  const [orderPagination, setOrderPagination] = useState<AdminPagination>({ ...EMPTY_PAGINATION, limit: ORDER_LIST_LIMIT, maxLimit: ORDER_LIST_LIMIT });
+  const [events, setEvents] = useState<OrderEvent[]>([]);
+  const [eventPagination, setEventPagination] = useState<AdminPagination>(EMPTY_PAGINATION);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventError, setEventError] = useState("");
+  const orderRequestRevision = useRef(0);
+  const eventRequestRevision = useRef(0);
+  const lastAutoLoadedFilterKey = useRef("");
   const selected = orders.find((order) => order.id === selectedId) || orders[0] || null;
+  const orderFilterKey = JSON.stringify([searchQuery.trim(), orderStatusFilter, paymentStatusFilter]);
+  const hasOrderFilters = Boolean(searchQuery.trim() || orderStatusFilter || paymentStatusFilter);
   const canChangeTo = (status: OrderStatus) => Boolean(selected && ORDER_TRANSITIONS[selected.orderStatus].has(status));
   const availablePaymentOptions = selected
     ? PAYMENT_STATUS_OPTIONS.filter((paymentStatus) => paymentChangeAllowed(selected, paymentStatus))
     : [];
 
-  const load = useCallback(async (preferredId?: string) => {
+  const loadEvents = useCallback(async (orderId: string, page = 1) => {
+    if (!orderId) {
+      eventRequestRevision.current += 1;
+      setEvents([]);
+      setEventPagination(EMPTY_PAGINATION);
+      setEventError("");
+      setEventsLoading(false);
+      return;
+    }
+    const requestRevision = ++eventRequestRevision.current;
+    setEvents([]);
+    setEventPagination({ ...EMPTY_PAGINATION, page });
+    setEventsLoading(true); setEventError("");
+    try {
+      const params = new URLSearchParams({ site: SITE_CODE, page: String(page), limit: String(HISTORY_LIMIT) });
+      const response = await fetch(`${API_BASE}/api/admin/orders/${encodeURIComponent(orderId)}/events?${params}`, { headers: { accept: "application/json" }, cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { events?: OrderEvent[]; pagination?: AdminPagination; error?: string };
+      if (!response.ok) throw new Error(payload.error || "訂單時間軸讀取失敗");
+      if (eventRequestRevision.current !== requestRevision) return;
+      setEvents(payload.events || []);
+      setEventPagination(payload.pagination || EMPTY_PAGINATION);
+    } catch (cause) {
+      if (eventRequestRevision.current === requestRevision) setEventError(cause instanceof Error ? cause.message : "訂單時間軸讀取失敗");
+    } finally {
+      if (eventRequestRevision.current === requestRevision) setEventsLoading(false);
+    }
+  }, []);
+
+  const load = useCallback(async (preferredId?: string, requestedPage = 1) => {
+    const requestRevision = ++orderRequestRevision.current;
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/admin/orders?site=${SITE_CODE}`, { headers: { accept: "application/json" }, cache: "no-store" });
-      const payload = await response.json().catch(() => ({})) as { orders?: Order[]; error?: string };
+      const params = new URLSearchParams({ site: SITE_CODE, page: String(requestedPage), limit: String(ORDER_LIST_LIMIT) });
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      if (orderStatusFilter) params.set("orderStatus", orderStatusFilter);
+      if (paymentStatusFilter) params.set("paymentStatus", paymentStatusFilter);
+      const response = await fetch(`${API_BASE}/api/admin/orders?${params}`, { headers: { accept: "application/json" }, cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { orders?: Order[]; pagination?: AdminPagination; error?: string };
       if (!response.ok) throw new Error(payload.error || "訂單讀取失敗");
+      if (orderRequestRevision.current !== requestRevision) return;
       const next = payload.orders || [];
       setOrders(next);
+      setOrderPagination(payload.pagination || { ...EMPTY_PAGINATION, limit: ORDER_LIST_LIMIT, maxLimit: ORDER_LIST_LIMIT });
       setSelectedId(preferredId && next.some((order) => order.id === preferredId) ? preferredId : next[0]?.id || "");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "訂單讀取失敗"); }
-    finally { setLoading(false); }
-  }, []);
+    } catch (cause) { if (orderRequestRevision.current === requestRevision) setError(cause instanceof Error ? cause.message : "訂單讀取失敗"); }
+    finally { if (orderRequestRevision.current === requestRevision) setLoading(false); }
+  }, [orderStatusFilter, paymentStatusFilter, searchQuery]);
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
+    if (lastAutoLoadedFilterKey.current === orderFilterKey) return;
+    if (updating) return;
+    const timer = window.setTimeout(() => {
+      lastAutoLoadedFilterKey.current = orderFilterKey;
+      void load(undefined, 1);
+    }, 250);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, orderFilterKey, updating]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadEvents(selected?.id || "", 1), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadEvents, selected?.id]);
 
   const changeStatus = async (status: OrderStatus) => {
     if (!selected) return;
@@ -291,7 +482,7 @@ function OrderManager() {
       const payload = await response.json().catch(() => ({})) as { order?: Order; error?: string };
       if (!response.ok || !payload.order) throw new Error(payload.error || "訂單狀態更新失敗");
       setNotice(`訂單已更新為「${statusLabel(status)}」`);
-      await load(selected.id);
+      await Promise.all([load(selected.id, orderPagination.page), loadEvents(selected.id, 1)]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "訂單狀態更新失敗"); }
     finally { setUpdating(false); }
   };
@@ -313,13 +504,21 @@ function OrderManager() {
       const payload = await response.json().catch(() => ({})) as { order?: Order; error?: string };
       if (!response.ok || !payload.order) throw new Error(payload.error || "付款狀態更新失敗");
       setNotice(`付款狀態已更新為「${statusLabel(paymentStatus)}」`);
-      await load(selected.id);
+      await Promise.all([load(selected.id, orderPagination.page), loadEvents(selected.id, 1)]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "付款狀態更新失敗"); }
     finally { setUpdating(false); }
   };
 
   return <div className={styles.workspace}>
-    <aside className={styles.listPane}><div className={styles.listHead}><div><small>ORDERS</small><h1>訂單管理</h1></div><button type="button" onClick={() => void load(selected?.id)} disabled={loading}><RefreshCw size={14} />重新整理</button></div><div className={styles.list}>{loading && <p>讀取中…</p>}{orders.map((order) => <button type="button" className={order.id === selected?.id ? styles.selected : ""} key={order.id} onClick={() => setSelectedId(order.id)}><span className={`${styles.dot} ${styles[`order_${order.orderStatus}`]}`} /><span><b>{order.orderNumber}</b><small>{order.customer.name} · {statusLabel(order.orderStatus)} · {formatPrice(order.subtotal)}</small></span></button>)}</div><div className={styles.listFoot}>共 {orders.length} 筆保留單</div></aside>
+    <aside className={`${styles.listPane} ${styles.orderListPane}`}>
+      <div className={styles.listHead}><div><small>ORDERS</small><h1>訂單管理</h1></div><button type="button" onClick={() => void load(selected?.id, orderPagination.page)} disabled={loading || updating}><RefreshCw size={14} />重新整理</button></div>
+      <div className={styles.orderFilters}>
+        <label><span>搜尋訂單</span><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={100} placeholder="訂單編號、姓名、電話、Email、LINE" disabled={updating} /></label>
+        <div><label><span>訂單狀態</span><select value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)} disabled={updating}><option value="">全部</option><option value="new">待確認</option><option value="confirmed">已確認</option><option value="processing">處理中</option><option value="shipped">已出貨</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label><span>付款狀態</span><select value={paymentStatusFilter} onChange={(event) => setPaymentStatusFilter(event.target.value)} disabled={updating}><option value="">全部</option><option value="uncollected">尚未收款</option><option value="pending">付款確認中</option><option value="paid">已收款</option><option value="failed">付款未完成</option><option value="refunded">已退款</option></select></label></div>
+      </div>
+      <div className={styles.list}>{loading && <p>讀取中…</p>}{!loading && orders.length === 0 && <p>沒有符合搜尋或篩選條件的訂單。</p>}{orders.map((order) => <button type="button" className={order.id === selected?.id ? styles.selected : ""} key={order.id} onClick={() => setSelectedId(order.id)} disabled={updating || loading}><span className={`${styles.dot} ${styles[`order_${order.orderStatus}`]}`} /><span><b>{order.orderNumber}</b><small>{order.customer.name} · {statusLabel(order.orderStatus)} · {statusLabel(order.paymentStatus)}</small><small>{formatPrice(order.subtotal)} · {dateTime(order.createdAt)}</small></span></button>)}</div>
+      <div className={`${styles.listFoot} ${styles.pagedListFoot}`}><span>顯示 {orderPagination.returned} / {orderPagination.total} 筆 · 每頁上限 {orderPagination.limit}</span><div><button type="button" onClick={() => void load(undefined, orderPagination.page - 1)} disabled={loading || updating || orderPagination.page <= 1}>上一頁</button><span>{orderPagination.page} / {orderPagination.totalPages}</span><button type="button" onClick={() => void load(undefined, orderPagination.page + 1)} disabled={loading || updating || orderPagination.page >= orderPagination.totalPages}>下一頁</button></div></div>
+    </aside>
     <section className={styles.mainPane}>
       <AdminActionBar
         status={<AdminStatus tone={!selected ? "neutral" : selected.orderStatus === "completed" ? "success" : selected.orderStatus === "cancelled" ? "danger" : selected.orderStatus === "new" ? "warning" : "neutral"}>{selected ? statusLabel(selected.orderStatus) : "尚無訂單"}</AdminStatus>}
@@ -327,23 +526,28 @@ function OrderManager() {
         detail={selected ? dateTime(selected.createdAt) : "完成第一筆本機測試訂單後會顯示於此"}
       >
         {selected && <>
-          <AdminButton type="button" onClick={() => void changeStatus("confirmed")} disabled={updating || !canChangeTo("confirmed")}>確認訂單</AdminButton>
-          <AdminButton type="button" onClick={() => void changeStatus("processing")} disabled={updating || !canChangeTo("processing")}>開始處理</AdminButton>
-          <AdminButton type="button" onClick={() => void changeStatus("shipped")} disabled={updating || !canChangeTo("shipped")}>標記出貨</AdminButton>
-          <AdminButton type="button" variant="primary" onClick={() => void changeStatus("completed")} disabled={updating || !canChangeTo("completed")}>標記完成</AdminButton>
-          <AdminButton type="button" variant="danger" onClick={() => void changeStatus("cancelled")} disabled={updating || !canChangeTo("cancelled")}>取消</AdminButton>
+          <AdminButton type="button" onClick={() => void changeStatus("confirmed")} disabled={updating || loading || !canChangeTo("confirmed")}>確認訂單</AdminButton>
+          <AdminButton type="button" onClick={() => void changeStatus("processing")} disabled={updating || loading || !canChangeTo("processing")}>開始處理</AdminButton>
+          <AdminButton type="button" onClick={() => void changeStatus("shipped")} disabled={updating || loading || !canChangeTo("shipped")}>標記出貨</AdminButton>
+          <AdminButton type="button" variant="primary" onClick={() => void changeStatus("completed")} disabled={updating || loading || !canChangeTo("completed")}>標記完成</AdminButton>
+          <AdminButton type="button" variant="danger" onClick={() => void changeStatus("cancelled")} disabled={updating || loading || !canChangeTo("cancelled")}>取消</AdminButton>
         </>}
       </AdminActionBar>
       {(error || notice) && <div className={error ? styles.error : styles.notice} role="status">{error || notice}</div>}
-      {!selected ? <div className={styles.emptyState}><span>◇</span><h2>目前還沒有訂單</h2><p>前台送出的商品保留單會保存在本機資料庫。</p></div> : <div className={styles.orderGrid}>
+      {!selected ? <div className={styles.emptyState}><span>◇</span><h2>{hasOrderFilters ? "沒有符合條件的訂單" : "目前還沒有訂單"}</h2><p>{hasOrderFilters ? "請調整搜尋字詞或狀態篩選。" : "前台送出的商品保留單會保存在本機資料庫。"}</p></div> : <div className={styles.orderGrid}>
         <section className={styles.card}>
           <div className={styles.orderTitle}><div><small>ORDER</small><h2>{selected.orderNumber}</h2></div><b>{formatPrice(selected.subtotal)}</b></div>
           <div className={styles.orderItems}>{selected.items.map((item) => <div key={item.id}><span><b>{item.name}</b><small>{item.sku} · {formatPrice(item.unitPrice)} × {item.quantity}</small></span><b>{formatPrice(item.lineTotal)}</b></div>)}</div>
           <dl className={styles.totals}><div><dt>商品小計</dt><dd>{formatPrice(selected.subtotal)}</dd></div><div><dt>運費</dt><dd>待確認</dd></div><div><dt>目前金額</dt><dd>{formatPrice(selected.subtotal)}</dd></div><div><dt>付款狀態</dt><dd>{statusLabel(selected.paymentStatus)}</dd></div><div><dt>保留期限</dt><dd>{selected.reservedUntil ? dateTime(selected.reservedUntil) : "不適用"}</dd></div>{selected.expiredAt && <div><dt>逾期取消</dt><dd>{dateTime(selected.expiredAt)}</dd></div>}</dl>
-          <Field label="手動付款狀態"><select value={selected.paymentStatus} onChange={(event) => void changePayment(event.target.value as PaymentStatus)} disabled={updating || availablePaymentOptions.length <= 1}>{availablePaymentOptions.map((paymentStatus) => <option value={paymentStatus} key={paymentStatus}>{statusLabel(paymentStatus)}</option>)}</select></Field>
+          <Field label="手動付款狀態"><select value={selected.paymentStatus} onChange={(event) => void changePayment(event.target.value as PaymentStatus)} disabled={updating || loading || availablePaymentOptions.length <= 1}>{availablePaymentOptions.map((paymentStatus) => <option value={paymentStatus} key={paymentStatus}>{statusLabel(paymentStatus)}</option>)}</select></Field>
           <p className={styles.helperText}>只列出目前訂單與付款狀態允許的下一步；已取消、已完成或已退款後不會提供不可逆的回復操作。</p>
         </section>
         <aside className={styles.card}><h2>顧客與配送</h2><dl className={styles.details}><div><dt>姓名</dt><dd>{selected.customer.name}</dd></div><div><dt>電話</dt><dd>{selected.customer.phone}</dd></div><div><dt>Email</dt><dd>{selected.customer.email || "未提供"}</dd></div><div><dt>LINE ID</dt><dd>{selected.customer.lineId || "未提供"}</dd></div><div><dt>配送方式</dt><dd>{deliveryMethodLabel(selected.deliveryMethod)}</dd></div><div><dt>地址／偏好</dt><dd>{selected.address || "未提供"}</dd></div><div><dt>備註</dt><dd>{selected.note || "無"}</dd></div></dl></aside>
+        <section className={`${styles.card} ${styles.orderHistory}`}>
+          <div className={styles.cardHeading}><div><small>ORDER TIMELINE</small><h2>訂單時間軸</h2></div><button type="button" onClick={() => void loadEvents(selected.id, eventPagination.page)} disabled={eventsLoading || updating}><RefreshCw size={13} />重新整理</button></div>
+          {eventError ? <p className={styles.historyError} role="status">{eventError}</p> : eventsLoading && events.length === 0 ? <p className={styles.historyEmpty}>讀取訂單時間軸…</p> : events.length === 0 ? <p className={styles.historyEmpty}>這張訂單目前沒有事件紀錄。</p> : <div className={styles.timeline}>{events.map((event) => <article key={event.id}><span className={styles.timelineDot} /><div><div className={styles.timelineTitle}><b>{eventTypeLabel(event.eventType)}</b><time dateTime={event.createdAt}>{dateTime(event.createdAt)}</time></div><p>{event.note || "未填寫說明"}</p>{event.toValue && <small>{event.fromValue ? `${statusLabel(event.fromValue)} → ` : ""}{statusLabel(event.toValue)}</small>}<small>{actorLabel(event.actor)}</small></div></article>)}</div>}
+          {!eventsLoading && <HistoryPager pagination={eventPagination} loading={updating} onPage={(page) => void loadEvents(selected.id, page)} />}
+        </section>
       </div>}
     </section>
   </div>;

@@ -446,3 +446,96 @@ test("paid order cancellation requires a simultaneous refund and releases stock 
     { event_type: "payment_status_changed", from_value: "paid", to_value: "refunded", actor: "local-preview" },
   ]);
 });
+
+test("admin order search and private history endpoints are filtered, paginated, and authenticated", async () => {
+  const productId = "product-admin-history";
+  const paidOrderId = "admin-filter-target-paid";
+  const failedOrderId = "admin-filter-target-failed";
+  await seedProduct({ id: productId, slug: "admin-history-amulet", onHand: 5 });
+  await seedOrder({
+    id: paidOrderId,
+    productId,
+    status: "completed",
+    paymentStatus: "paid",
+    reservedUntil: "2026-08-20T00:00:00.000Z",
+  });
+  await seedOrder({
+    id: failedOrderId,
+    productId,
+    status: "confirmed",
+    paymentStatus: "failed",
+    reservedUntil: "2026-08-20T00:00:00.000Z",
+  });
+  await db.batch([
+    db.prepare(`INSERT INTO order_events
+      (id, site_id, order_id, event_type, from_value, to_value, note, actor, created_at)
+      VALUES ('event-admin-history-1', ?, ?, 'order_created', '', 'new', '建立測試訂單', 'store-api', '2026-08-04T01:00:00.000Z')`)
+      .bind(siteId, paidOrderId),
+    db.prepare(`INSERT INTO order_events
+      (id, site_id, order_id, event_type, from_value, to_value, note, actor, created_at)
+      VALUES ('event-admin-history-2', ?, ?, 'order_status_changed', 'shipped', 'completed', '完成測試訂單', 'local-preview', '2026-08-04T02:00:00.000Z')`)
+      .bind(siteId, paidOrderId),
+    db.prepare(`INSERT INTO inventory_movements
+      (id, site_id, product_id, order_id, movement_type, quantity, on_hand_after, reserved_after, reason, actor, created_at)
+      VALUES ('movement-admin-history-1', ?, ?, NULL, 'seed', 5, 5, 0, '初始入庫', 'catalog-seed', '2026-08-04T01:00:00.000Z')`)
+      .bind(siteId, productId),
+    db.prepare(`INSERT INTO inventory_movements
+      (id, site_id, product_id, order_id, movement_type, quantity, on_hand_after, reserved_after, reason, actor, created_at)
+      VALUES ('movement-admin-history-2', ?, ?, ?, 'sale', -1, 4, 0, '完成訂單扣庫', 'local-preview', '2026-08-04T02:00:00.000Z')`)
+      .bind(siteId, productId, paidOrderId),
+  ]);
+
+  const ordersResponse = await handleStoreApi(new Request(
+    "http://localhost/api/admin/orders?site=taijuda&q=admin-filter-target&orderStatus=completed&paymentStatus=paid&page=1&limit=1",
+  ), { DB: db });
+  assert.equal(ordersResponse.status, 200);
+  const ordersPayload = await ordersResponse.json();
+  assert.deepEqual(ordersPayload.orders.map((order) => order.id), [paidOrderId]);
+  assert.deepEqual(ordersPayload.pagination, {
+    page: 1,
+    limit: 1,
+    maxLimit: 50,
+    total: 1,
+    totalPages: 1,
+    returned: 1,
+  });
+
+  const invalidFilter = await handleStoreApi(new Request(
+    "http://localhost/api/admin/orders?site=taijuda&orderStatus=not-a-status",
+  ), { DB: db });
+  assert.equal(invalidFilter.status, 400);
+
+  const eventsResponse = await handleStoreApi(new Request(
+    `http://localhost/api/admin/orders/${paidOrderId}/events?site=taijuda&page=2&limit=1`,
+  ), { DB: db });
+  assert.equal(eventsResponse.status, 200);
+  const eventsPayload = await eventsResponse.json();
+  assert.equal(eventsPayload.events.length, 1);
+  assert.equal(eventsPayload.events[0].eventType, "order_created");
+  assert.deepEqual(eventsPayload.pagination, {
+    page: 2,
+    limit: 1,
+    maxLimit: 50,
+    total: 2,
+    totalPages: 2,
+    returned: 1,
+  });
+
+  const movementsResponse = await handleStoreApi(new Request(
+    `http://localhost/api/admin/products/${productId}/movements?site=taijuda&page=1&limit=999`,
+  ), { DB: db });
+  assert.equal(movementsResponse.status, 200);
+  const movementsPayload = await movementsResponse.json();
+  assert.equal(movementsPayload.movements[0].movementType, "sale");
+  assert.equal(movementsPayload.movements[0].availableAfter, 4);
+  assert.equal(movementsPayload.pagination.total, 2);
+  assert.equal(movementsPayload.pagination.limit, 50);
+
+  for (const path of [
+    `/api/admin/orders/${paidOrderId}/events?site=taijuda`,
+    `/api/admin/products/${productId}/movements?site=taijuda`,
+  ]) {
+    const denied = await handleStoreApi(new Request(`https://shop.example${path}`), { DB: db });
+    assert.equal(denied.status, 401);
+  }
+});

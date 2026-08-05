@@ -4,6 +4,13 @@ import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { createStarterPageData } from "../app/site-builder/types.ts";
 import { validatePageData } from "../app/site-builder/validation.ts";
+import {
+  colorContrastRatio,
+  DEFAULT_SITE_APPEARANCE,
+  evaluateSiteThemeContrast,
+  MIN_SITE_THEME_CONTRAST,
+} from "../shared/site-settings.ts";
+import { cleanUrl } from "../worker/api-utils.ts";
 import { handleSiteApi } from "../worker/site-api.ts";
 
 let miniflare;
@@ -59,6 +66,15 @@ test("site identity settings are versioned, sanitized, and available to the publ
       brandName: "泰聚達",
       brandSubtitle: "TAIJUDA ARCHIVE",
       footerNote: "正式商品均須完成來源與實物覆核。",
+      homeHeroEyebrow: "TAIJUDA · TAIWAN",
+      homeHeroTitlePrimary: "先讀懂來源，",
+      homeHeroTitleSecondary: "再決定是否收藏。",
+      homeHeroLead: "每件藏品都應把年份、材質、尺寸與來源說清楚。",
+      homePrimaryCtaLabel: "查看新藏",
+      homeSecondaryCtaLabel: "閱讀指南",
+      homeCollectionsTitle: "依形制認識藏品",
+      homeCollectionsIntro: "先從外型與文化脈絡開始，不用急著替信仰貼標籤。",
+      homeArrivalsTitle: "近期入藏",
       secretInternalNote: "must-not-be-stored",
     },
     theme: { accent: "#b89048", surface: "#faf7ef", ink: "javascript:alert(1)" },
@@ -72,10 +88,83 @@ test("site identity settings are versioned, sanitized, and available to the publ
   assert.equal(publicResponse?.status, 200);
   const payload = await publicResponse.json();
   assert.equal(payload.siteSettings.settings.announcement, "來源清楚，安心收藏");
+  assert.equal(payload.siteSettings.settings.homeHeroTitlePrimary, "先讀懂來源，");
+  assert.equal(payload.siteSettings.settings.homeArrivalsTitle, "近期入藏");
   assert.equal(payload.siteSettings.theme.accent, "#b89048");
   assert.equal(payload.siteSettings.theme.ink, "#171713");
   assert.equal(payload.siteSettings.settings.secretInternalNote, undefined);
   assert.equal(payload.siteSettings.updatedBy, undefined);
+});
+
+test("server URL normalization rejects credentials and overlong values without truncation", () => {
+  assert.equal(cleanUrl("https://cdn.example.com/image.webp"), "https://cdn.example.com/image.webp");
+  assert.equal(cleanUrl("https://user:secret@cdn.example.com/image.webp"), "");
+  assert.equal(cleanUrl(`https://example.com/${"a".repeat(1000)}`), "");
+  assert.equal(cleanUrl("javascript:alert(1)"), "");
+});
+
+test("theme contrast uses the WCAG ratio and requires both supported color pairs", () => {
+  assert.equal(colorContrastRatio("#000000", "#ffffff"), 21);
+  assert.equal(colorContrastRatio("not-a-color", "#ffffff"), null);
+
+  const defaults = evaluateSiteThemeContrast(DEFAULT_SITE_APPEARANCE.theme);
+  assert.equal(defaults.minimum, MIN_SITE_THEME_CONTRAST);
+  assert.equal(defaults.passesInkSurface, true);
+  assert.equal(defaults.passesInkAccent, true);
+  assert.equal(defaults.passesArchivePalette, true);
+  assert.equal(defaults.ok, true);
+
+  const unsafe = evaluateSiteThemeContrast({ ink: "#171713", surface: "#fbf9f2", accent: "#191919" });
+  assert.equal(unsafe.passesInkSurface, true);
+  assert.equal(unsafe.passesInkAccent, false);
+  assert.equal(unsafe.ok, false);
+
+  const inverted = evaluateSiteThemeContrast({ ink: "#ffffff", surface: "#000000", accent: "#0000ff" });
+  assert.equal(inverted.passesInkSurface, true);
+  assert.equal(inverted.passesInkAccent, true);
+  assert.equal(inverted.passesArchivePalette, false);
+  assert.equal(inverted.ok, false);
+});
+
+test("site settings reject low-contrast themes without advancing the saved version", async () => {
+  const beforeResponse = await handleSiteApi(
+    jsonRequest("/api/admin/site-settings?site=taijuda"),
+    { DB: db },
+  );
+  assert.equal(beforeResponse?.status, 200);
+  const before = await beforeResponse.json();
+
+  const rejectedResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: before.siteSettings.version,
+    settings: before.siteSettings.settings,
+    theme: { ink: "#171713", surface: "#fbf9f2", accent: "#191919" },
+  }), { DB: db });
+  assert.equal(rejectedResponse?.status, 400);
+  const rejected = await rejectedResponse.json();
+  assert.match(rejected.error, /4\.5:1/);
+  assert.equal(rejected.contrast.passesInkSurface, true);
+  assert.equal(rejected.contrast.passesInkAccent, false);
+
+  const invertedResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: before.siteSettings.version,
+    settings: before.siteSettings.settings,
+    theme: { ink: "#ffffff", surface: "#000000", accent: "#0000ff" },
+  }), { DB: db });
+  assert.equal(invertedResponse?.status, 400);
+  const inverted = await invertedResponse.json();
+  assert.equal(inverted.contrast.passesInkSurface, true);
+  assert.equal(inverted.contrast.passesInkAccent, true);
+  assert.equal(inverted.contrast.passesArchivePalette, false);
+
+  const afterResponse = await handleSiteApi(
+    jsonRequest("/api/admin/site-settings?site=taijuda"),
+    { DB: db },
+  );
+  const afterPayload = await afterResponse.json();
+  assert.equal(afterPayload.siteSettings.version, before.siteSettings.version);
+  assert.equal(afterPayload.siteSettings.theme.accent, before.siteSettings.theme.accent);
 });
 
 after(async () => {
@@ -94,9 +183,65 @@ test("Puck page validation rejects unsafe or ambiguous block documents", () => {
   unsafeLink.content[0].props.primaryHref = "javascript:alert(1)";
   assert.equal(validatePageData(unsafeLink).ok, false);
 
+  const credentialLink = structuredClone(valid);
+  credentialLink.content[0].props.primaryHref = "https://user:secret@example.com/collection";
+  assert.equal(validatePageData(credentialLink).ok, false);
+
+  const unsafeImage = structuredClone(valid);
+  unsafeImage.content.push({
+    type: "ImageFeature",
+    props: {
+      id: "unsafe-image",
+      eyebrow: "IMAGE",
+      title: "圖片區塊",
+      tone: "paper",
+      body: "圖片說明",
+      imageUrl: "mailto:someone@example.com",
+      imageAlt: "圖片替代文字",
+      imagePosition: "left",
+      buttonLabel: "",
+      buttonHref: "",
+    },
+  });
+  assert.equal(validatePageData(unsafeImage).ok, false);
+
+  const overlongImage = structuredClone(unsafeImage);
+  overlongImage.content.at(-1).props.imageUrl = `https://example.com/${"a".repeat(1000)}`;
+  assert.equal(validatePageData(overlongImage).ok, false);
+
   const arbitraryHtml = structuredClone(valid);
   arbitraryHtml.content.push({ type: "RawHtml", props: { id: "raw", html: "<script>alert(1)</script>" } });
   assert.equal(validatePageData(arbitraryHtml).ok, false);
+});
+
+test("site API rejects credentialed links and oversized or non-image Puck URLs", async () => {
+  const cases = [];
+  const credentialLink = createStarterPageData();
+  credentialLink.content[0].props.primaryHref = "https://user:secret@example.com/collection";
+  cases.push(["unsafe-credential-link", credentialLink]);
+
+  for (const [slug, imageUrl] of [
+    ["unsafe-mailto-image", "mailto:someone@example.com"],
+    ["unsafe-long-image", `https://example.com/${"a".repeat(1000)}`],
+  ]) {
+    const data = createStarterPageData();
+    data.content.push({
+      type: "ImageFeature",
+      props: {
+        id: `${slug}-block`, eyebrow: "IMAGE", title: "圖片區塊", tone: "paper",
+        body: "圖片說明", imageUrl, imageAlt: "圖片替代文字",
+        imagePosition: "left", buttonLabel: "", buttonHref: "",
+      },
+    });
+    cases.push([slug, data]);
+  }
+
+  for (const [slug, data] of cases) {
+    const response = await handleSiteApi(jsonRequest("/api/admin/pages", "POST", {
+      siteCode: "taijuda", slug, title: slug, data, status: "draft", version: 0,
+    }), { DB: db });
+    assert.equal(response?.status, 400, slug);
+  }
 });
 
 test("Puck product showcase renders stored product artwork through the safe image leaf", async () => {
@@ -115,6 +260,23 @@ test("Puck product showcase renders stored product artwork through the safe imag
   assert.match(blockSource, /圖片尚未設定或無法載入/);
   assert.match(imageSource, /onError=\{\(\) => setFailedSrc\(safeSrc\)\}/);
   assert.doesNotMatch(imageSource, /javascript:|data:image/);
+});
+
+test("stable homepage copy and page social image controls are wired to published settings", async () => {
+  const [storefrontSource, editorSource, accountStyles] = await Promise.all([
+    readFile(new URL("../app/storefront.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/site/site-editor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/account/account.module.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(storefrontSource, /appearance\.settings\.homeHeroTitlePrimary/);
+  assert.match(storefrontSource, /appearance\.settings\.homeCollectionsIntro/);
+  assert.match(storefrontSource, /appearance\.settings\.homeArrivalsTitle/);
+  assert.match(editorSource, /updateIdentitySetting\("homeHeroTitlePrimary"/);
+  assert.match(editorSource, /updateIdentitySetting\("homeCollectionsIntro"/);
+  assert.match(editorSource, /<SafePublicImage src=\{draft\.ogImageUrl\}/);
+  assert.match(editorSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
+  assert.match(accountStyles, /var\(--site-surface\)/);
+  assert.match(accountStyles, /var\(--site-ink\)/);
 });
 
 test("site editor publishes a versioned page and protects stale writes", async () => {
