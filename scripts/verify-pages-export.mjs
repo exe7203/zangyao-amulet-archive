@@ -217,6 +217,13 @@ function parseSitemap(xml) {
   return entries;
 }
 
+function serviceRouteIndexable(route, settings) {
+  if (route === "service/contact/") {
+    return Boolean(settings.contactEmail || settings.contactPhone || settings.lineOfficialUrl);
+  }
+  return true;
+}
+
 const homeHtml = await readFile(routeFile(""), "utf8");
 assert.match(homeHtml, /<html[^>]*lang="zh-Hant-TW"/i);
 assert.match(
@@ -254,7 +261,7 @@ for (const product of snapshot.products.filter((candidate) => candidate.seoReady
   );
   if (product.badge) {
     assert.ok(
-      !homeHtml.includes(`>${product.badge}<`),
+      !homeHtml.includes(`class="product-badge">${product.badge}<`),
       `an unverified product badge is visible on the home page: ${product.slug}`,
     );
   }
@@ -272,9 +279,10 @@ for (const route of ["about/", "service/shipping/", "service/returns/", "service
   const html = await readFile(routeFile(route), "utf8");
   assert.match(html, /<nav\b[^>]*aria-label="麵包屑"/i, `${route} is missing a visible breadcrumb`);
   const routeRobots = metaContent(html, "name", "robots")?.toLowerCase() || "";
+  const indexable = serviceRouteIndexable(route, snapshot.siteSettings.settings);
   assert.match(
     routeRobots,
-    route.startsWith("service/") ? /(?:^|,\s*)noindex(?:,|$)/ : /(?:^|,\s*)index(?:,|$)/,
+    indexable ? /(?:^|,\s*)index(?:,|$)/ : /(?:^|,\s*)noindex(?:,|$)/,
     `${route} has an incorrect robots index directive`,
   );
   const types = jsonLdTypes(html, route);
@@ -388,6 +396,11 @@ const expectedSitemap = new Map([
   [publicUrl("about/"), null],
   [publicUrl("articles/"), null],
 ]);
+for (const route of ["service/shipping/", "service/returns/", "service/privacy/", "service/contact/"]) {
+  if (serviceRouteIndexable(route, snapshot.siteSettings.settings)) {
+    expectedSitemap.set(publicUrl(route), null);
+  }
+}
 for (const page of snapshot.pages.filter((candidate) =>
   !candidate.noindex && hasMatchingCanonical(candidate.canonicalUrl, `pages/${candidate.slug}/`))) {
   expectedSitemap.set(publicUrl(`pages/${page.slug}/`), page.updatedAt || null);

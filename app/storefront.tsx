@@ -527,7 +527,7 @@ export default function Storefront() {
 
       <section className="products-section" id="products" {...homeSectionProps("products")}>
         <span className="legacy-home-anchor" id="new" aria-hidden="true" />
-        <div className="section-heading section-heading--products"><div><p className="eyebrow eyebrow--dark">最新上架</p><h2>{appearance.settings.homeArrivalsTitle}</h2></div><div className="filters" role="group" aria-label="商品分類">{filterOptions.map((filter) => <button key={filter} className={resolvedActiveFilter === filter ? "active" : ""} aria-pressed={resolvedActiveFilter === filter} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div></div>
+        <div className="section-heading section-heading--products"><div><p className="eyebrow eyebrow--dark">近期典藏</p><h2>{appearance.settings.homeArrivalsTitle}</h2></div><div className="filters" role="group" aria-label="商品分類">{filterOptions.map((filter) => <button key={filter} className={resolvedActiveFilter === filter ? "active" : ""} aria-pressed={resolvedActiveFilter === filter} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div></div>
         {query && <p className="search-result-copy" role="status" aria-live="polite">搜尋「{query}」— 找到 {visibleProducts.length} 件商品</p>}
         <div className="product-grid">{visibleProducts.map((product) => {
           const detailsConfirmed = catalogLive && product.seoReady === true;
