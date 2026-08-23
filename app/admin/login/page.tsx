@@ -58,10 +58,10 @@ function AdminLoginForm() {
     const passwordInput = event.currentTarget.elements.namedItem("password");
     const usernameValue = usernameInput instanceof HTMLInputElement
       ? usernameInput.value.trim()
-      : String(formData.get("username") ?? username).trim();
+      : username.trim();
     const passwordValue = passwordInput instanceof HTMLInputElement
       ? passwordInput.value
-      : String(formData.get("password") ?? password);
+      : password;
 
     if (!usernameValue) {
       setError("請輸入帳號。");
