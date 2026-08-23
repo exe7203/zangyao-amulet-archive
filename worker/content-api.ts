@@ -1,3 +1,4 @@
+import { adminLoginDenied } from "./admin-auth-api";
 import {
   adminIdentity,
   cleanSlug,
@@ -22,6 +23,8 @@ import {
 
 const MAX_CONTENT_BYTES = 1_000_000;
 const ARTICLE_STATUSES = new Set(["draft", "published", "archived"]);
+const ADMIN_ARTICLE_LIST_DEFAULT_LIMIT = 40;
+const ADMIN_ARTICLE_LIST_MAX_LIMIT = 100;
 
 type ArticlePayload = {
   id?: string;
@@ -111,19 +114,75 @@ function parseArticleRow(row: Record<string, unknown>) {
   };
 }
 
+function adminArticleListRequest(url: URL) {
+  const requestedPage = Number(url.searchParams.get("page") || 1);
+  const requestedLimit = Number(url.searchParams.get("limit") || ADMIN_ARTICLE_LIST_DEFAULT_LIMIT);
+  return {
+    page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, 10_000) : 1,
+    limit: Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, ADMIN_ARTICLE_LIST_MAX_LIMIT)
+      : ADMIN_ARTICLE_LIST_DEFAULT_LIMIT,
+  };
+}
+
+function escapeArticleLikeValue(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
 async function listAdminArticles(request: Request, db: D1Database) {
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
 
+  const query = cleanText(url.searchParams.get("q"), 200);
+  const status = cleanText(url.searchParams.get("status"), 30);
+  if (status && !ARTICLE_STATUSES.has(status)) {
+    return json({ error: "文章篩選狀態不正確" }, { status: 400 });
+  }
+
+  const where = ["site_id = ?"];
+  const bindings: unknown[] = [site.id];
+  if (query) {
+    const pattern = `%${escapeArticleLikeValue(query)}%`;
+    where.push(`(title LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR slug LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR excerpt LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR tag LIKE ? ESCAPE '\\' COLLATE NOCASE)`);
+    bindings.push(pattern, pattern, pattern, pattern);
+  }
+  if (status) {
+    where.push("status = ?");
+    bindings.push(status);
+  }
+
+  const pageRequest = adminArticleListRequest(url);
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM articles
+    WHERE ${where.join(" AND ")}`)
+    .bind(...bindings)
+    .first<Record<string, unknown>>();
+  const total = Number(countRow?.total || 0);
+  const totalPages = Math.ceil(total / pageRequest.limit);
+  const offset = (pageRequest.page - 1) * pageRequest.limit;
   const result = await db.prepare(`SELECT * FROM articles
-    WHERE site_id = ?
-    ORDER BY updated_at DESC, created_at DESC
-    LIMIT 100`)
-    .bind(site.id)
+    WHERE ${where.join(" AND ")}
+    ORDER BY updated_at DESC, created_at DESC, id DESC
+    LIMIT ? OFFSET ?`)
+    .bind(...bindings, pageRequest.limit, offset)
     .all<Record<string, unknown>>();
 
-  return json({ site, articles: result.results.map(parseArticleRow) });
+  return json({
+    site,
+    articles: result.results.map(parseArticleRow),
+    pagination: {
+      page: pageRequest.page,
+      limit: pageRequest.limit,
+      maxLimit: ADMIN_ARTICLE_LIST_MAX_LIMIT,
+      total,
+      totalPages,
+      returned: result.results.length,
+    },
+  });
 }
 
 async function saveArticle(request: Request, db: D1Database, savedBy: string) {
@@ -339,47 +398,55 @@ async function archiveArticle(request: Request, pathname: string, db: D1Database
   const articleId = decodeURIComponent(pathname.split("/").pop() || "");
   if (!articleId) return json({ error: "缺少文章 ID" }, { status: 400 });
 
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const parsed = await readJsonObject(request, 16_000);
+  if (parsed.response) return parsed.response;
+  const expectedVersion = Number(parsed.value.expectedVersion);
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return json({ error: "請提供目前文章版本" }, { status: 400 });
+  }
+
+  const siteCode = cleanSlug(
+    parsed.value.siteCode || new URL(request.url).searchParams.get("site"),
+  ) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
   const existing = await db.prepare(
     "SELECT * FROM articles WHERE id = ? AND site_id = ? LIMIT 1",
   ).bind(articleId, site.id).first<Record<string, unknown>>();
   if (!existing) return json({ error: "找不到文章" }, { status: 404 });
+  if (Number(existing.version || 1) !== expectedVersion) {
+    return json({ error: "文章已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+  }
 
   const now = new Date().toISOString();
-  const nextVersion = Number(existing.version || 1) + 1;
-  await db.batch([
-    db.prepare(`INSERT INTO article_revisions (
-      id, article_id, slug, title, excerpt, content_json, seo_title,
-      seo_description, canonical_url, og_image_url, tag, keywords_json,
-      hero_image_url, hero_image_alt, noindex, version, status, saved_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(
-        crypto.randomUUID(),
-        articleId,
-        existing.slug,
-        existing.title,
-        existing.excerpt,
-        existing.content_json,
-        existing.seo_title,
-        existing.seo_description,
-        existing.canonical_url,
-        existing.og_image_url,
-        existing.tag,
-        existing.keywords_json,
-        existing.hero_image_url,
-        existing.hero_image_alt,
-        existing.noindex,
-        nextVersion,
-        "archived",
-        savedBy,
-      ),
-    db.prepare(
-      "UPDATE articles SET status = 'archived', version = ?, updated_at = ? WHERE id = ? AND site_id = ?",
-    ).bind(nextVersion, now, articleId, site.id),
-  ]);
-  return json({ ok: true });
+  const nextVersion = expectedVersion + 1;
+  try {
+    const results = await db.batch([
+      db.prepare(`UPDATE articles SET status = 'archived', version = ?, updated_at = ?
+        WHERE id = ? AND site_id = ? AND version = ?`)
+        .bind(nextVersion, now, articleId, site.id, expectedVersion),
+      db.prepare(`INSERT INTO article_revisions (
+        id, article_id, slug, title, excerpt, content_json, seo_title,
+        seo_description, canonical_url, og_image_url, tag, keywords_json,
+        hero_image_url, hero_image_alt, noindex, version, status, saved_by, created_at
+      ) SELECT ?, id, slug, title, excerpt, content_json, seo_title,
+        seo_description, canonical_url, og_image_url, tag, keywords_json,
+        hero_image_url, hero_image_alt, noindex, version, status, ?, ?
+        FROM articles WHERE id = ? AND site_id = ? AND version = ? AND updated_at = ?`)
+        .bind(crypto.randomUUID(), savedBy, now, articleId, site.id, nextVersion, now),
+    ]);
+    if (Number(results[0]?.meta.changes || 0) !== 1 || Number(results[1]?.meta.changes || 0) !== 1) {
+      return json({ error: "文章已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("article_revisions_article_version_unique") ||
+        message.includes("article_revisions.article_id")) {
+      return json({ error: "文章已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+    }
+    throw error;
+  }
+  return json({ ok: true, version: nextVersion });
 }
 
 function articleIdFromRevisionsPath(pathname: string) {
@@ -557,15 +624,13 @@ export async function handleContentApi(request: Request, env: DatabaseEnv) {
       return listPublicArticles(request, env.DB);
     }
 
-    const identity = adminIdentity(request, env);
+    const identity = await adminIdentity(request, env);
     if (!identity) {
       const hasAuthenticatedEmail = Boolean(request.headers.get("oai-authenticated-user-email"));
-      return json(
-        hasAuthenticatedEmail
-          ? { error: "此帳號不在後台允許名單內" }
-          : { error: "請先登入後台再繼續", signInUrl: "/signin-with-chatgpt?return_to=%2Fadmin" },
-        { status: hasAuthenticatedEmail ? 403 : 401 },
-      );
+      if (hasAuthenticatedEmail) {
+        return json({ error: "此帳號不在後台允許名單內" }, { status: 403 });
+      }
+      return adminLoginDenied(request, "/admin/articles/");
     }
 
     const invalidWriteResponse = validateWriteRequest(request);

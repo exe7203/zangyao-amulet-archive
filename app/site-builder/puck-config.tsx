@@ -23,6 +23,12 @@ const toneField = {
 };
 
 export const pageBuilderConfig: Config<PageComponents> = {
+  root: {
+    label: "頁面內容",
+    // Page title and SEO fields are managed by the surrounding site editor.
+    // Disabling Puck's default root title avoids two competing sources of truth.
+    fields: {},
+  },
   categories: {
     content: { title: "品牌內容", components: ["Hero", "Text", "ImageFeature", "Features", "FAQ", "CTA"], defaultExpanded: true },
     dynamic: { title: "動態內容", components: ["ProductShowcase", "ArticleShowcase"], defaultExpanded: true },
@@ -193,7 +199,7 @@ export const pageBuilderConfig: Config<PageComponents> = {
         eyebrow: { type: "text", label: "眉題", contentEditable: true },
         title: { type: "text", label: "標題", contentEditable: true },
         intro: { type: "textarea", label: "引言", contentEditable: true },
-        category: { type: "select", label: "商品分類", options: [{ label: "全部", value: "all" }, { label: "佛牌", value: "佛牌" }, { label: "神尊", value: "神尊" }, { label: "符印", value: "符印" }] },
+        category: { type: "text", label: "商品分類（all 表示全部）" },
         limit: { type: "select", label: "顯示數量", options: [{ label: "3 件", value: "3" }, { label: "4 件", value: "4" }, { label: "6 件", value: "6" }, { label: "8 件", value: "8" }] },
         viewAllLabel: { type: "text", label: "查看全部文字" },
         viewAllHref: { type: "text", label: "查看全部網址" },

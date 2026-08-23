@@ -16,10 +16,12 @@ export default function ProductActions({
   product,
   availabilityConfirmed = false,
   orderReady = false,
+  testingMode = false,
 }: {
   product: Product;
   availabilityConfirmed?: boolean;
   orderReady?: boolean;
+  testingMode?: boolean;
 }) {
   const [message, setMessage] = useState("");
   const canOrder = availabilityConfirmed && orderReady && product.status === "active" && product.stock > 0;
@@ -45,14 +47,14 @@ export default function ProductActions({
       }
       window.localStorage.setItem(CART_STORAGE_KEY, serializeCartItems(addCartItem(current, product)));
       window.dispatchEvent(new Event(CART_CHANGE_EVENT));
-      setMessage("已加入購物車。");
+      setMessage(testingMode ? "已加入測試購物車。" : "已加入購物車。");
     } catch {
       setMessage("購物車目前無法更新，請稍後再試。");
     }
   };
 
   return <div>
-    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "商品資料確認中" : !orderReady ? "暫未開放訂購" : canOrder ? "加入購物車" : "目前不可訂購"}</button>
+    <button type="button" onClick={add} disabled={!canOrder}>{!availabilityConfirmed ? "商品資料確認中" : !orderReady ? "暫未開放訂購" : canOrder ? testingMode ? "加入測試購物車" : "加入購物車" : "目前不可訂購"}</button>
     {message && <p role="status">{message} <Link href="/?cart=open">查看購物車 →</Link></p>}
   </div>;
 }

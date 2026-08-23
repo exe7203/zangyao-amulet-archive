@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ const projectRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)))
 const outputDir = path.join(projectRoot, "content");
 const outputFile = path.join(outputDir, "published-site.json");
 const temporaryFile = path.join(outputDir, ".published-site.tmp.json");
+const adminUsersFile = path.join(projectRoot, ".local-runtime", "admin-users.json");
 const seedMode = process.argv.includes("--seed");
 
 function isRecord(value) {
@@ -85,10 +87,10 @@ async function seedSnapshot() {
       siteCode: "taijuda",
       siteName: "泰聚達",
       settings: {
-        announcement: "泰國佛牌與收藏品網站建置中",
+        announcement: "商品資料整理中，確認後才開放訂購",
         brandName: "泰聚達",
         brandSubtitle: "THAI AMULET ARCHIVE",
-        footerNote: "網站內容建置中，商品資訊確認後才會開放訂購。",
+        footerNote: "商品資訊與客服管道確認後才會開放正式訂購。",
         homeHeroEyebrow: "泰國佛牌與收藏品",
         homeHeroTitlePrimary: "清楚的商品資訊，",
         homeHeroTitleSecondary: "讓選擇更有依據。",
@@ -135,12 +137,42 @@ async function seedSnapshot() {
   };
 }
 
+async function localAdminCookie(origin) {
+  if (!existsSync(adminUsersFile)) return "";
+  const config = JSON.parse(await readFile(adminUsersFile, "utf8"));
+  const username = process.env.TAIJUDA_ADMIN_SYNC_USERNAME || config?.users?.[0]?.username || "exe7203";
+  const entry = Array.isArray(config?.users)
+    ? config.users.find((candidate) => candidate?.username === username)
+    : null;
+  const password = entry?.password || "";
+  if (!password || !config?.sessionSecret) return "";
+
+  const response = await fetch(`${origin}/api/admin/auth/login`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      origin,
+    },
+    body: JSON.stringify({ username, password }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || `本機後台登入失敗（HTTP ${response.status}）`);
+  }
+  const setCookie = response.headers.get("set-cookie") || "";
+  return setCookie.split(";")[0];
+}
+
 async function fetchSnapshot() {
   const endpoint = new URL(process.env.TAIJUDA_ADMIN_EXPORT_URL || "http://127.0.0.1:3000/api/admin/site-export?site=taijuda");
   if (!["127.0.0.1", "localhost", "::1"].includes(endpoint.hostname) && process.env.TAIJUDA_ALLOW_REMOTE_EXPORT !== "1") {
     throw new Error("預設只允許從本機後台同步；若已確認遠端管理驗證，請明確設定 TAIJUDA_ALLOW_REMOTE_EXPORT=1");
   }
-  const response = await fetch(endpoint, { headers: { accept: "application/json" }, cache: "no-store" });
+  const origin = `${endpoint.protocol}//${endpoint.host}`;
+  const cookie = await localAdminCookie(origin);
+  const headers = { accept: "application/json", ...(cookie ? { cookie } : {}) };
+  const response = await fetch(endpoint, { headers, cache: "no-store" });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || `公開內容同步失敗（HTTP ${response.status}）`);
   return payload;

@@ -6,32 +6,36 @@ import styles from "./articles-index.module.css";
 import { serializeJsonLd } from "../../shared/json-ld";
 import PublicFooter from "../public-footer";
 import PublicHeader from "../public-header";
+import { resolveSiteUrl } from "../../shared/site-url";
 
-const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
-const canonical = new URL("articles/", siteUrl).toString();
+const resolvedSite = resolveSiteUrl();
+const publicSiteUrl = resolvedSite.publicUrl;
+const canonical = publicSiteUrl ? new URL("articles/", publicSiteUrl).toString() : null;
+const socialImageUrl = publicSiteUrl ? new URL("og.png", publicSiteUrl).toString() : null;
 const journalName = `${publishedBrandName}佛牌專欄`;
 
 export const metadata: Metadata = {
   title: { absolute: `佛牌知識與收藏指南｜${publishedBrandName}` },
   description: `${publishedBrandName}提供佛牌年份、材質、來源、保存與外殼保養等實用資訊，方便讀者查閱與比較。`,
-  alternates: { canonical },
+  robots: { index: resolvedSite.indexable, follow: resolvedSite.indexable },
+  ...(canonical ? { alternates: { canonical } } : {}),
   openGraph: {
     type: "website",
-    url: canonical,
+    ...(canonical ? { url: canonical } : {}),
     title: `佛牌知識與收藏指南｜${publishedBrandName}`,
     description: "提供佛牌年份、材質、來源、保存與外殼保養等實用資訊。",
-    images: [{ url: new URL("og.png", siteUrl).toString(), alt: `${publishedBrandName}佛牌知識與收藏指南` }],
+    ...(socialImageUrl ? { images: [{ url: socialImageUrl, alt: `${publishedBrandName}佛牌知識與收藏指南` }] } : {}),
   },
   twitter: {
     card: "summary_large_image",
     title: `佛牌知識與收藏指南｜${publishedBrandName}`,
     description: "提供佛牌年份、材質、來源、保存與外殼保養等實用資訊。",
-    images: [new URL("og.png", siteUrl).toString()],
+    ...(socialImageUrl ? { images: [socialImageUrl] } : {}),
   },
 };
 
 export default function ArticlesIndexPage() {
-  const structuredData = {
+  const structuredData = canonical && publicSiteUrl ? {
     "@context": "https://schema.org",
     "@graph": [
       {
@@ -47,23 +51,23 @@ export default function ArticlesIndexPage() {
             "@type": "ListItem",
             position: index + 1,
             name: article.title,
-            url: new URL(`articles/${article.slug}/`, siteUrl).toString(),
+            url: new URL(`articles/${article.slug}/`, publicSiteUrl).toString(),
           })),
         },
       },
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
+          { "@type": "ListItem", position: 1, name: "首頁", item: publicSiteUrl.toString() },
           { "@type": "ListItem", position: 2, name: "佛牌專欄", item: canonical },
         ],
       },
     ],
-  };
+  } : null;
 
   return (
     <div className={styles.page}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
+      {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />}
       <PublicHeader section="journal" contextLinks={[{ href: "/#journal", label: "返回首頁 →" }]} />
       <main className={styles.shell} id="main-content">
         <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><span aria-current="page">佛牌專欄</span></nav>

@@ -1,7 +1,29 @@
 import { createStarterPageData, type PageData } from "./types";
+import { ARTICLE_PUBLISH_REQUIREMENTS } from "../../lib/article-content-contract";
 
 export const MAX_PAGE_DATA_BYTES = 512_000;
 export const MAX_PAGE_BLOCKS = 40;
+export const PAGE_SEO_PUBLISH_REQUIREMENTS = {
+  seoTitleLength: ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength,
+  seoDescriptionLength: ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength,
+} as const;
+
+export function evaluatePageSeoPublishReadiness(value: {
+  seoTitle: unknown;
+  seoDescription: unknown;
+}) {
+  const seoTitleLength = typeof value.seoTitle === "string" ? value.seoTitle.trim().length : 0;
+  const seoDescriptionLength = typeof value.seoDescription === "string" ? value.seoDescription.trim().length : 0;
+  const seoTitleReady = seoTitleLength >= PAGE_SEO_PUBLISH_REQUIREMENTS.seoTitleLength;
+  const seoDescriptionReady = seoDescriptionLength >= PAGE_SEO_PUBLISH_REQUIREMENTS.seoDescriptionLength;
+  return {
+    seoTitleLength,
+    seoDescriptionLength,
+    seoTitleReady,
+    seoDescriptionReady,
+    ok: seoTitleReady && seoDescriptionReady,
+  };
+}
 
 const allowedTypes = new Set([
   "Hero",
@@ -191,7 +213,7 @@ function validateBlock(block: unknown, index: number, issues: string[]) {
   } else if (block.type === "ProductShowcase") {
     if (!hasOnlyKeys(props, [...common, "intro", "category", "limit", "viewAllLabel", "viewAllHref"])) issues.push("ProductShowcase 含有未允許欄位");
     stringField(props, "intro", 500, issues);
-    if (!["all", "佛牌", "神尊", "符印"].includes(String(props.category))) issues.push("商品分類不正確");
+    stringField(props, "category", 80, issues, true);
     if (!["3", "4", "6", "8"].includes(String(props.limit))) issues.push("商品顯示數量不正確");
     stringField(props, "viewAllLabel", 60, issues);
     validateLink(props, "viewAllHref", issues);

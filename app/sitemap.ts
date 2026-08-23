@@ -6,12 +6,17 @@ import {
   isPublishedArticleIndexable,
   isPublishedPageIndexable,
   isStaticPathIndexable,
+  staticPathIndexOptionsFromSettings,
 } from "../shared/seo-indexing";
+import { publishedSiteAppearance } from "../shared/published-site";
+import { resolveSiteUrl } from "../shared/site-url";
 
 export const dynamic = "force-static";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
+export function buildSitemap(siteUrlInput?: string | URL): MetadataRoute.Sitemap {
+  const site = resolveSiteUrl(siteUrlInput?.toString());
+  if (!site.indexable) return [];
+  const siteUrl = site.url;
   const hasMatchingCanonical = (configured: string, path: string) => {
     if (!configured) return true;
     try {
@@ -44,9 +49,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ["service/contact/", 0.5, "yearly"],
     ["service/privacy/", 0.4, "yearly"],
   ] as const;
+  const staticIndexOptions = staticPathIndexOptionsFromSettings(publishedSiteAppearance.settings);
   const baseEntries: MetadataRoute.Sitemap = [
     ...staticRoutes
-      .filter(([path]) => isStaticPathIndexable(path))
+      .filter(([path]) => isStaticPathIndexable(path, staticIndexOptions))
       .map(([path, priority, frequency]) => entry(path, priority, frequency)),
     ...publishedPages
       .filter((page) => isPublishedPageIndexable(page) && hasMatchingCanonical(page.canonicalUrl, `pages/${page.slug}/`))
@@ -61,4 +67,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
       .map((product) => entry(`products/${product.slug}/`, 0.8, "weekly", product.updatedAt || null)));
   }
   return baseEntries;
+}
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  return buildSitemap();
 }

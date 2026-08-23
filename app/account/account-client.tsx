@@ -282,6 +282,10 @@ export default function AccountClient() {
   if (!signedIn) {
     return (
       <main className={styles.page} id="main-content">
+        <div className={styles.localNotice} role="note">
+          <b>本機測試模式</b>
+          <p>會員登入、驗證碼與訂單資料僅保存在這台電腦的瀏覽器中，請勿輸入真實個資。</p>
+        </div>
         <section className={styles.hero}>
           <div><p>會員服務</p><h1>會員中心</h1><span>登入後可查看訂單進度、管理個人資料與常用收件資訊。</span></div>
           <aside><b>訂單與收件資料集中管理</b><p>登入後即可查看訂單並管理常用收件資料。</p></aside>

@@ -5,9 +5,10 @@ import type {
   DeviceOrderReference,
   DeviceProfileEnvelope,
 } from "../../shared/member-contract";
+import { PUBLIC_SITE_CODE } from "../../shared/site-context";
 
-export const DEVICE_PROFILE_STORAGE_KEY = "taijuda:device-profile:v1";
-export const DEVICE_ORDER_STORAGE_KEY = "taijuda:device-orders:v1";
+export const DEVICE_PROFILE_STORAGE_KEY = `${PUBLIC_SITE_CODE}:device-profile:v1`;
+export const DEVICE_ORDER_STORAGE_KEY = `${PUBLIC_SITE_CODE}:device-orders:v1`;
 export const DEVICE_PROFILE_TTL_DAYS = 180;
 export const DEVICE_ORDER_HISTORY_LIMIT = 20;
 
@@ -33,7 +34,7 @@ export type DeviceStorage = {
 type DeviceOrderEnvelope = {
   version: 1;
   scope: "device-only";
-  siteCode: "taijuda";
+  siteCode: string;
   updatedAt: string;
   items: DeviceOrderReference[];
 };
@@ -88,7 +89,7 @@ export function createDeviceProfileEnvelope(
   return {
     version: 1,
     scope: "device-only",
-    siteCode: "taijuda",
+    siteCode: PUBLIC_SITE_CODE,
     consentVersion: "remember-checkout-v1",
     savedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + PROFILE_TTL_MS).toISOString(),
@@ -111,7 +112,7 @@ export function parseDeviceProfileStorage(
   const candidate = value as Record<string, unknown>;
   if (
     candidate.version !== 1 || candidate.scope !== "device-only" ||
-    candidate.siteCode !== "taijuda" || candidate.consentVersion !== "remember-checkout-v1"
+    candidate.siteCode !== PUBLIC_SITE_CODE || candidate.consentVersion !== "remember-checkout-v1"
   ) return null;
 
   const savedAt = isoTimestamp(candidate.savedAt);
@@ -130,7 +131,7 @@ export function parseDeviceProfileStorage(
   return {
     version: 1,
     scope: "device-only",
-    siteCode: "taijuda",
+    siteCode: PUBLIC_SITE_CODE,
     consentVersion: "remember-checkout-v1",
     savedAt,
     expiresAt,
@@ -230,7 +231,7 @@ export function parseDeviceOrderStorage(raw: string | null): DeviceOrderReferenc
   const candidate = value as Record<string, unknown>;
   if (
     candidate.version !== 1 || candidate.scope !== "device-only" ||
-    candidate.siteCode !== "taijuda" || !isoTimestamp(candidate.updatedAt) ||
+    candidate.siteCode !== PUBLIC_SITE_CODE || !isoTimestamp(candidate.updatedAt) ||
     !Array.isArray(candidate.items)
   ) return [];
   const seen = new Set<string>();
@@ -269,7 +270,7 @@ export function rememberDeviceOrder(
   const envelope: DeviceOrderEnvelope = {
     version: 1,
     scope: "device-only",
-    siteCode: "taijuda",
+    siteCode: PUBLIC_SITE_CODE,
     updatedAt: now.toISOString(),
     items,
   };

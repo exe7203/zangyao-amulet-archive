@@ -18,25 +18,13 @@ import { isPublishedArticleIndexable } from "../../../shared/seo-indexing";
 import styles from "../../article-page.module.css";
 import PublicFooter from "../../public-footer";
 import PublicHeader from "../../public-header";
+import { resolveSiteUrl } from "../../../shared/site-url";
 
 type ArticlePageProps = {
   params: Promise<{ slug: string }>;
 };
 
 const journalName = `${publishedBrandName}佛牌專欄`;
-
-function getSiteUrl(): URL {
-  try {
-    const url = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Unsupported site URL");
-    url.search = "";
-    url.hash = "";
-    if (!url.pathname.endsWith("/")) url.pathname += "/";
-    return url;
-  } catch {
-    return new URL("http://127.0.0.1:3000/");
-  }
-}
 
 function resolveHttpUrl(value: string, baseUrl: URL, fallbackPath: string): string {
   try {
@@ -90,9 +78,9 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
     };
   }
 
-  const siteUrl = getSiteUrl();
-  const canonicalUrl = getCanonicalUrl(article, siteUrl);
-  const ogImageUrl = getOgImageUrl(article, siteUrl);
+  const site = resolveSiteUrl();
+  const canonicalUrl = site.publicUrl ? getCanonicalUrl(article, site.publicUrl) : null;
+  const ogImageUrl = site.publicUrl ? getOgImageUrl(article, site.publicUrl) : null;
   const title = article.seoTitle || article.title;
   const description = article.seoDescription || article.excerpt;
 
@@ -100,30 +88,30 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
     title,
     description,
     keywords: article.keywords,
-    alternates: { canonical: canonicalUrl },
-    robots: { index: isPublishedArticleIndexable(article), follow: true },
+    ...(canonicalUrl ? { alternates: { canonical: canonicalUrl } } : {}),
+    robots: { index: site.indexable && isPublishedArticleIndexable(article), follow: site.indexable },
     openGraph: {
       type: "article",
       locale: "zh_TW",
       siteName: publishedBrandName,
-      url: canonicalUrl,
+      ...(canonicalUrl ? { url: canonicalUrl } : {}),
       title,
       description,
       publishedTime: article.publishedAt || undefined,
       modifiedTime: article.updatedAt || undefined,
       authors: [publishedEditorName],
-      images: [{
+      ...(ogImageUrl ? { images: [{
         url: ogImageUrl,
         width: 1731,
         height: 909,
         alt: `${article.title}｜${publishedBrandName}佛牌專欄`,
-      }],
+      }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [ogImageUrl],
+      ...(ogImageUrl ? { images: [ogImageUrl] } : {}),
     },
   };
 }
@@ -133,11 +121,11 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
   const article = getFallbackArticle(slug);
   if (!article) notFound();
 
-  const siteUrl = getSiteUrl();
-  const canonicalUrl = getCanonicalUrl(article, siteUrl);
-  const ogImageUrl = getOgImageUrl(article, siteUrl);
+  const publicSiteUrl = resolveSiteUrl().publicUrl;
+  const canonicalUrl = publicSiteUrl ? getCanonicalUrl(article, publicSiteUrl) : null;
+  const ogImageUrl = publicSiteUrl ? getOgImageUrl(article, publicSiteUrl) : null;
   const publishedLabel = formatPublishedDate(article.publishedAt);
-  const structuredData = {
+  const structuredData = canonicalUrl && ogImageUrl && publicSiteUrl ? {
     "@context": "https://schema.org",
     "@graph": [
       {
@@ -150,8 +138,8 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         inLanguage: "zh-Hant-TW",
         isAccessibleForFree: true,
         mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
-        author: { "@type": "Organization", name: publishedEditorName, url: siteUrl.toString() },
-        publisher: { "@type": "Organization", name: publishedBrandName, url: siteUrl.toString() },
+        author: { "@type": "Organization", name: publishedEditorName, url: publicSiteUrl.toString() },
+        publisher: { "@type": "Organization", name: publishedBrandName, url: publicSiteUrl.toString() },
         ...(article.publishedAt ? { datePublished: article.publishedAt } : {}),
         ...(article.updatedAt ? { dateModified: article.updatedAt } : {}),
       },
@@ -159,20 +147,22 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         "@type": "BreadcrumbList",
         "@id": `${canonicalUrl}#breadcrumb`,
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
-          { "@type": "ListItem", position: 2, name: "佛牌專欄", item: new URL("articles/", siteUrl).toString() },
+          { "@type": "ListItem", position: 1, name: "首頁", item: publicSiteUrl.toString() },
+          { "@type": "ListItem", position: 2, name: "佛牌專欄", item: new URL("articles/", publicSiteUrl).toString() },
           { "@type": "ListItem", position: 3, name: article.title, item: canonicalUrl },
         ],
       },
     ],
-  };
+  } : null;
 
   return (
     <div className={styles.page}>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
-      />
+      {structuredData && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
+        />
+      )}
       <PublicHeader section="journal" mainId="article-content" contextLinks={[{ href: "/articles/", label: "返回佛牌專欄 →" }]} />
 
       <main className={styles.shell} id="article-content">

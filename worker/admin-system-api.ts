@@ -4,6 +4,7 @@ import {
   isLocalRequest,
   json,
 } from "./api-utils";
+import { adminLoginDenied } from "./admin-auth-api";
 import {
   DEFAULT_SITE_CODE,
   ensureDatabase,
@@ -13,6 +14,20 @@ import {
 import { publishedSnapshot } from "../shared/published-content";
 
 const SYSTEM_STATUS_PATH = "/api/admin/system-status";
+const PUBLIC_HEALTH_PATH = "/api/health";
+
+export async function handlePublicHealthApi(request: Request) {
+  const url = new URL(request.url);
+  if (url.pathname !== PUBLIC_HEALTH_PATH) return null;
+  if (request.method !== "GET") {
+    return json({ error: "不支援的操作" }, { status: 405, headers: { allow: "GET" } });
+  }
+  return json({
+    ok: true,
+    site: "taijuda",
+    mode: isLocalRequest(request) ? "local" : "cloud",
+  });
+}
 
 function count(value: unknown) {
   const parsed = Number(value || 0);
@@ -30,14 +45,28 @@ function versionSignature(rows: readonly Record<string, unknown>[]) {
     .join("|");
 }
 
+type ProductVersionRow = {
+  id?: unknown;
+  version?: unknown;
+  inventoryVersion?: unknown;
+  inventory_version?: unknown;
+  stock?: unknown;
+  available_stock?: unknown;
+};
+
+export function productVersionSignature(rows: readonly ProductVersionRow[]) {
+  return rows
+    .map((row) => {
+      const inventoryVersion = row.inventoryVersion ?? row.inventory_version;
+      const availableStock = row.stock ?? row.available_stock;
+      return `${String(row.id || "")}:${count(row.version || 1)}:${count(inventoryVersion)}:${count(availableStock)}`;
+    })
+    .sort()
+    .join("|");
+}
+
 function adminDenied(request: Request) {
-  const hasAuthenticatedEmail = Boolean(request.headers.get("oai-authenticated-user-email"));
-  return hasAuthenticatedEmail
-    ? json({ error: "此帳號不在後台允許名單內" }, { status: 403 })
-    : json(
-        { error: "請先登入後台再繼續", signInUrl: "/signin-with-chatgpt?return_to=%2Fadmin%2F" },
-        { status: 401 },
-      );
+  return adminLoginDenied(request, "/admin/");
 }
 
 async function systemStatus(request: Request, db: D1Database) {
@@ -106,19 +135,23 @@ async function systemStatus(request: Request, db: D1Database) {
       .bind(site.id).all<Record<string, unknown>>(),
     db.prepare("SELECT id, version FROM site_pages WHERE site_id = ? AND status = 'published' ORDER BY id")
       .bind(site.id).all<Record<string, unknown>>(),
-    db.prepare("SELECT id, version FROM products WHERE site_id = ? AND status IN ('active', 'sold_out') ORDER BY id")
+    db.prepare(`SELECT p.id, p.version, i.version AS inventory_version,
+        (i.on_hand - i.reserved) AS available_stock
+      FROM products p
+      JOIN inventory i ON i.product_id = p.id AND i.site_id = p.site_id
+      WHERE p.site_id = ? AND p.status IN ('active', 'sold_out') ORDER BY p.id`)
       .bind(site.id).all<Record<string, unknown>>(),
   ]);
 
   const snapshotSettingsVersion = count(publishedSnapshot.siteSettings.version);
   const snapshotPageSignature = versionSignature(publishedSnapshot.pages);
   const snapshotArticleSignature = versionSignature(publishedSnapshot.articles);
-  const snapshotProductSignature = versionSignature(publishedSnapshot.products);
+  const snapshotProductSignature = productVersionSignature(publishedSnapshot.products);
   const publishingInSync =
     count(settings?.version) === snapshotSettingsVersion &&
     versionSignature(publishedPageVersions.results) === snapshotPageSignature &&
     versionSignature(publishedArticleVersions.results) === snapshotArticleSignature &&
-    versionSignature(publicProductVersions.results) === snapshotProductSignature;
+    productVersionSignature(publicProductVersions.results) === snapshotProductSignature;
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -200,7 +233,7 @@ export async function handleAdminSystemApi(request: Request, env: DatabaseEnv) {
 
   try {
     await ensureDatabase(env.DB);
-    if (!adminIdentity(request, env)) return adminDenied(request);
+    if (!(await adminIdentity(request, env))) return adminDenied(request);
     return systemStatus(request, env.DB);
   } catch {
     return json({ error: "後台狀態服務暫時無法使用" }, { status: 500 });

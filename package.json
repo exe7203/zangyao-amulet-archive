@@ -15,22 +15,32 @@
     "local:stop": "node scripts/local-site.mjs stop",
     "local:status": "node scripts/local-site.mjs status",
     "local:backup": "node scripts/local-site.mjs backup",
+    "local:backup:verify": "node scripts/local-site.mjs backup:verify",
+    "local:restore": "node scripts/local-site.mjs restore",
+    "cf:init": "node scripts/deploy-cloudflare.mjs init",
+    "cf:migrate": "node scripts/deploy-cloudflare.mjs migrate",
+    "cf:deploy": "node scripts/deploy-cloudflare.mjs deploy",
     "preview": "node scripts/preview-server.mjs",
     "content:seed": "node --experimental-strip-types scripts/sync-published-content.mjs --seed",
     "content:sync": "node scripts/sync-published-content.mjs",
     "build:publish": "npm run content:sync && npm run build:pages",
     "test": "npm run build && npm run test:core",
-    "test:core": "node --import tsx --test tests/rendered-html.test.mjs tests/article-routes.test.mjs tests/article-editor-contract.test.mjs tests/published-snapshot.test.mjs tests/public-copy-contract.test.mjs tests/commerce-core.test.mjs tests/content-core.test.mjs tests/site-builder-core.test.mjs tests/admin-system.test.mjs tests/admin-chrome-contract.test.mjs tests/member-device-storage.test.mjs tests/seo-runtime.test.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
+    "typecheck:worker": "tsc --project tsconfig.worker.json",
+    "test:core": "node --import tsx --test tests/migration-smoke.test.mjs tests/production-schema-contract.test.mjs tests/local-backup.test.mjs tests/rendered-html.test.mjs tests/article-routes.test.mjs tests/article-editor-contract.test.mjs tests/published-snapshot.test.mjs tests/public-copy-contract.test.mjs tests/commerce-core.test.mjs tests/content-core.test.mjs tests/site-builder-core.test.mjs tests/admin-system.test.mjs tests/admin-chrome-contract.test.mjs tests/member-device-storage.test.mjs tests/seo-runtime.test.mjs tests/security-headers.test.mjs tests/site-context.test.mjs",
+    "test:local-backup": "node --test tests/local-backup.test.mjs",
     "test:pages": "npm run build:pages && node scripts/verify-pages-export.mjs",
     "audit:prod": "npm audit --omit=dev",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@puckeditor/core": "^0.22.4",
+    "@puckeditor/core": "0.23.0",
     "@tiptap/core": "^3.29.2",
+    "@tiptap/extension-image": "^3.29.2",
     "@tiptap/extension-link": "^3.29.2",
     "@tiptap/extension-placeholder": "^3.29.2",
+    "@tiptap/extension-table": "^3.29.2",
     "@tiptap/pm": "^3.29.2",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
@@ -41,7 +51,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.50.0",
+    "@cloudflare/vite-plugin": "1.51.3",
+    "@cloudflare/workers-types": "^5.20260809.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
@@ -58,7 +69,7 @@
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.2.0",
-    "wrangler": "4.118.0"
+    "wrangler": "4.121.0"
   },
   "type": "module"
 }

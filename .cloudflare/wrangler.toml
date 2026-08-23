@@ -1,0 +1,26 @@
+name = "taijuda-amulet-archive"
+main = "../dist/server/index.js"
+compatibility_date = "2026-08-11"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "../dist/client"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "taijuda-prod"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "../drizzle"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+NEXT_PUBLIC_SITE_CODE = "taijuda"
+STORE_ORDERS_ENABLED = "0"
+ADMIN_LOCAL_AUTH_REQUIRED = "0"
+ADMIN_EMAIL_ALLOWLIST = "REPLACE_WITH_ADMIN_EMAILS"
+
+[observability]
+enabled = true

@@ -4,12 +4,13 @@ import type {
   MemberSessionState,
   MemberSummary,
 } from "../../shared/member-contract";
+import { PUBLIC_SITE_CODE } from "../../shared/site-context";
 
 export const LOCAL_DEMO_OTP_CODE = "246810";
 export const LOCAL_DEMO_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 export const LOCAL_DEMO_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-export const LOCAL_DEMO_CHALLENGE_STORAGE_KEY = "taijuda:local-demo-auth-challenge:v1";
-export const LOCAL_DEMO_SESSION_STORAGE_KEY = "taijuda:local-demo-auth-session:v1";
+export const LOCAL_DEMO_CHALLENGE_STORAGE_KEY = `${PUBLIC_SITE_CODE}:local-demo-auth-challenge:v1`;
+export const LOCAL_DEMO_SESSION_STORAGE_KEY = `${PUBLIC_SITE_CODE}:local-demo-auth-session:v1`;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CHALLENGE_ID_PATTERN = /^[A-Za-z0-9_-]{8,120}$/;

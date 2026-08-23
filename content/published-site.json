@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "exportedAt": "2026-08-04T06:57:12.218Z",
+  "exportedAt": "2026-08-22T08:30:10.776Z",
   "site": {
     "id": "site_taijuda",
     "code": "taijuda",
@@ -13,25 +13,86 @@
     "siteCode": "taijuda",
     "siteName": "泰聚達",
     "settings": {
-      "announcement": "泰國佛牌與收藏品網站建置中",
+      "announcement": "佛牌典藏與活動聚會｜商品資料陸續覆核中",
       "brandName": "泰聚達",
       "brandSubtitle": "THAI AMULET ARCHIVE",
-      "footerNote": "網站內容建置中，商品資訊確認後才會開放訂購。",
-      "homeHeroEyebrow": "泰國佛牌與收藏品",
-      "homeHeroTitlePrimary": "清楚的商品資訊，",
-      "homeHeroTitleSecondary": "讓選擇更有依據。",
-      "homeHeroLead": "提供商品尺寸、材質、年份、來源與保存狀況等資訊，讓你在選購前先了解商品內容。",
-      "homePrimaryCtaLabel": "查看最新商品",
-      "homeSecondaryCtaLabel": "閱讀選購指南",
-      "homeCollectionsTitle": "依商品類型瀏覽",
-      "homeCollectionsIntro": "從佛牌、神尊與符印等分類查看商品，並參考材質、尺寸與來源說明。",
-      "homeArrivalsTitle": "最新商品"
+      "footerNote": "商品圖目前為氛圍示意；正式上架前會換成實物照片與可查證資料。",
+      "businessLegalName": "",
+      "businessAddress": "",
+      "contactEmail": "",
+      "contactPhone": "",
+      "contactHours": "",
+      "lineOfficialUrl": "",
+      "shippingPolicySummary": "台灣本島宅配為主；運費、偏遠加價與出貨時間於客服確認訂單後告知。網站小計不含運費。",
+      "returnsPolicySummary": "退換貨申請管道與退貨地址將於正式開放訂購前公布；七日解除權適用範圍依實際商品與法規辦理。",
+      "paymentPolicySummary": "目前不提供線上刷卡。訂單確認後由客服通知可使用的付款方式與期限。",
+      "homeHeroEyebrow": "泰聚達 · 佛牌典藏與活動",
+      "homeHeroTitlePrimary": "看懂來源，",
+      "homeHeroTitleSecondary": "也走進現場。",
+      "homeHeroLead": "我們整理可查證的佛牌資料，也籌辦講座、參訪與見面聚會，讓收藏不只停留在螢幕上。",
+      "homePrimaryCtaLabel": "瀏覽典藏商品",
+      "homeSecondaryCtaLabel": "了解近期活動",
+      "homeCollectionsTitle": "依類型走進典藏",
+      "homeCollectionsIntro": "佛牌、神尊與符印分門別類；正式商品會附上實物照片與來源說明。",
+      "homeArrivalsTitle": "近期典藏",
+      "primaryNavigation": [
+        {
+          "href": "/",
+          "label": "首頁"
+        },
+        {
+          "href": "/#products",
+          "label": "最新商品"
+        },
+        {
+          "href": "/#themes",
+          "label": "活動聚會"
+        },
+        {
+          "href": "/#collections",
+          "label": "商品分類"
+        },
+        {
+          "href": "/articles/",
+          "label": "佛牌專欄"
+        },
+        {
+          "href": "/about/",
+          "label": "關於泰聚達"
+        }
+      ],
+      "homeSectionOrder": [
+        {
+          "id": "hero",
+          "visible": true
+        },
+        {
+          "id": "collections",
+          "visible": true
+        },
+        {
+          "id": "products",
+          "visible": true
+        },
+        {
+          "id": "themes",
+          "visible": true
+        },
+        {
+          "id": "archive",
+          "visible": true
+        },
+        {
+          "id": "journal",
+          "visible": true
+        }
+      ]
     },
     "theme": {
       "preset": "archive",
-      "accent": "#b89048",
-      "surface": "#f4efe4",
-      "ink": "#171713"
+      "accent": "#9c7642",
+      "surface": "#ebe4d7",
+      "ink": "#12100e"
     },
     "version": 1,
     "updatedAt": "2026-08-04T00:00:00.000Z"
@@ -41,7 +102,7 @@
       "id": "page_taijuda_brand_story",
       "siteId": "site_taijuda",
       "slug": "brand-story",
-      "title": "泰聚達品牌介紹",
+      "title": "泰聚達品牌故事",
       "data": {
         "root": {
           "props": {}
@@ -51,13 +112,13 @@
             "type": "Hero",
             "props": {
               "id": "hero-brand-story",
-              "eyebrow": "品牌介紹",
-              "title": "認識泰聚達",
-              "description": "我們專注於泰國佛牌與相關收藏品；正式上架前會整理商品照片、規格與來源說明。",
+              "eyebrow": "TAIJUDA ARCHIVE",
+              "title": "把來源說清楚，才值得長久收藏。",
+              "description": "從文化、工藝與可查證資料開始，建立每件聖物可閱讀的收藏履歷。",
               "primaryLabel": "閱讀佛牌專欄",
               "primaryHref": "/articles/",
-              "secondaryLabel": "查看最新商品",
-              "secondaryHref": "/#new",
+              "secondaryLabel": "聯絡我們",
+              "secondaryHref": "/service/contact/",
               "tone": "ink"
             }
           },
@@ -65,9 +126,9 @@
             "type": "Text",
             "props": {
               "id": "text-brand-story",
-              "eyebrow": "我們重視的事",
-              "title": "清楚的商品資訊",
-              "body": "商品上架前會核對名稱、年份、材質、尺寸與來源資料；無法確認的資訊會明確標示。",
+              "eyebrow": "OUR APPROACH",
+              "title": "來源可讀，收藏可久",
+              "body": "我們記錄年份、材質、尺寸、來源與保存狀況，也會把尚待確認的資訊清楚標示。",
               "alignment": "left",
               "tone": "paper"
             }
@@ -76,8 +137,8 @@
         "zones": {}
       },
       "status": "published",
-      "seoTitle": "泰聚達品牌介紹｜泰國佛牌與收藏品",
-      "seoDescription": "認識泰聚達的商品整理與來源資料標示原則，以及我們對商品資訊、實物照片、宗教文化、保存說明與消費資訊的基本原則。",
+      "seoTitle": "泰聚達品牌故事｜泰國佛牌收藏履歷",
+      "seoDescription": "認識泰聚達如何以年份、材質、尺寸、來源與保存紀錄整理泰國佛牌和聖物，從可查證資料開始建立可閱讀的收藏履歷。",
       "canonicalUrl": "",
       "ogImageUrl": "",
       "noindex": true,
@@ -113,7 +174,28 @@
             "content": [
               {
                 "type": "text",
-                "text": "防水殼、壓克力殼與金屬框各有不同的密合方式。選擇時應先看佛牌材質是否怕潮、是否容易掉粉，以及日常配戴情境。"
+                "text": "防水殼、壓克力殼與金屬框各有不同的密合方式。選擇時應先看佛牌材質是否怕潮、是否容易掉粉，以及日常配戴情境。同一個名稱的佛牌，若外殼密合度不同，長期保存狀態也可能出現明顯差異。"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "常見外殼怎麼選"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "日常配戴可優先考慮密合度較高的防水殼；展示或固定收藏，則可依外觀與材質選擇壓克力或金屬框。粉質、老件若已有裂紋，重新包殼前應先留下完整影像紀錄，避免後續比對來源時缺少依據。"
               }
             ]
           },
@@ -125,9 +207,21 @@
                 "content": [
                   {
                     "type": "text",
-                    "text": "老件或粉質藏品若已有裂紋，重新包殼前應先留下完整影像紀錄。"
+                    "text": "外殼不能取代來源與保存紀錄；它只是保護層，不能證明年份、寺院或法會資訊。"
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "長期收藏檢查清單"
               }
             ]
           },
@@ -136,7 +230,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "長期收藏時，避免高溫、潮濕與陽光直射，並定期檢查殼內是否有霧氣或異常變化。"
+                "text": "長期收藏時，避免高溫、潮濕與陽光直射，並定期檢查殼內是否有霧氣、水氣或異常變化。若發現殼內起霧、粉質剝落或金屬框鬆動，應先拍照記錄，再決定是否更換外殼或調整保存環境。把檢查日期與觀察結果寫進收藏履歷，之後轉手或比對時會更清楚。"
               }
             ]
           }
@@ -155,11 +249,11 @@
       "seoTitle": "佛牌外殼材質與收藏保養方式",
       "seoDescription": "認識防水殼、壓克力殼與金屬框的差異，以及粉質、老件佛牌在日常配戴與長期收藏時應注意的保存環境與檢查方式。",
       "canonicalUrl": "",
-      "ogImageUrl": "og.png",
-      "noindex": true,
-      "version": 1,
+      "ogImageUrl": "",
+      "noindex": false,
+      "version": 2,
       "publishedAt": "2026-08-04T00:00:00.000Z",
-      "updatedAt": "2026-08-04T00:00:00.000Z"
+      "updatedAt": "2026-08-23T00:00:00.000Z"
     },
     {
       "id": "guide-first-amulet",
@@ -186,54 +280,19 @@
             "content": [
               {
                 "type": "text",
-                  "text": "初次接觸佛牌時，可先從年份、材質、尺寸與來源等可核對資料著手，再理解相關的宗教與文化背景。"
+                "text": "第一次接觸佛牌時，不必先追求神奇說法。年份、材質、尺寸、寺院或法會來源，才是能夠被記錄與交叉確認的基礎。把這些欄位寫下來，比先聽功效故事更能建立穩定的判斷方式。"
               }
             ]
           },
           {
-            "type": "bulletList",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
             "content": [
               {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                        "text": "確認佛曆與西元年份是否對得上。"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                        "text": "查看正反面、側邊與尺寸比例的實拍。"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                          "text": "未能確認的來源資訊應標示待查，不宜自行推定。"
-                      }
-                    ]
-                  }
-                ]
+                "type": "text",
+                "text": "建議優先核對的五個欄位"
               }
             ]
           },
@@ -242,7 +301,28 @@
             "content": [
               {
                 "type": "text",
-                  "text": "建立收藏紀錄時，可先盤點已有資料，並列出仍待確認的項目。"
+                "text": "可先檢查：商品名稱與常見別名是否一致、年份或佛曆標示、材質與尺寸、來源地區與寺院／發行單位、保存狀況與附件。若任何一項無法確認，應在商品頁或收藏筆記清楚標示「待查證」，而不是用推測填滿空白。"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "建立自己的判斷順序"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "建議順序是：先看實物與照片是否一致，再核對可查證來源，最後才參考市場行情與個人喜好。功效、感應或傳聞不應作為購買保證。把判斷順序固定下來，之後無論收藏或轉讓，都會更容易說清楚這件商品為什麼值得留下紀錄。"
               }
             ]
           }
@@ -259,19 +339,19 @@
       "heroImageUrl": "",
       "heroImageAlt": "",
       "seoTitle": "第一次接觸泰國佛牌：年份、材質與來源指南",
-      "seoDescription": "第一次接觸泰國佛牌，可先核對佛曆年份、材質、尺寸、實物照片與來源說明，避免只依賴口述或傳聞來判斷商品資訊。",
+      "seoDescription": "第一次接觸泰國佛牌，先學會核對佛曆年份、材質、尺寸、實拍與寺院來源，建立可以查證且不依賴傳聞的收藏判斷方式。",
       "canonicalUrl": "",
-      "ogImageUrl": "og.png",
-      "noindex": true,
-      "version": 1,
+      "ogImageUrl": "",
+      "noindex": false,
+      "version": 2,
       "publishedAt": "2026-08-04T00:00:00.000Z",
-      "updatedAt": "2026-08-04T00:00:00.000Z"
+      "updatedAt": "2026-08-23T00:00:00.000Z"
     },
     {
       "id": "provenance-record",
       "slug": "provenance-record",
-      "title": "佛牌來源紀錄應包含哪些資料？",
-      "excerpt": "完整記錄取得、保存與轉手資訊，方便日後查詢與核對。",
+      "title": "從寺廟到收藏櫃：一件聖物的履歷應包含什麼？",
+      "excerpt": "把取得、轉手與保存資訊留下來，讓下一位收藏者也看得懂。",
       "contentJson": {
         "type": "doc",
         "content": [
@@ -283,7 +363,7 @@
             "content": [
               {
                 "type": "text",
-                  "text": "佛牌來源紀錄的基本內容"
+                "text": "為什麼要寫收藏履歷"
               }
             ]
           },
@@ -292,54 +372,19 @@
             "content": [
               {
                 "type": "text",
-                  "text": "來源紀錄用於整理現有資料，不等同專業真偽鑑定；已確認、據稱與待查項目應分開標示。"
+                "text": "把取得、轉手與保存資訊留下來，能讓下一位收藏者也看得懂。履歷不是要證明信仰效果，而是讓商品狀態、來源與轉手過程可被閱讀與核對。對單件販售的收藏品來說，這比口頭說明更可靠。"
               }
             ]
           },
           {
-            "type": "orderedList",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
             "content": [
               {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                        "text": "寺院、師父、法會與年份資料。"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                        "text": "材質、尺寸、模具特徵與保存狀態。"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "type": "listItem",
-                "content": [
-                  {
-                    "type": "paragraph",
-                    "content": [
-                      {
-                        "type": "text",
-                        "text": "取得方式、實拍日期與後續轉手紀錄。"
-                      }
-                    ]
-                  }
-                ]
+                "type": "text",
+                "text": "建議記錄的內容"
               }
             ]
           },
@@ -348,7 +393,28 @@
             "content": [
               {
                 "type": "text",
-                  "text": "無法確認的項目應清楚標示，並保留日後補充資料的空間。"
+                "text": "至少記錄：取得日期與管道、商品編號、正面／反面／細節照片、已知來源說明、材質與尺寸、保存狀況變化、外殼更換紀錄，以及轉手時的交接重點。若有發票、收據或寺方說明文件，也應一併保存影本或檔案。"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "如何避免履歷失真"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "不知道就寫不知道，比硬補故事更重要。來源有爭議時，應保留不同說法並標註時間。照片應在同一光線與角度下定期補拍，方便比對磨損。履歷的目的是透明，不是美化；清楚標示待確認項目，反而更能建立信任。把日期與待確認項目寫清楚，比補故事更有用。"
               }
             ]
           }
@@ -364,14 +430,14 @@
       ],
       "heroImageUrl": "",
       "heroImageAlt": "",
-      "seoTitle": "佛牌來源紀錄應包含哪些資料？",
-      "seoDescription": "整理佛牌的寺院或發行單位、相關人物、年份、材質、尺寸、取得與轉手紀錄，並將已確認、據稱與待查資訊分開保存。",
+      "seoTitle": "佛牌來源與收藏履歷應記錄哪些資料？",
+      "seoDescription": "整理佛牌與聖物的寺院、師父、法會、年份、材質、尺寸、取得與轉手紀錄，並把已知證據和待確認資訊分開保存。",
       "canonicalUrl": "",
-      "ogImageUrl": "og.png",
-      "noindex": true,
-      "version": 1,
+      "ogImageUrl": "",
+      "noindex": false,
+      "version": 2,
       "publishedAt": "2026-08-04T00:00:00.000Z",
-      "updatedAt": "2026-08-04T00:00:00.000Z"
+      "updatedAt": "2026-08-23T00:00:00.000Z"
     }
   ],
   "products": [
@@ -379,120 +445,124 @@
       "id": "product_taijuda_001",
       "sku": "TJD-AMU-001",
       "slug": "somdej-classic-powder-small",
-      "name": "崇迪佛牌・粉質小模",
+      "name": "崇迪佛牌・經典粉質小模",
       "shortName": "崇迪佛牌",
-      "description": "粉質小模，商品年份、來源與保存狀況確認後更新。",
+      "description": "經典拱形粉質小模，適合從材質、年份與來源紀錄開始認識佛牌收藏。",
       "category": "佛牌",
       "origin": "曼谷地區",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2566",
       "westernYear": "西元 2023",
       "material": "粉質",
       "dimensions": "3.4 × 2.4 cm",
       "price": 3680,
-      "badge": "新品",
+      "badge": "最新上架",
       "tone": "sand",
       "shape": "arch",
       "theme": "守護與安心",
       "purchaseLimit": 3,
       "stock": 3,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/statue-close.jpg",
+      "imageAlt": "崇迪佛牌・經典粉質小模｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
-      "seoTitle": "崇迪佛牌粉質小模｜泰聚達",
-      "seoDescription": "崇迪佛牌粉質小模商品資料整理中，完成確認後將補充照片、年份、尺寸、來源與保存狀況。",
+      "seoTitle": "崇迪佛牌經典粉質小模｜泰聚達",
+      "seoDescription": "查看崇迪佛牌粉質小模的年份、材質、尺寸與來源紀錄。",
       "version": 1,
+      "inventoryVersion": 4,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
       "id": "product_taijuda_002",
       "sku": "TJD-AMU-002",
       "slug": "pidta-black-powder",
-      "name": "必打佛・黑色粉質橢圓模",
+      "name": "必打佛・黑色粉質版",
       "shortName": "必打佛",
-      "description": "黑色粉質橢圓模，商品材質、年份、來源與保存狀況確認後更新。",
+      "description": "黑色混合聖粉橢圓模版，一物一拍並保留正反面與保存狀態紀錄。",
       "category": "佛牌",
       "origin": "北欖府",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2565",
       "westernYear": "西元 2022",
-      "material": "粉質混合材質",
+      "material": "混合聖粉",
       "dimensions": "2.8 × 2.2 cm",
       "price": 4280,
-      "badge": "單件商品",
+      "badge": "一物一拍",
       "tone": "charcoal",
       "shape": "oval",
       "theme": "守護與安心",
       "purchaseLimit": 1,
       "stock": 1,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/buddha-gold.jpg",
+      "imageAlt": "必打佛・黑色粉質版｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
-      "seoTitle": "必打佛黑色粉質橢圓模｜泰聚達",
-      "seoDescription": "必打佛黑色粉質橢圓模商品資料整理中，完成確認後將補充照片、材質、尺寸、來源與保存狀況。",
+      "seoTitle": "必打佛黑色粉質版｜泰聚達",
+      "seoDescription": "查看必打佛黑色粉質版的實物規格與收藏履歷。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
       "id": "product_taijuda_003",
       "sku": "TJD-AMU-003",
       "slug": "khun-phaen-double-stamp",
-      "name": "坤平佛牌・雙印模",
-      "shortName": "坤平佛牌",
-      "description": "雙印模粉質佛牌，商品材質、年份、來源與保存狀況確認後更新。",
+      "name": "坤平將軍・雙印模版",
+      "shortName": "坤平將軍",
+      "description": "雙印模經粉混合材質版本，完整標示尺寸與來源待覆核資訊。",
       "category": "佛牌",
       "origin": "素攀府",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2564",
       "westernYear": "西元 2021",
-      "material": "粉質混合材質",
+      "material": "經粉混合材質",
       "dimensions": "4.1 × 2.8 cm",
       "price": 5980,
-      "badge": "推薦商品",
+      "badge": "藏家選物",
       "tone": "terracotta",
       "shape": "arch",
       "theme": "人緣與溝通",
       "purchaseLimit": 2,
       "stock": 2,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/wat-detail.jpg",
+      "imageAlt": "坤平將軍・雙印模版｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
-      "seoTitle": "坤平佛牌雙印模｜泰聚達",
-      "seoDescription": "坤平佛牌雙印模商品資料整理中，完成確認後將補充照片、年份、材質、尺寸、來源與保存狀況。",
+      "seoTitle": "坤平將軍雙印模版｜泰聚達",
+      "seoDescription": "坤平將軍雙印模版的年份、材質、尺寸與來源資料。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
       "id": "product_taijuda_004",
       "sku": "TJD-AMU-004",
       "slug": "luang-pu-thuat-bronze-oval",
-      "name": "龍婆托・橢圓合金版",
+      "name": "龍婆托・橢圓銅質版",
       "shortName": "龍婆托",
-      "description": "古銅色合金橢圓版本，商品年份、來源與保存狀況確認後更新。",
+      "description": "古銅色合金橢圓版本，適合日常配戴與收藏紀錄。",
       "category": "佛牌",
       "origin": "洛坤府",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2567",
       "westernYear": "西元 2024",
       "material": "古銅色合金",
       "dimensions": "3.2 × 2.5 cm",
       "price": 2880,
-      "badge": "新品",
+      "badge": "來源可查",
       "tone": "bronze",
       "shape": "oval",
       "theme": "事業與行動",
       "purchaseLimit": 4,
       "stock": 4,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/temple-interior.jpg",
+      "imageAlt": "龍婆托・橢圓銅質版｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
-      "seoTitle": "龍婆托橢圓合金版｜泰聚達",
-      "seoDescription": "龍婆托橢圓合金版商品資料整理中，完成確認後將補充照片、年份、尺寸、來源與保存狀況。",
+      "seoTitle": "龍婆托橢圓銅質版｜泰聚達",
+      "seoDescription": "查看龍婆托橢圓銅質版的規格與收藏資料。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
@@ -504,25 +574,26 @@
       "description": "黃銅彩釉紀念小尊，適合桌面陳列與收藏。",
       "category": "神尊",
       "origin": "曼谷地區",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2566",
       "westernYear": "西元 2023",
       "material": "黃銅彩釉",
       "dimensions": "高 4.5 cm",
       "price": 4680,
-      "badge": "少量現貨",
+      "badge": "少量到藏",
       "tone": "gold",
       "shape": "statue",
       "theme": "事業與行動",
       "purchaseLimit": 2,
       "stock": 2,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/pagoda.jpg",
+      "imageAlt": "四面神・金屬彩釉小尊｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
       "seoTitle": "四面神金屬彩釉小尊｜泰聚達",
       "seoDescription": "四面神黃銅彩釉小尊的尺寸、材質與來源紀錄。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
@@ -531,58 +602,60 @@
       "slug": "ganesha-seated-miniature",
       "name": "象神・坐姿紀念小尊",
       "shortName": "象神",
-      "description": "黃銅坐姿紀念小尊，商品年份、尺寸、來源與保存狀況確認後更新。",
+      "description": "黃銅坐姿紀念小尊，保留年份、尺寸與取得資訊欄位。",
       "category": "神尊",
       "origin": "清邁地區",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2567",
       "westernYear": "西元 2024",
       "material": "黃銅",
       "dimensions": "高 5.2 cm",
       "price": 6800,
-      "badge": "推薦商品",
+      "badge": "收藏推薦",
       "tone": "antique",
       "shape": "statue",
       "theme": "學業與專注",
       "purchaseLimit": 2,
       "stock": 2,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/monk-temple.jpg",
+      "imageAlt": "象神・坐姿紀念小尊｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
       "seoTitle": "象神坐姿紀念小尊｜泰聚達",
-      "seoDescription": "象神坐姿紀念小尊商品資料整理中，完成確認後將補充照片、年份、尺寸、來源與保存狀況。",
+      "seoDescription": "象神黃銅坐姿紀念小尊的收藏資料與規格。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
       "id": "product_taijuda_007",
       "sku": "TJD-AMU-005",
       "slug": "nang-kwak-temple-edition",
-      "name": "招財女神・粉質紀念版",
+      "name": "招財女神・寺院紀念版",
       "shortName": "招財女神",
-      "description": "粉質紀念版本，商品年份、來源與保存狀況確認後更新。",
+      "description": "寺院紀念粉質版本，一物一拍並附單件收藏編號。",
       "category": "佛牌",
       "origin": "大城府",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2565",
       "westernYear": "西元 2022",
       "material": "粉質",
       "dimensions": "3.7 × 2.3 cm",
       "price": 3280,
-      "badge": "單件商品",
+      "badge": "一物一拍",
       "tone": "ivory",
       "shape": "arch",
       "theme": "財運與商務",
       "purchaseLimit": 1,
       "stock": 1,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/incense-mood.jpg",
+      "imageAlt": "招財女神・寺院紀念版｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
-      "seoTitle": "招財女神粉質紀念版｜泰聚達",
-      "seoDescription": "招財女神粉質紀念版商品資料整理中，完成確認後將補充照片、年份、尺寸、來源與保存狀況。",
+      "seoTitle": "招財女神寺院紀念版｜泰聚達",
+      "seoDescription": "查看招財女神寺院紀念版的單件收藏履歷。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     },
     {
@@ -591,30 +664,31 @@
       "slug": "hanuman-silver-seal",
       "name": "哈奴曼・銀色符印版",
       "shortName": "哈奴曼",
-      "description": "白色合金符印版本，商品年份、尺寸、來源與保存狀況確認後更新。",
+      "description": "白色合金圓形符印版本，標示實物尺寸與年份。",
       "category": "符印",
       "origin": "佛統府",
-      "temple": "來源資料確認中",
+      "temple": "寺院來源待逐件覆核",
       "buddhistYear": "佛曆 2566",
       "westernYear": "西元 2023",
       "material": "白色合金",
       "dimensions": "3.6 × 2.6 cm",
       "price": 5280,
-      "badge": "新品",
+      "badge": "新藏入庫",
       "tone": "silver",
       "shape": "round",
       "theme": "事業與行動",
       "purchaseLimit": 3,
       "stock": 3,
       "status": "active",
-      "imageUrl": "",
-      "imageAlt": "",
+      "imageUrl": "/media/atmosphere/lotus-mood.jpg",
+      "imageAlt": "哈奴曼・銀色符印版｜氛圍示意圖，非本商品實拍，正式上架前將更換實物照片",
       "seoReady": false,
       "seoTitle": "哈奴曼銀色符印版｜泰聚達",
-      "seoDescription": "哈奴曼銀色符印版商品資料整理中，完成確認後將補充照片、年份、材質、尺寸、來源與保存狀況。",
+      "seoDescription": "哈奴曼銀色符印版的年份、材質與尺寸資料。",
       "version": 1,
+      "inventoryVersion": 0,
       "updatedAt": "2026-08-02T14:01:58.000Z"
     }
   ],
-  "snapshotHash": "0af661788dac3df9"
+  "snapshotHash": "2d0b639969ec8e6e"
 }

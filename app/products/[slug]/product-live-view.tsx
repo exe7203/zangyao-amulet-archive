@@ -6,6 +6,7 @@ import { formatPrice, type Product } from "../../data";
 import ProductArtwork from "../../product-artwork";
 import ProductActions from "./product-actions";
 import styles from "./page.module.css";
+import { PUBLIC_SITE_CODE } from "../../../shared/site-context";
 
 function validProduct(value: unknown): value is Product {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -34,7 +35,7 @@ export default function ProductLiveView({ slug, initialProduct }: { slug: string
       const expectsLive = process.env.NEXT_PUBLIC_STORE_MODE === "live" ||
         ["127.0.0.1", "localhost", "::1", "[::1]"].includes(window.location.hostname);
       try {
-        const response = await fetch(`/api/store/products/${encodeURIComponent(slug)}?site=taijuda`, { headers: { accept: "application/json" }, cache: "no-store", signal: controller.signal });
+        const response = await fetch(`/api/store/products/${encodeURIComponent(slug)}?site=${encodeURIComponent(PUBLIC_SITE_CODE)}`, { headers: { accept: "application/json" }, cache: "no-store", signal: controller.signal });
         const isJsonApiResponse = response.headers.get("content-type")?.toLowerCase().includes("application/json");
         if (response.status === 404 && isJsonApiResponse) { setProduct(null); setState("unavailable"); return; }
         if (!response.ok) { setState(initialProduct ? (expectsLive ? "stale" : "ready") : "unavailable"); return; }
@@ -73,6 +74,7 @@ export default function ProductLiveView({ slug, initialProduct }: { slug: string
   if (!product) return <section className={styles.state}><h1>找不到這項商品</h1><p>商品可能已下架或售完。</p><Link href="/#new">返回最新商品 →</Link></section>;
 
   const detailsConfirmed = liveConfirmed && product.seoReady === true;
+  const localTestDetails = liveConfirmed && localDemo;
   const readinessNotice = state === "stale"
     ? "商品資訊暫時無法更新，請稍後再試。"
     : localDemo
@@ -88,7 +90,7 @@ export default function ProductLiveView({ slug, initialProduct }: { slug: string
     <nav className={styles.breadcrumb} aria-label="麵包屑"><Link href="/">首頁</Link><span>/</span><Link href="/#new">最新商品</Link><span>/</span><span>{product.shortName}</span></nav>
     <article className={styles.product}>
       <div className={styles.visual}><ProductArtwork product={product} large /></div>
-      <div className={styles.copy}><p>商品編號 · {product.sku}</p><h1>{product.name}</h1><p className={styles.price}>{detailsConfirmed ? formatPrice(product.price) : "價格確認中"}</p><p className={styles.description}>{detailsConfirmed ? product.description : "商品資料整理中，完成確認後會更新照片、規格與來源說明。"}</p><dl>{detailsConfirmed ? <><div><dt>來源地區</dt><dd>{product.origin}</dd></div><div><dt>寺院／發行單位</dt><dd>{product.temple}</dd></div><div><dt>年份</dt><dd>{product.buddhistYear}（{product.westernYear}）</dd></div><div><dt>材質</dt><dd>{product.material}</dd></div><div><dt>尺寸</dt><dd>{product.dimensions}</dd></div><div><dt>庫存狀態</dt><dd>{orderReady && product.stock > 0 ? `${product.stock} 件` : product.stock > 0 ? "暫未開放訂購" : "目前無庫存"}</dd></div></> : <div><dt>資料狀態</dt><dd>確認中</dd></div>}</dl><ProductActions product={product} availabilityConfirmed={detailsConfirmed} orderReady={detailsConfirmed && orderReady} /><small className={styles.faith}>佛牌與相關收藏品具有宗教與文化背景，本店不宣稱或保證特定效果。</small></div>
+      <div className={styles.copy}><p>商品編號 · {product.sku}</p><h1>{product.name}</h1><p className={styles.price}>{detailsConfirmed ? formatPrice(product.price) : localTestDetails ? `測試價 ${formatPrice(product.price)}` : "價格確認中"}</p><p className={styles.description}>{detailsConfirmed ? product.description : localTestDetails ? "本機流程測試商品；資料尚未覆核，不代表正式售價或商品資訊。" : "商品資料整理中，完成確認後會更新照片、規格與來源說明。"}</p><dl>{detailsConfirmed ? <><div><dt>來源地區</dt><dd>{product.origin}</dd></div><div><dt>寺院／發行單位</dt><dd>{product.temple}</dd></div><div><dt>年份</dt><dd>{product.buddhistYear}（{product.westernYear}）</dd></div><div><dt>材質</dt><dd>{product.material}</dd></div><div><dt>尺寸</dt><dd>{product.dimensions}</dd></div><div><dt>庫存狀態</dt><dd>{orderReady && product.stock > 0 ? `${product.stock} 件` : product.stock > 0 ? "暫未開放訂購" : "目前無庫存"}</dd></div></> : localTestDetails ? <><div><dt>資料狀態</dt><dd>本機測試資料</dd></div><div><dt>測試庫存</dt><dd>{orderReady && product.stock > 0 ? `${product.stock} 件` : "目前無庫存"}</dd></div></> : <div><dt>資料狀態</dt><dd>確認中</dd></div>}</dl><ProductActions product={product} availabilityConfirmed={detailsConfirmed || localTestDetails} orderReady={(detailsConfirmed || localTestDetails) && orderReady} testingMode={localTestDetails} /><small className={styles.faith}>佛牌與相關收藏品具有宗教與文化背景，本店不宣稱或保證特定效果。</small></div>
     </article>
   </>;
 }

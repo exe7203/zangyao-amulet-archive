@@ -7,8 +7,10 @@ import ProductLiveView from "./product-live-view";
 import styles from "./page.module.css";
 import PublicFooter from "../../public-footer";
 import PublicHeader from "../../public-header";
+import { resolveSiteUrl } from "../../../shared/site-url";
 
-const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
+const resolvedSite = resolveSiteUrl();
+const publicSiteUrl = resolvedSite.publicUrl;
 const catalogVerified = process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1";
 
 export function generateStaticParams() {
@@ -24,27 +26,27 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const product = products.find((candidate) => candidate.slug === slug);
   if (!product) return { title: { absolute: `商品資料｜${publishedBrandName}` }, robots: { index: false, follow: true } };
-  const canonical = new URL(`products/${product.slug}/`, siteUrl).toString();
-  const image = new URL(product.imageUrl || "og.png", siteUrl).toString();
-  const indexable = catalogVerified && product.seoReady === true;
+  const canonical = publicSiteUrl ? new URL(`products/${product.slug}/`, publicSiteUrl).toString() : null;
+  const image = publicSiteUrl ? new URL(product.imageUrl || "og.png", publicSiteUrl).toString() : null;
+  const indexable = resolvedSite.indexable && catalogVerified && product.seoReady === true;
   return {
     title: { absolute: product.seoTitle || `${product.name}｜${publishedBrandName}` },
     description: product.seoDescription || product.description,
-    alternates: { canonical },
+    ...(canonical ? { alternates: { canonical } } : {}),
     keywords: [product.category, product.theme, product.material, product.origin].filter(Boolean),
-    robots: { index: indexable, follow: true },
+    robots: { index: indexable, follow: resolvedSite.indexable },
     openGraph: {
       type: "website",
-      url: canonical,
+      ...(canonical ? { url: canonical } : {}),
       title: product.seoTitle || product.name,
       description: product.seoDescription || product.description,
-      images: [{ url: image, alt: product.imageAlt || `${product.name}｜${publishedBrandName}商品資料` }],
+      ...(image ? { images: [{ url: image, alt: product.imageAlt || `${product.name}｜${publishedBrandName}商品資料` }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title: product.seoTitle || product.name,
       description: product.seoDescription || product.description,
-      images: [image],
+      ...(image ? { images: [image] } : {}),
     },
   };
 }
@@ -53,13 +55,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
   const product = products.find((candidate) => candidate.slug === slug);
   if (!product) notFound();
-  const canonical = new URL(`products/${product.slug}/`, siteUrl).toString();
-  const image = new URL(product.imageUrl || "og.png", siteUrl).toString();
-  const structuredData = catalogVerified && product.seoReady === true ? {
+  const canonical = publicSiteUrl ? new URL(`products/${product.slug}/`, publicSiteUrl).toString() : null;
+  const image = publicSiteUrl ? new URL(product.imageUrl || "og.png", publicSiteUrl).toString() : null;
+  const structuredData = publicSiteUrl && canonical && image && catalogVerified && product.seoReady === true ? {
     "@context": "https://schema.org",
     "@graph": [
       { "@type": "BreadcrumbList", itemListElement: [
-        { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
+        { "@type": "ListItem", position: 1, name: "首頁", item: publicSiteUrl.toString() },
         { "@type": "ListItem", position: 2, name: product.name, item: canonical },
       ] },
       { "@type": "Product", name: product.name, sku: product.sku, description: product.description, image: [image], material: product.material, category: product.category, offers: { "@type": "Offer", priceCurrency: "TWD", price: product.price, availability: product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", url: canonical } },

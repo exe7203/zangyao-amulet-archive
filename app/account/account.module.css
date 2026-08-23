@@ -5,6 +5,28 @@
   font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
 }
 
+.localNotice {
+  width: min(960px, calc(100% - 40px));
+  margin: 24px auto 0;
+  padding: 14px 16px;
+  border: 1px solid #e6d5a8;
+  border-radius: 10px;
+  background: #fff9eb;
+  color: #6f5320;
+}
+
+.localNotice b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.localNotice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .hero {
   padding: clamp(58px, 7vw, 92px) max(clamp(24px, 7vw, 112px), env(safe-area-inset-right, 0px));
   padding-left: max(clamp(24px, 7vw, 112px), env(safe-area-inset-left, 0px));

@@ -1,4 +1,4 @@
-export type ProductCategory = "佛牌" | "神尊" | "符印";
+export type ProductCategory = string;
 export type ProductShape = "arch" | "oval" | "round" | "statue";
 export type ProductStatus = "draft" | "active" | "sold_out" | "archived";
 

@@ -13,7 +13,7 @@ import {
   safeArticleLinkHref,
   validateArticleDocument,
 } from "../lib/article-content-contract.ts";
-import sitemap from "../app/sitemap.ts";
+import { buildSitemap } from "../app/sitemap.ts";
 import { infoPageMetadata } from "../app/site-metadata.ts";
 import {
   isPublishedArticleIndexable,
@@ -331,13 +331,15 @@ test("published article snapshots are dated, safe to render, and index-gated", (
   }
 });
 
-test("unfinished demos, contact details, and the duplicate brand page stay out of search and sitemap", async () => {
-  const shortDemos = snapshot.articles.filter((article) =>
+test("published articles are index-ready; contact stays gated; duplicate brand page stays noindex", async () => {
+  assert.ok(snapshot.articles.length > 0, "published snapshot must contain at least one article");
+  const shortArticles = snapshot.articles.filter((article) =>
     articleDocumentTextLength(article.contentJson) < ARTICLE_PUBLISH_REQUIREMENTS.bodyTextLength);
-  assert.equal(shortDemos.length, 3, "the current three short demo articles must remain explicitly protected");
-  for (const article of shortDemos) {
-    assert.equal(article.noindex, true, `${article.slug} must be stored as noindex`);
-    assert.equal(isPublishedArticleIndexable(article), false, `${article.slug} must fail the shared index policy`);
+  assert.equal(shortArticles.length, 0, "published articles must meet the body-length publish gate");
+
+  for (const article of snapshot.articles) {
+    assert.equal(article.noindex, false, `${article.slug} should be indexable after content is complete`);
+    assert.equal(isPublishedArticleIndexable(article), true, `${article.slug} must pass the shared index policy`);
   }
 
   const brandStory = snapshot.pages.find((page) => page.slug === "brand-story");
@@ -345,20 +347,36 @@ test("unfinished demos, contact details, and the duplicate brand page stay out o
   assert.equal(brandStory.noindex, true, "the duplicate brand story must be stored as noindex");
   assert.equal(isPublishedPageIndexable(brandStory), false);
 
+  // Contact depends on public contact channels; shipping/returns/privacy are indexable trust pages.
   assert.equal(isStaticPathIndexable("service/contact/"), false);
-  assert.equal(isStaticPathIndexable("service/shipping/"), false);
-  assert.equal(isStaticPathIndexable("service/returns/"), false);
-  assert.equal(isStaticPathIndexable("service/privacy/"), false);
-  const contactMetadata = infoPageMetadata("聯絡與訂單協助", "尚未設定公開聯絡管道。", "service/contact/");
+  assert.equal(isStaticPathIndexable("service/contact/", { hasPublicContact: true }), true);
+  assert.equal(isStaticPathIndexable("service/shipping/"), true);
+  assert.equal(isStaticPathIndexable("service/returns/"), true);
+  assert.equal(isStaticPathIndexable("service/privacy/"), true);
+
+  const contactMetadata = infoPageMetadata(
+    "聯絡與訂單協助",
+    "尚未設定公開聯絡管道。",
+    "service/contact/",
+    "https://shop.taijuda.tw/",
+  );
   assert.deepEqual(contactMetadata.robots, { index: false, follow: true });
 
-  const sitemapPaths = sitemap().map((entry) => new URL(entry.url).pathname);
+  const shippingMetadata = infoPageMetadata(
+    "配送與付款",
+    "說明配送與付款流程。",
+    "service/shipping/",
+    "https://shop.taijuda.tw/",
+  );
+  assert.deepEqual(shippingMetadata.robots, { index: true, follow: true });
+
+  const sitemapPaths = buildSitemap("https://shop.taijuda.tw/").map((entry) => new URL(entry.url).pathname);
   assert.equal(sitemapPaths.some((path) => path.endsWith("/service/contact/")), false);
-  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/shipping/")), false);
-  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/returns/")), false);
-  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/privacy/")), false);
-  for (const article of shortDemos) {
-    assert.equal(sitemapPaths.some((path) => path.endsWith(`/articles/${article.slug}/`)), false);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/shipping/")), true);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/returns/")), true);
+  assert.equal(sitemapPaths.some((path) => path.endsWith("/service/privacy/")), true);
+  for (const article of snapshot.articles) {
+    assert.equal(sitemapPaths.some((path) => path.endsWith(`/articles/${article.slug}/`)), true);
   }
   assert.equal(sitemapPaths.some((path) => path.endsWith("/pages/brand-story/")), false);
 
@@ -366,8 +384,8 @@ test("unfinished demos, contact details, and the duplicate brand page stay out o
     readFile(new URL("../app/articles/[slug]/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/pages/[slug]/page.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(articleRouteSource, /robots:\s*\{\s*index:\s*isPublishedArticleIndexable\(article\)/);
-  assert.match(pageRouteSource, /robots:\s*\{\s*index:\s*isPublishedPageIndexable\(page\)/);
+  assert.match(articleRouteSource, /robots:\s*\{\s*index:\s*site\.indexable\s*&&\s*isPublishedArticleIndexable\(article\)/);
+  assert.match(pageRouteSource, /robots:\s*\{\s*index:\s*resolvedSite\.indexable\s*&&\s*isPublishedPageIndexable\(page\)/);
 });
 
 test("public product snapshots remain noindex until each item is SEO-ready", () => {

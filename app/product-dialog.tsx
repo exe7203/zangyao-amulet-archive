@@ -11,12 +11,14 @@ export default function ProductDialog({
   product,
   canOrder,
   detailsConfirmed,
+  testingMode = false,
   onClose,
   onAdd,
 }: {
   product: Product | null;
   canOrder: boolean;
   detailsConfirmed: boolean;
+  testingMode?: boolean;
   onClose(): void;
   onAdd(product: Product): void;
 }) {
@@ -36,8 +38,8 @@ export default function ProductDialog({
         <div className="modal-copy">
           <p className="eyebrow eyebrow--dark">商品資料{detailsConfirmed && product.badge ? ` · ${product.badge}` : ""}</p>
           <h2 id="product-modal-title">{product.name}</h2>
-          <p className="modal-price">{detailsConfirmed ? formatPrice(product.price) : "價格確認中"}</p>
-          <p className="modal-description">{detailsConfirmed ? product.description : "商品資料整理中，完成確認後會更新照片、規格與來源說明。"}</p>
+          <p className="modal-price">{detailsConfirmed ? formatPrice(product.price) : testingMode ? `測試價 ${formatPrice(product.price)}` : "價格確認中"}</p>
+          <p className="modal-description">{detailsConfirmed ? product.description : testingMode ? "本機流程測試商品；資料尚未覆核，不代表正式售價或商品資訊。" : "商品資料整理中，完成確認後會更新照片、規格與來源說明。"}</p>
           <dl>
             <div><dt>商品編號</dt><dd>{product.sku}</dd></div>
             {detailsConfirmed && <>
@@ -47,10 +49,10 @@ export default function ProductDialog({
               <div><dt>材質</dt><dd>{product.material}</dd></div>
               <div><dt>尺寸</dt><dd>{product.dimensions}</dd></div>
             </>}
-            <div><dt>庫存狀態</dt><dd>{orderAvailable ? `現貨 ${product.stock} 件` : detailsConfirmed ? "目前不可訂購" : "確認中"}</dd></div>
+            <div><dt>庫存狀態</dt><dd>{orderAvailable ? `${testingMode ? "測試庫存" : "現貨"} ${product.stock} 件` : detailsConfirmed ? "目前不可訂購" : "確認中"}</dd></div>
           </dl>
           <div className="modal-actions">
-            <button className="button button--dark" onClick={() => onAdd(product)} disabled={!orderAvailable}>{orderAvailable ? "加入購物車" : "暫未開放訂購"}</button>
+            <button className="button button--dark" onClick={() => onAdd(product)} disabled={!orderAvailable}>{orderAvailable ? testingMode ? "加入測試購物車" : "加入購物車" : "暫未開放訂購"}</button>
             <Link className="text-link" href={`/products/${product.slug}/`}>查看商品詳情 ↗</Link>
           </div>
           <small className="faith-note">佛牌與相關收藏品具有宗教與文化背景，本店不宣稱或保證特定效果。</small>

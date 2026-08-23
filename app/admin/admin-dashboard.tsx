@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { PUBLIC_SITE_CODE } from "../../shared/site-context";
 import { AdminButton, AdminTopbar } from "./admin-chrome";
 import styles from "./dashboard.module.css";
 
@@ -100,7 +101,7 @@ export default function AdminDashboard() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/admin/system-status?site=taijuda`, {
+      const response = await fetch(`${API_BASE}/api/admin/system-status?site=${encodeURIComponent(PUBLIC_SITE_CODE)}`, {
         headers: { accept: "application/json" },
         cache: "no-store",
       });
@@ -173,6 +174,17 @@ export default function AdminDashboard() {
         </section>
 
         {error && <div className={styles.error} role="alert"><AlertCircle size={17} /><span>{error}</span><button type="button" onClick={() => void load()}>再試一次</button></div>}
+
+        {status && !status.publishing.inSync && (
+          <div className={styles.syncBanner} role="status">
+            <AlertCircle size={17} />
+            <div>
+              <b>後台內容尚未同步到公開快照</b>
+              <p>你在後台做的變更，前台與 GitHub Pages 還看不到。請確認內容無誤後，雙擊「同步並建立泰聚達公開版.cmd」。</p>
+              <small>快照時間：{dateTime(status.publishing.exportedAt)}</small>
+            </div>
+          </div>
+        )}
 
         <section className={styles.cards} aria-label="營運模組">
           {loading && !status && [0, 1, 2, 3].map((key) => <div className={styles.cardSkeleton} key={key} />)}

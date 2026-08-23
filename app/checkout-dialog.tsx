@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { publishedBrandName } from "../shared/published-site";
+import { publishedBrandName, publishedSiteAppearance } from "../shared/published-site";
 import type { DeliveryMethod, DeviceCheckoutProfile } from "../shared/member-contract";
+import { PUBLIC_SITE_CODE } from "../shared/site-context";
 import type { CartLine } from "./cart";
 import { formatPrice } from "./data";
 
@@ -16,10 +17,26 @@ export type CheckoutResult = {
   reservedUntil?: string | null;
 };
 
+export type CheckoutIdempotencyAttempt = {
+  fingerprint: string;
+  key: string;
+};
+
+export function resolveCheckoutIdempotencyAttempt(
+  current: CheckoutIdempotencyAttempt | null,
+  fingerprint: string,
+  createKey: () => string = () => crypto.randomUUID(),
+): CheckoutIdempotencyAttempt {
+  return current?.fingerprint === fingerprint
+    ? current
+    : { fingerprint, key: createKey() };
+}
+
 type CheckoutDialogProps = {
   lines: CartLine[];
   open: boolean;
   subtotal: number;
+  testingMode?: boolean;
   initialProfile?: DeviceCheckoutProfile | null;
   onClose(): void;
   onCompleted(order: CheckoutResult, profile: DeviceCheckoutProfile, rememberProfile: boolean): void;
@@ -35,6 +52,7 @@ export default function CheckoutDialog({
   lines,
   open,
   subtotal,
+  testingMode = false,
   initialProfile,
   onClose,
   onCompleted,
@@ -54,7 +72,7 @@ export default function CheckoutDialog({
   const [rememberProfile, setRememberProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const idempotencyKeyRef = useRef("");
+  const idempotencyAttemptRef = useRef<CheckoutIdempotencyAttempt | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -137,27 +155,32 @@ export default function CheckoutDialog({
 
     setSubmitting(true);
     try {
-      idempotencyKeyRef.current ||= crypto.randomUUID();
+      const requestPayload = {
+        siteCode: PUBLIC_SITE_CODE,
+        customer: {
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          lineId: lineId.trim(),
+        },
+        deliveryMethod,
+        address: address.trim(),
+        note: note.trim(),
+        website,
+        items: lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+        })),
+      };
+      const fingerprint = JSON.stringify(requestPayload);
+      const attempt = resolveCheckoutIdempotencyAttempt(idempotencyAttemptRef.current, fingerprint);
+      idempotencyAttemptRef.current = attempt;
       const response = await fetch("/api/store/orders", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
-          siteCode: "taijuda",
-          idempotencyKey: idempotencyKeyRef.current,
-          customer: {
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email.trim(),
-            lineId: lineId.trim(),
-          },
-          deliveryMethod,
-          address: address.trim(),
-          note: note.trim(),
-          website,
-          items: lines.map((line) => ({
-            productId: line.productId,
-            quantity: line.quantity,
-          })),
+          ...requestPayload,
+          idempotencyKey: attempt.key,
         }),
       });
       const payload = await response.json().catch(() => ({})) as {
@@ -170,7 +193,7 @@ export default function CheckoutDialog({
         }
         throw new Error(payload.error || "訂單送出失敗，請稍後再試。");
       }
-      idempotencyKeyRef.current = "";
+      idempotencyAttemptRef.current = null;
       onCompleted(payload.order, profile, rememberProfile);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "訂單送出失敗，請稍後再試。");
@@ -192,7 +215,9 @@ export default function CheckoutDialog({
         </header>
 
         <p className="checkout-intro" id={descriptionId}>
-          送出後，{publishedBrandName}客服將確認商品、庫存、運費與付款方式；網站目前不直接收款。
+          {testingMode
+            ? "本機測試模式：請使用虛構資料，送出後只會建立這台電腦的測試訂單與庫存紀錄。"
+            : <>送出後，{publishedBrandName}客服將確認商品、庫存、運費與付款方式；{publishedSiteAppearance.settings.paymentPolicySummary}</>}
         </p>
 
         <form onSubmit={submitOrder}>
@@ -215,7 +240,7 @@ export default function CheckoutDialog({
               </div>
             ))}
             <div className="checkout-total"><span>商品小計</span><b>{formatPrice(subtotal)}</b></div>
-            <small>運費與最終付款金額由店家確認後通知；送出不代表已完成付款。</small>
+            <small>{publishedSiteAppearance.settings.shippingPolicySummary} 送出不代表已完成付款。</small>
           </section>
 
           <div className="checkout-remember">
@@ -228,7 +253,7 @@ export default function CheckoutDialog({
 
           {error && <p className="checkout-error" role="alert">{error}</p>}
           <button className="button button--gold checkout-submit" type="submit" disabled={submitting}>
-            {submitting ? "正在送出訂單…" : "送出訂單 →"}
+            {submitting ? "正在送出訂單…" : testingMode ? "送出測試訂單 →" : "送出訂單 →"}
           </button>
           <small className="checkout-consent">送出即表示同意{publishedBrandName}依<a href="/service/privacy/" target="_blank" rel="noreferrer">隱私權政策</a>，僅為訂單聯繫、配送與售後處理使用上述資料。</small>
         </form>

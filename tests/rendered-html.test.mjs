@@ -10,6 +10,7 @@ import {
   serializeCartItems,
 } from "../app/cart.ts";
 import { serializeJsonLd } from "../shared/json-ld.ts";
+import { resolveSiteUrl } from "../shared/site-url.ts";
 
 const publishedSnapshot = JSON.parse(await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -36,9 +37,15 @@ test("server-renders the storefront and SEO content", async () => {
   assert.match(html, /<html[^>]*lang="zh-Hant-TW"/i);
   assert.match(html, /泰聚達/);
   assert.doesNotMatch(html, /藏曜選物|ZANGYAO|ZAA-2566/);
-  assert.match(html, /清楚的商品資訊/);
-  assert.match(html, /application\/ld\+json/);
-  assert.match(html, /最新商品/);
+  assert.match(html, /看懂來源/);
+  assert.match(html, /活動聚會/);
+  if (resolveSiteUrl().publicUrl) {
+    assert.match(html, /application\/ld\+json/);
+  } else {
+    assert.doesNotMatch(html, /rel="canonical"|property="og:url"|127\.0\.0\.1|localhost/i);
+    assert.match(html, /<meta[^>]+name="robots"[^>]+content="noindex, nofollow"/i);
+  }
+  assert.match(html, /最新商品|近期典藏/);
   assert.ok(publishedSnapshot.articles.length > 0, "the public snapshot has no articles");
   assert.ok(html.includes(publishedSnapshot.articles[0].title));
   assert.ok(html.includes(`/articles/${publishedSnapshot.articles[0].slug}/`));

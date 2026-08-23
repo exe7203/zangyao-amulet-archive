@@ -1,5 +1,5 @@
-import buildRobots from "../app/robots";
-import buildSitemap from "../app/sitemap";
+import { buildRobots } from "../app/robots";
+import { buildSitemap } from "../app/sitemap";
 
 function xmlEscape(value: unknown) {
   return String(value)
@@ -14,8 +14,8 @@ function values(value: string | string[] | undefined) {
   return value === undefined ? [] : Array.isArray(value) ? value : [value];
 }
 
-function robotsText() {
-  const robots = buildRobots();
+function robotsText(siteUrlInput?: string | URL) {
+  const robots = buildRobots(siteUrlInput);
   const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
   const lines: string[] = [];
 
@@ -31,8 +31,8 @@ function robotsText() {
   return `${lines.join("\n").trim()}\n`;
 }
 
-function sitemapXml() {
-  const entries = buildSitemap().map((entry) => {
+function sitemapXml(siteUrlInput?: string | URL) {
+  const entries = buildSitemap(siteUrlInput).map((entry) => {
     const fields = [`<loc>${xmlEscape(entry.url)}</loc>`];
     if (entry.lastModified) {
       const lastModified = entry.lastModified instanceof Date
@@ -47,14 +47,14 @@ function sitemapXml() {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join("\n")}\n</urlset>\n`;
 }
 
-export function handleSeoMetadata(request: Request) {
+export function handleSeoMetadata(request: Request, configuredSiteUrl?: string) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
   if (url.pathname === "/robots.txt/" || url.pathname === "/sitemap.xml/") {
-    return Response.redirect(new URL(url.pathname.slice(0, -1), url), 308);
+    return Response.redirect(new URL(url.pathname.slice(0, -1), url).toString(), 308);
   }
   if (url.pathname === "/robots.txt") {
-    return new Response(request.method === "HEAD" ? null : robotsText(), {
+    return new Response(request.method === "HEAD" ? null : robotsText(configuredSiteUrl), {
       headers: {
         "cache-control": "public, max-age=300",
         "content-type": "text/plain; charset=utf-8",
@@ -63,7 +63,7 @@ export function handleSeoMetadata(request: Request) {
     });
   }
   if (url.pathname === "/sitemap.xml") {
-    return new Response(request.method === "HEAD" ? null : sitemapXml(), {
+    return new Response(request.method === "HEAD" ? null : sitemapXml(configuredSiteUrl), {
       headers: {
         "cache-control": "public, max-age=300",
         "content-type": "application/xml; charset=utf-8",

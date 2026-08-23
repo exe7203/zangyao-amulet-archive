@@ -22,7 +22,7 @@
 正式會員上線前仍須完成：
 
 - 伺服器端登入、Session 與 Email OTP 或 LINE Login。
-- 會員資料表及訂單的 `member_id` 關聯。
+- 將已預建的會員、身分、Session、地址與訂單 `member_id` 資料結構串接至正式 API。
 - 每個帳號獨立的個人資料、購物車與訂單查詢權限。
 - Rate Limiting、機器人防護、備份與個資保存規則。
 
@@ -48,6 +48,22 @@
     npm run local:stop
 
 本機資料位於專案的 `.local-data`，備份請使用「備份泰聚達本機資料.cmd」，避免複製到寫入中的資料檔。
+
+## 本機備份驗證與還原
+
+新建立的備份採 `taijuda-local-data-backup-v2` 格式。每個 `backup-manifest.json` 都記錄完整相對路徑、檔案大小與 SHA-256；建立完成後會立即重讀驗證。備份與還原都拒絕符號連結、接合點、特殊檔案、路徑穿越與模糊路徑。
+
+只讀驗證單一備份：
+
+    npm run local:backup:verify -- "C:\確切路徑\taijuda-data-YYYYMMDD-HHMMSS"
+
+還原前必須先執行 `npm run local:stop`，再明確指定單一 v2 備份：
+
+    npm run local:restore -- "C:\確切路徑\taijuda-data-YYYYMMDD-HHMMSS"
+
+還原程式固定只寫入本專案 `.local-data`，會先把原有資料建立成 `.local-backups/taijuda-pre-restore-*` 可驗證備份，再以同磁碟暫存與重新命名切換資料；發生錯誤時會嘗試回復原資料。還原後不會自動啟動或宣告系統健康，必須另行執行 `npm run local:start`，讓 Worker 完成 migration 與 health 驗證。
+
+Windows 使用者也可雙擊「驗證泰聚達本機備份.cmd」或「還原泰聚達本機資料.cmd」。兩者都要求貼上或拖入確切資料夾，不會默默選擇最新備份。舊版 v1 清單可做基本格式與檔案安全檢查，但因沒有逐檔 SHA-256，禁止直接還原；請先從仍可使用的舊資料啟動，再用目前版本重新建立 v2 備份。
 
 ## GitHub Pages 公開版
 

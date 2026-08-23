@@ -3,12 +3,19 @@ import { after, before, test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { createStarterPageData } from "../app/site-builder/types.ts";
-import { validatePageData } from "../app/site-builder/validation.ts";
+import {
+  evaluatePageSeoPublishReadiness,
+  PAGE_SEO_PUBLISH_REQUIREMENTS,
+  validatePageData,
+} from "../app/site-builder/validation.ts";
 import {
   colorContrastRatio,
   DEFAULT_SITE_APPEARANCE,
   evaluateSiteThemeContrast,
   MIN_SITE_THEME_CONTRAST,
+  normalizeSiteAppearance,
+  safeInternalNavigationHref,
+  validateSiteSettingsStructure,
 } from "../shared/site-settings.ts";
 import { cleanUrl } from "../worker/api-utils.ts";
 import { handleSiteApi } from "../worker/site-api.ts";
@@ -39,9 +46,11 @@ before(async () => {
     "CREATE TABLE schema_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE sites (id TEXT PRIMARY KEY NOT NULL, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, locale TEXT NOT NULL DEFAULT 'zh-Hant-TW', currency TEXT NOT NULL DEFAULT 'TWD', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE site_settings (site_id TEXT PRIMARY KEY NOT NULL, settings_json TEXT NOT NULL DEFAULT '{}', theme_json TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL DEFAULT 'system', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE site_settings_revisions (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, settings_json TEXT NOT NULL, theme_json TEXT NOT NULL, version INTEGER NOT NULL, saved_by TEXT NOT NULL DEFAULT 'system', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE site_pages (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, data_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', seo_title TEXT NOT NULL DEFAULT '', seo_description TEXT NOT NULL DEFAULT '', canonical_url TEXT NOT NULL DEFAULT '', og_image_url TEXT NOT NULL DEFAULT '', noindex INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, published_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE site_page_revisions (id TEXT PRIMARY KEY NOT NULL, page_id TEXT NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, data_json TEXT NOT NULL, status TEXT NOT NULL, seo_title TEXT NOT NULL DEFAULT '', seo_description TEXT NOT NULL DEFAULT '', canonical_url TEXT NOT NULL DEFAULT '', og_image_url TEXT NOT NULL DEFAULT '', noindex INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL, saved_by TEXT NOT NULL DEFAULT 'system', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE UNIQUE INDEX site_pages_site_slug_unique ON site_pages (site_id, slug)",
+    "CREATE UNIQUE INDEX site_settings_revisions_site_version_unique ON site_settings_revisions (site_id, version)",
     "CREATE UNIQUE INDEX site_page_revisions_page_version_unique ON site_page_revisions (page_id, version)",
   ]) await db.prepare(statement).run();
   await db.batch([
@@ -57,6 +66,7 @@ test("site identity settings are versioned, sanitized, and available to the publ
   );
   assert.equal(initialResponse?.status, 200);
   const initial = await initialResponse.json();
+  assert.equal(initial.siteSettings.version, 1);
 
   const saveResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
     siteCode: "taijuda",
@@ -75,11 +85,26 @@ test("site identity settings are versioned, sanitized, and available to the publ
       homeCollectionsTitle: "依形制認識藏品",
       homeCollectionsIntro: "先從外型與文化脈絡開始，不用急著替信仰貼標籤。",
       homeArrivalsTitle: "近期入藏",
+      primaryNavigation: [
+        { label: "首頁", href: "/" },
+        { label: "商品", href: "/#products" },
+        { label: "文章", href: "/articles/" },
+      ],
+      homeSectionOrder: [
+        { id: "hero", visible: true },
+        { id: "products", visible: true },
+        { id: "journal", visible: true },
+        { id: "collections", visible: true },
+        { id: "archive", visible: true },
+        { id: "themes", visible: false },
+      ],
       secretInternalNote: "must-not-be-stored",
     },
     theme: { accent: "#b89048", surface: "#faf7ef", ink: "javascript:alert(1)" },
   }), { DB: db });
   assert.equal(saveResponse?.status, 200);
+  const savedV2 = await saveResponse.json();
+  assert.equal(savedV2.siteSettings.version, 2);
 
   const publicResponse = await handleSiteApi(
     jsonRequest("/api/content/site-settings?site=taijuda"),
@@ -90,10 +115,154 @@ test("site identity settings are versioned, sanitized, and available to the publ
   assert.equal(payload.siteSettings.settings.announcement, "來源清楚，安心收藏");
   assert.equal(payload.siteSettings.settings.homeHeroTitlePrimary, "先讀懂來源，");
   assert.equal(payload.siteSettings.settings.homeArrivalsTitle, "近期入藏");
+  assert.deepEqual(payload.siteSettings.settings.primaryNavigation, [
+    { label: "首頁", href: "/" },
+    { label: "商品", href: "/#products" },
+    { label: "文章", href: "/articles/" },
+  ]);
+  assert.deepEqual(payload.siteSettings.settings.homeSectionOrder.map((section) => [section.id, section.visible]), [
+    ["hero", true],
+    ["products", true],
+    ["journal", true],
+    ["collections", true],
+    ["archive", true],
+    ["themes", false],
+  ]);
   assert.equal(payload.siteSettings.theme.accent, "#b89048");
-  assert.equal(payload.siteSettings.theme.ink, "#171713");
+  assert.equal(payload.siteSettings.theme.ink, "#12100e");
   assert.equal(payload.siteSettings.settings.secretInternalNote, undefined);
   assert.equal(payload.siteSettings.updatedBy, undefined);
+
+  const staleSaveResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: 1,
+    settings: savedV2.siteSettings.settings,
+    theme: savedV2.siteSettings.theme,
+  }), { DB: db });
+  assert.equal(staleSaveResponse?.status, 409);
+
+  const saveV3Response = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: 2,
+    settings: { ...savedV2.siteSettings.settings, announcement: "第三版公告" },
+    theme: savedV2.siteSettings.theme,
+  }), { DB: db });
+  assert.equal(saveV3Response?.status, 200);
+  const savedV3 = await saveV3Response.json();
+  assert.equal(savedV3.siteSettings.version, 3);
+
+  const historyResponse = await handleSiteApi(
+    jsonRequest("/api/admin/site-settings/revisions?site=taijuda&limit=2&offset=0"),
+    { DB: db },
+  );
+  assert.equal(historyResponse?.status, 200);
+  const history = await historyResponse.json();
+  assert.deepEqual(history.revisions.map((revision) => revision.version), [3, 2]);
+  assert.deepEqual(history.pagination, { limit: 2, offset: 0, total: 3, hasMore: true });
+  assert.equal(history.revisions[1].settings.announcement, "來源清楚，安心收藏");
+  assert.equal(history.revisions[1].settings.primaryNavigation[1].href, "/#products");
+  assert.equal(history.revisions[1].settings.homeSectionOrder[2].id, "journal");
+
+  const olderHistoryResponse = await handleSiteApi(
+    jsonRequest("/api/admin/site-settings/revisions?site=taijuda&limit=2&offset=2"),
+    { DB: db },
+  );
+  const olderHistory = await olderHistoryResponse.json();
+  assert.equal(olderHistory.revisions[0].version, 1);
+  assert.equal(olderHistory.pagination.hasMore, false);
+
+  const restoreResponse = await handleSiteApi(jsonRequest(
+    "/api/admin/site-settings/revisions",
+    "POST",
+    {
+      siteCode: "taijuda",
+      revisionId: olderHistory.revisions[0].revisionId,
+      expectedVersion: 3,
+    },
+  ), { DB: db });
+  assert.equal(restoreResponse?.status, 200);
+  const restored = await restoreResponse.json();
+  assert.equal(restored.siteSettings.version, 4);
+  assert.deepEqual(restored.siteSettings.settings.primaryNavigation, DEFAULT_SITE_APPEARANCE.settings.primaryNavigation);
+  assert.deepEqual(restored.siteSettings.settings.homeSectionOrder, DEFAULT_SITE_APPEARANCE.settings.homeSectionOrder);
+
+  const staleRestoreResponse = await handleSiteApi(jsonRequest(
+    "/api/admin/site-settings/revisions",
+    "POST",
+    {
+      siteCode: "taijuda",
+      revisionId: olderHistory.revisions[0].revisionId,
+      expectedVersion: 3,
+    },
+  ), { DB: db });
+  assert.equal(staleRestoreResponse?.status, 409);
+
+  const immutableRows = await db.prepare(`SELECT version, saved_by, settings_json
+    FROM site_settings_revisions WHERE site_id = 'site_taijuda' ORDER BY version`).all();
+  assert.deepEqual(immutableRows.results.map((row) => row.version), [1, 2, 3, 4]);
+  assert.equal(JSON.parse(immutableRows.results[1].settings_json).announcement, "來源清楚，安心收藏");
+  assert.equal(JSON.parse(immutableRows.results[2].settings_json).announcement, "第三版公告");
+  assert.equal(immutableRows.results[3].saved_by, "local-preview");
+});
+
+test("remote site-settings history requires an authenticated administrator", async () => {
+  const response = await handleSiteApi(
+    new Request("https://admin.example/api/admin/site-settings/revisions?site=taijuda", {
+      headers: { accept: "application/json" },
+    }),
+    { DB: db },
+  );
+  assert.equal(response?.status, 401);
+});
+
+test("navigation and homepage layout normalize old JSON but reject unsafe explicit structures", async () => {
+  const legacy = normalizeSiteAppearance({ brandName: "舊站台" }, {});
+  assert.deepEqual(legacy.settings.primaryNavigation, DEFAULT_SITE_APPEARANCE.settings.primaryNavigation);
+  assert.deepEqual(legacy.settings.homeSectionOrder, DEFAULT_SITE_APPEARANCE.settings.homeSectionOrder);
+  assert.equal(safeInternalNavigationHref("/#products"), "/#products");
+  assert.equal(safeInternalNavigationHref("#journal"), "#journal");
+  for (const unsafe of ["//evil.example/path", "https://evil.example/", "https://user:secret@example.com/", "javascript:alert(1)", "/\\evil.example/"]) {
+    assert.equal(safeInternalNavigationHref(unsafe), null, `accepted unsafe navigation href: ${unsafe}`);
+  }
+
+  const currentResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings?site=taijuda"), { DB: db });
+  const current = await currentResponse.json();
+  const dangerousNavigation = {
+    ...current.siteSettings.settings,
+    primaryNavigation: [
+      { label: "首頁", href: "/" },
+      { label: "商品", href: "/#products" },
+      { label: "外部", href: "https://user:secret@example.com/" },
+    ],
+  };
+  assert.match(validateSiteSettingsStructure(dangerousNavigation), /主要導覽/);
+  const rejectedNavigation = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: current.siteSettings.version,
+    settings: dangerousNavigation,
+    theme: current.siteSettings.theme,
+  }), { DB: db });
+  assert.equal(rejectedNavigation?.status, 400);
+  assert.match((await rejectedNavigation.json()).error, /主要導覽/);
+
+  const hiddenRequiredSection = {
+    ...current.siteSettings.settings,
+    homeSectionOrder: current.siteSettings.settings.homeSectionOrder.map((section) => section.id === "hero"
+      ? { ...section, visible: false }
+      : section),
+  };
+  assert.match(validateSiteSettingsStructure(hiddenRequiredSection), /首頁區塊/);
+  const rejectedLayout = await handleSiteApi(jsonRequest("/api/admin/site-settings", "POST", {
+    siteCode: "taijuda",
+    version: current.siteSettings.version,
+    settings: hiddenRequiredSection,
+    theme: current.siteSettings.theme,
+  }), { DB: db });
+  assert.equal(rejectedLayout?.status, 400);
+
+  const afterResponse = await handleSiteApi(jsonRequest("/api/admin/site-settings?site=taijuda"), { DB: db });
+  const after = await afterResponse.json();
+  assert.equal(after.siteSettings.version, current.siteSettings.version);
 });
 
 test("server URL normalization rejects credentials and overlong values without truncation", () => {
@@ -214,6 +383,32 @@ test("Puck page validation rejects unsafe or ambiguous block documents", () => {
   assert.equal(validatePageData(arbitraryHtml).ok, false);
 });
 
+test("Puck page publishing uses the same minimum SEO lengths as article publishing", () => {
+  assert.equal(PAGE_SEO_PUBLISH_REQUIREMENTS.seoTitleLength, 8);
+  assert.equal(PAGE_SEO_PUBLISH_REQUIREMENTS.seoDescriptionLength, 50);
+  assert.equal(evaluatePageSeoPublishReadiness({
+    seoTitle: "字".repeat(7),
+    seoDescription: "字".repeat(50),
+  }).ok, false);
+  assert.equal(evaluatePageSeoPublishReadiness({
+    seoTitle: "字".repeat(8),
+    seoDescription: "字".repeat(49),
+  }).ok, false);
+  assert.equal(evaluatePageSeoPublishReadiness({
+    seoTitle: "字".repeat(8),
+    seoDescription: "字".repeat(50),
+  }).ok, true);
+});
+
+test("Puck starter anchor resolves once without duplicating ids on text blocks", async () => {
+  const blockSource = await readFile(new URL("../app/site-builder/blocks.tsx", import.meta.url), "utf8");
+  const heroSource = blockSource.slice(blockSource.indexOf("export function HeroBlock"), blockSource.indexOf("export function TextBlock"));
+  const textSource = blockSource.slice(blockSource.indexOf("export function TextBlock"), blockSource.indexOf("export function ImageFeatureBlock"));
+  assert.match(heroSource, /<span id="content" aria-hidden="true" \/>/);
+  assert.doesNotMatch(textSource, /id="content"/);
+  assert.equal(createStarterPageData().content[0].props.primaryHref, "#content");
+});
+
 test("site API rejects credentialed links and oversized or non-image Puck URLs", async () => {
   const cases = [];
   const credentialLink = createStarterPageData();
@@ -262,19 +457,35 @@ test("Puck product showcase renders stored product artwork through the safe imag
   assert.doesNotMatch(imageSource, /javascript:|data:image/);
 });
 
-test("stable homepage copy and page social image controls are wired to published settings", async () => {
-  const [storefrontSource, editorSource, accountStyles] = await Promise.all([
+test("stable homepage copy, navigation, layout, and page social image controls are wired to published settings", async () => {
+  const [storefrontSource, editorSource, headerSource, footerSource, accountStyles] = await Promise.all([
     readFile(new URL("../app/storefront.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/site/site-editor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public-header.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public-footer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/account/account.module.css", import.meta.url), "utf8"),
   ]);
   assert.match(storefrontSource, /appearance\.settings\.homeHeroTitlePrimary/);
   assert.match(storefrontSource, /appearance\.settings\.homeCollectionsIntro/);
   assert.match(storefrontSource, /appearance\.settings\.homeArrivalsTitle/);
+  assert.match(storefrontSource, /appearance\.settings\.homeSectionOrder\.map/);
+  assert.match(storefrontSource, /homeSectionProps\("hero"\)/);
+  assert.match(storefrontSource, /homeSectionProps\("products"\)/);
+  assert.match(storefrontSource, /primaryNavigation=\{appearance\.settings\.primaryNavigation\}/);
   assert.match(editorSource, /updateIdentitySetting\("homeHeroTitlePrimary"/);
   assert.match(editorSource, /updateIdentitySetting\("homeCollectionsIntro"/);
+  assert.match(editorSource, /updateIdentitySetting\("primaryNavigation"/);
+  assert.match(editorSource, /updateIdentitySetting\("homeSectionOrder"/);
+  assert.match(editorSource, /主視覺與最新商品為商店必備/);
+  assert.match(headerSource, /primaryLinks\.map/);
+  assert.match(headerSource, /safeInternalNavigationHref/);
+  assert.match(footerSource, /mainLinks\.map/);
+  assert.match(footerSource, /\/service\/privacy\//);
   assert.match(editorSource, /<SafePublicImage src=\{draft\.ogImageUrl\}/);
   assert.match(editorSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
+  assert.match(editorSource, /api\/admin\/site-settings\/revisions/);
+  assert.match(editorSource, /expectedVersion: siteSettingsVersion/);
+  assert.match(editorSource, /siteSettingsDirty && !window\.confirm/);
   assert.match(accountStyles, /var\(--site-surface\)/);
   assert.match(accountStyles, /var\(--site-ink\)/);
 });
@@ -366,4 +577,111 @@ test("site editor publishes a versioned page and protects stale writes", async (
     { version: 2, status: "published", saved_by: "local-preview" },
     { version: 3, status: "draft", saved_by: "local-preview" },
   ]);
+
+  const staleArchiveResponse = await handleSiteApi(
+    jsonRequest(`/api/admin/pages/${encodeURIComponent(updated.page.id)}?site=taijuda`, "DELETE", {
+      siteCode: "taijuda",
+      expectedVersion: 2,
+    }),
+    { DB: db },
+  );
+  assert.equal(staleArchiveResponse?.status, 409);
+
+  const archiveResponse = await handleSiteApi(
+    jsonRequest(`/api/admin/pages/${encodeURIComponent(updated.page.id)}?site=taijuda`, "DELETE", {
+      siteCode: "taijuda",
+      expectedVersion: 3,
+    }),
+    { DB: db },
+  );
+  assert.equal(archiveResponse?.status, 200);
+  assert.deepEqual(await archiveResponse.json(), { ok: true, version: 4 });
+
+  const archivedPage = await db.prepare(
+    "SELECT status, version FROM site_pages WHERE id = ?",
+  ).bind(updated.page.id).first();
+  assert.deepEqual(archivedPage, { status: "archived", version: 4 });
+  const archivedRevisions = await db.prepare(
+    "SELECT version, status FROM site_page_revisions WHERE page_id = ? ORDER BY version",
+  ).bind(updated.page.id).all();
+  assert.deepEqual(archivedRevisions.results, [
+    { version: 1, status: "published" },
+    { version: 2, status: "published" },
+    { version: 3, status: "draft" },
+    { version: 4, status: "archived" },
+  ]);
+});
+
+test("admin page list searches, filters, paginates, and escapes LIKE wildcards", async () => {
+  const data = JSON.stringify(createStarterPageData());
+  const rows = [
+    ["page-list-a", "page-list-a", "頁面稽核 PAGE%_TOKEN", "draft", "2026-08-12T09:05:00.000Z"],
+    ["page-list-b", "page-list-b", "頁面稽核 第二頁", "draft", "2026-08-12T09:04:00.000Z"],
+    ["page-list-c", "page-list-c", "頁面稽核 第三頁", "draft", "2026-08-12T09:03:00.000Z"],
+    ["page-list-d", "page-list-d", "頁面稽核 已發布", "published", "2026-08-12T09:02:00.000Z"],
+    ["page-list-e", "page-list-e", "頁面稽核 已封存", "archived", "2026-08-12T09:01:00.000Z"],
+  ];
+  await db.batch(rows.map(([id, slug, title, status, updatedAt]) => db.prepare(`INSERT INTO site_pages (
+    id, site_id, slug, title, data_json, status, seo_title, seo_description, updated_at
+  ) VALUES (?, 'site_taijuda', ?, ?, ?, ?, '頁面清單稽核標題', '這是頁面清單分頁測試使用的說明文字，用來確認後台搜尋與狀態篩選不會遺漏任何必要欄位。', ?)`)
+    .bind(id, slug, title, data, status, updatedAt)));
+
+  const filteredResponse = await handleSiteApi(
+    jsonRequest("/api/admin/pages?site=taijuda&q=%E9%A0%81%E9%9D%A2%E7%A8%BD%E6%A0%B8&status=draft&page=1&limit=2"),
+    { DB: db },
+  );
+  assert.equal(filteredResponse?.status, 200);
+  const filtered = await filteredResponse.json();
+  assert.equal(filtered.site.code, "taijuda");
+  assert.equal(filtered.pages.length, 2);
+  assert.ok(filtered.pages.every((page) => page.status === "draft"));
+  assert.deepEqual(filtered.pagination, {
+    page: 1,
+    limit: 2,
+    maxLimit: 100,
+    total: 3,
+    totalPages: 2,
+    returned: 2,
+  });
+
+  const secondPageResponse = await handleSiteApi(
+    jsonRequest("/api/admin/pages?site=taijuda&q=%E9%A0%81%E9%9D%A2%E7%A8%BD%E6%A0%B8&status=draft&page=2&limit=2"),
+    { DB: db },
+  );
+  const secondPage = await secondPageResponse.json();
+  assert.equal(secondPage.pages.length, 1);
+  assert.equal(secondPage.pagination.returned, 1);
+
+  const outOfRangeResponse = await handleSiteApi(
+    jsonRequest("/api/admin/pages?site=taijuda&q=%E9%A0%81%E9%9D%A2%E7%A8%BD%E6%A0%B8&status=draft&page=99&limit=2"),
+    { DB: db },
+  );
+  const outOfRange = await outOfRangeResponse.json();
+  assert.deepEqual(outOfRange.pages, []);
+  assert.equal(outOfRange.pagination.page, 99);
+  assert.equal(outOfRange.pagination.total, 3);
+  assert.equal(outOfRange.pagination.returned, 0);
+
+  const literalResponse = await handleSiteApi(
+    jsonRequest(`/api/admin/pages?site=taijuda&q=${encodeURIComponent("PAGE%_TOKEN")}`),
+    { DB: db },
+  );
+  const literal = await literalResponse.json();
+  assert.equal(literal.pagination.limit, 40);
+  assert.equal(literal.pagination.total, 1);
+  assert.equal(literal.pages[0].id, "page-list-a");
+
+  const cappedResponse = await handleSiteApi(
+    jsonRequest("/api/admin/pages?site=taijuda&q=%E9%A0%81%E9%9D%A2%E7%A8%BD%E6%A0%B8&limit=999"),
+    { DB: db },
+  );
+  const capped = await cappedResponse.json();
+  assert.equal(capped.pagination.limit, 100);
+  assert.equal(capped.pagination.returned, 5);
+
+  const invalidStatusResponse = await handleSiteApi(
+    jsonRequest("/api/admin/pages?site=taijuda&status=unknown"),
+    { DB: db },
+  );
+  assert.equal(invalidStatusResponse?.status, 400);
 });

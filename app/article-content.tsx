@@ -2,8 +2,12 @@ import { Fragment, type ReactNode } from "react";
 import {
   ARTICLE_MAX_DOCUMENT_DEPTH,
   articleHrefForPublicSite,
+  safeArticleImageAttributes,
+  validateArticleDocument,
+  validateArticleTableNode,
 } from "../lib/article-content-contract";
 import { extractTiptapText, isRecord, type TiptapNode } from "./article-data";
+import { SafePublicImage } from "./product-artwork";
 
 export { safeArticleLinkHref } from "../lib/article-content-contract";
 
@@ -63,6 +67,46 @@ export function renderTiptapNode(value: unknown, path: string, depth = 0): React
   }
   if (value.type === "text") return renderTextNode(value, path);
 
+  if (value.type === "image") {
+    const image = safeArticleImageAttributes(value.attrs);
+    if (!image) return null;
+    return (
+      <figure key={path} data-article-image="true">
+        <SafePublicImage
+          src={image.src}
+          alt={image.alt}
+          fallback={<span role="img" aria-label={image.alt} data-article-image-fallback="true">圖片暫時無法顯示</span>}
+        />
+        {image.caption && <figcaption>{image.caption}</figcaption>}
+      </figure>
+    );
+  }
+
+  if (value.type === "table") {
+    if (!validateArticleTableNode(value) || !Array.isArray(value.content)) return null;
+    const rows = value.content;
+    const firstRow = rows[0];
+    const hasHeaderRow = isRecord(firstRow) && Array.isArray(firstRow.content) &&
+      firstRow.content.length > 0 && firstRow.content.every((cell) => isRecord(cell) && cell.type === "tableHeader");
+    const renderRows = (items: unknown[], offset: number) => items.map((row, index) => (
+      renderTiptapNode(row, `${path}-row-${index + offset}`, depth + 1)
+    ));
+    return (
+      <div
+        key={path}
+        data-article-table-scroll="true"
+        role="region"
+        aria-label="文章資料表，可左右捲動查看完整內容"
+        tabIndex={0}
+      >
+        <table>
+          {hasHeaderRow && <thead>{renderRows(rows.slice(0, 1), 0)}</thead>}
+          <tbody>{renderRows(hasHeaderRow ? rows.slice(1) : rows, hasHeaderRow ? 1 : 0)}</tbody>
+        </table>
+      </div>
+    );
+  }
+
   const children = Array.isArray(value.content)
     ? value.content
       .map((child, index) => renderTiptapNode(child, `${path}-${index}`, depth + 1))
@@ -96,6 +140,12 @@ export function renderTiptapNode(value: unknown, path: string, depth = 0): React
       return <hr key={path} />;
     case "codeBlock":
       return <pre key={path}><code>{extractTiptapText(value)}</code></pre>;
+    case "tableRow":
+      return <tr key={path}>{children}</tr>;
+    case "tableHeader":
+      return <th key={path} scope="col">{children}</th>;
+    case "tableCell":
+      return <td key={path}>{children}</td>;
     default:
       // Unknown Tiptap extensions are intentionally not rendered. Text is always
       // emitted by React rather than inserted as HTML, so editor JSON cannot run code.
@@ -110,5 +160,5 @@ export default function ArticleContent({
   content: TiptapNode;
   className?: string;
 }) {
-  return <div className={className}>{renderTiptapNode(content, "article-content")}</div>;
+  return <div className={className}>{validateArticleDocument(content) ? renderTiptapNode(content, "article-content") : null}</div>;
 }

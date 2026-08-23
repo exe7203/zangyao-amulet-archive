@@ -1,9 +1,12 @@
 "use client";
 
 import TiptapLink from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
+import { TableKit } from "@tiptap/extension-table";
 import type { JSONContent } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import type { NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   Archive,
@@ -18,10 +21,13 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { SafePublicImage } from "../product-artwork";
+import { PUBLIC_SITE_CODE } from "../../shared/site-context";
 import {
   ARTICLE_PUBLISH_ERROR_MESSAGE,
   ARTICLE_PUBLISH_REQUIREMENTS,
   evaluateArticlePublishReadiness,
+  safeArticleImageAttributes,
+  validateArticleDocument,
 } from "../../lib/article-content-contract";
 import ArticleEditorToolbar from "./article-editor-toolbar";
 import { AdminActionBar, AdminButton, AdminStatus, AdminTopbar } from "./admin-chrome";
@@ -74,12 +80,39 @@ type ArticleRevision = {
   createdAt: string;
 };
 
-const SITE_CODE = "taijuda";
+type ArticleListPagination = {
+  page: number;
+  limit: number;
+  maxLimit: number;
+  total: number;
+  totalPages: number;
+  returned: number;
+};
+
+type ArticleListSelection = "initial" | "preserve" | "force";
+
+type ArticleListOptions = {
+  query?: string;
+  status?: ArticleFilter;
+  page?: number;
+  preferredId?: string;
+  selection?: ArticleListSelection;
+};
+
+const SITE_CODE = PUBLIC_SITE_CODE;
 const INSPECTOR_TABS: InspectorTab[] = ["publish", "seo", "media", "history"];
 const API_BASE = (process.env.NEXT_PUBLIC_CONTENT_API_URL || "").replace(/\/$/, "");
 const EMPTY_DOCUMENT: ArticleDocument = {
   type: "doc",
   content: [{ type: "paragraph" }],
+};
+const EMPTY_ARTICLE_PAGINATION: ArticleListPagination = {
+  page: 1,
+  limit: 40,
+  maxLimit: 100,
+  total: 0,
+  totalPages: 0,
+  returned: 0,
 };
 
 function emptyDraft(): Draft {
@@ -157,6 +190,42 @@ function ArticleMediaPreview({ src, alt, label }: { src: string; alt: string; la
   </div>;
 }
 
+function ArticleImageNodeView({ node, selected }: NodeViewProps) {
+  const image = safeArticleImageAttributes(node.attrs);
+  return (
+    <NodeViewWrapper
+      as="figure"
+      className={`${styles.editorInlineImage} ${selected ? styles.editorInlineImageSelected : ""}`}
+      data-drag-handle
+    >
+      {image ? <>
+        <SafePublicImage
+          src={image.src}
+          alt={image.alt}
+          className={styles.editorInlineImageMedia}
+          fallback={<span className={styles.editorInlineImageFallback}>圖片暫時無法載入，請檢查外部網址。</span>}
+        />
+        {image.caption && <figcaption>{image.caption}</figcaption>}
+      </> : <span className={styles.editorInlineImageFallback}>圖片設定不完整，請使用工具列重新編輯。</span>}
+    </NodeViewWrapper>
+  );
+}
+
+const ArticleImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      caption: {
+        default: null,
+        rendered: false,
+      },
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ArticleImageNodeView);
+  },
+});
+
 export default function AdminShell() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -171,9 +240,13 @@ export default function AdminShell() {
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [articleQuery, setArticleQuery] = useState("");
   const [articleFilter, setArticleFilter] = useState<ArticleFilter>("all");
+  const [articleAppliedQuery, setArticleAppliedQuery] = useState("");
+  const [articleAppliedFilter, setArticleAppliedFilter] = useState<ArticleFilter>("all");
+  const [articlePagination, setArticlePagination] = useState<ArticleListPagination>(EMPTY_ARTICLE_PAGINATION);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("publish");
   const editRevision = useRef(0);
   const initialLoadStarted = useRef(false);
+  const articleListRequestId = useRef(0);
 
   const markDirty = useCallback(() => {
     editRevision.current += 1;
@@ -192,6 +265,18 @@ export default function AdminShell() {
         HTMLAttributes: { target: null, rel: null, class: null },
       }),
       Placeholder.configure({ placeholder: "開始撰寫正文…" }),
+      ArticleImage.configure({
+        inline: false,
+        allowBase64: false,
+        resize: false,
+      }),
+      TableKit.configure({
+        table: {
+          resizable: false,
+          renderWrapper: true,
+          HTMLAttributes: { "data-article-table": "true" },
+        },
+      }),
     ],
     content: EMPTY_DOCUMENT,
     editorProps: {
@@ -210,8 +295,8 @@ export default function AdminShell() {
     },
   });
 
-  const selectArticle = useCallback((article: Article) => {
-    if (dirty && draft.id !== article.id && !window.confirm("目前文章還有未儲存變更，確定要切換嗎？")) {
+  const selectArticle = useCallback((article: Article, force = false) => {
+    if (!force && dirty && draft.id !== article.id && !window.confirm("目前文章還有未儲存變更，確定要切換嗎？")) {
       return;
     }
     const normalized = normalizeArticle(article);
@@ -240,8 +325,8 @@ export default function AdminShell() {
     setNotice("");
   }, [dirty, draft.id, editor]);
 
-  const createArticle = useCallback(() => {
-    if (dirty && !window.confirm("目前文章還有未儲存變更，確定要建立新文章嗎？")) {
+  const createArticle = useCallback((force = false) => {
+    if (!force && dirty && !window.confirm("目前文章還有未儲存變更，確定要建立新文章嗎？")) {
       return;
     }
     const next = emptyDraft();
@@ -253,17 +338,32 @@ export default function AdminShell() {
     setNotice("");
   }, [dirty, editor]);
 
-  const loadArticles = useCallback(async (preferredId?: string) => {
+  const loadArticles = useCallback(async (options: ArticleListOptions = {}) => {
+    const requestId = articleListRequestId.current + 1;
+    articleListRequestId.current = requestId;
+    const page = Math.max(1, Math.trunc(options.page || 1));
+    const status = options.status || "all";
+    const query = options.query?.trim() || "";
+    const params = new URLSearchParams({
+      site: SITE_CODE,
+      page: String(page),
+      limit: String(articlePagination.limit),
+    });
+    if (query) params.set("q", query);
+    if (status !== "all") params.set("status", status);
+
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/admin/articles?site=${SITE_CODE}`, {
+      const response = await fetch(`${API_BASE}/api/admin/articles?${params.toString()}`, {
         headers: { accept: "application/json" },
       });
       const payload = await response.json().catch(() => ({})) as {
         articles?: Article[];
+        pagination?: Partial<ArticleListPagination>;
         error?: string;
       };
+      if (requestId !== articleListRequestId.current) return;
       if (response.status === 401) {
         setAuthRequired(true);
         throw new Error(payload.error || "請先登入後台");
@@ -271,17 +371,42 @@ export default function AdminShell() {
       if (!response.ok) throw new Error(payload.error || "文章清單讀取失敗");
 
       const nextArticles = (payload.articles || []).map(normalizeArticle);
+      const total = Number.isSafeInteger(payload.pagination?.total)
+        ? Number(payload.pagination?.total)
+        : nextArticles.length;
+      const limit = Number.isSafeInteger(payload.pagination?.limit)
+        ? Math.max(1, Number(payload.pagination?.limit))
+        : articlePagination.limit;
+      const nextPagination: ArticleListPagination = {
+        page: Number.isSafeInteger(payload.pagination?.page) ? Math.max(1, Number(payload.pagination?.page)) : page,
+        limit,
+        maxLimit: Number.isSafeInteger(payload.pagination?.maxLimit)
+          ? Math.max(limit, Number(payload.pagination?.maxLimit))
+          : EMPTY_ARTICLE_PAGINATION.maxLimit,
+        total,
+        totalPages: Number.isSafeInteger(payload.pagination?.totalPages)
+          ? Math.max(0, Number(payload.pagination?.totalPages))
+          : Math.ceil(total / limit),
+        returned: Number.isSafeInteger(payload.pagination?.returned)
+          ? Math.max(0, Number(payload.pagination?.returned))
+          : nextArticles.length,
+      };
       setArticles(nextArticles);
+      setArticlePagination(nextPagination);
       setAuthRequired(false);
-      const selected = nextArticles.find((article) => article.id === preferredId) || nextArticles[0];
-      if (selected) selectArticle(selected);
-      else createArticle();
+      if (options.selection !== "preserve") {
+        const selected = nextArticles.find((article) => article.id === options.preferredId) || nextArticles[0];
+        const force = options.selection === "force";
+        if (selected) selectArticle(selected, force);
+        else createArticle(force);
+      }
     } catch (cause) {
+      if (requestId !== articleListRequestId.current) return;
       setError(cause instanceof Error ? cause.message : "文章清單讀取失敗");
     } finally {
-      setLoading(false);
+      if (requestId === articleListRequestId.current) setLoading(false);
     }
-  }, [createArticle, selectArticle]);
+  }, [articlePagination.limit, createArticle, selectArticle]);
 
   useEffect(() => {
     if (!editor || initialLoadStarted.current) return;
@@ -360,6 +485,10 @@ export default function AdminShell() {
       return;
     }
     const contentJson = editor?.getJSON() || draft.contentJson;
+    if (!validateArticleDocument(contentJson)) {
+      setError("文章內文包含不安全或超出限制的圖片／表格內容，請檢查圖片網址、替代文字與表格大小");
+      return;
+    }
     if (status === "published" && !evaluateArticlePublishReadiness({
       excerpt: draft.excerpt,
       seoTitle: draft.seoTitle,
@@ -401,7 +530,16 @@ export default function AdminShell() {
       setArticles((current) => [saved, ...current.filter((article) => article.id !== saved.id)]);
       if (editRevision.current === savingRevision) setDirty(false);
       setNotice(status === "published" ? "文章已發布並建立版本紀錄" : "草稿已儲存並建立版本紀錄");
-      await loadRevisions(saved.id);
+      await Promise.all([
+        loadRevisions(saved.id),
+        loadArticles({
+          query: articleAppliedQuery,
+          status: articleAppliedFilter,
+          page: articlePagination.page,
+          preferredId: saved.id,
+          selection: "preserve",
+        }),
+      ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文章儲存失敗");
     } finally {
@@ -449,7 +587,16 @@ export default function AdminShell() {
       setArticles((current) => [restored, ...current.filter((article) => article.id !== restored.id)]);
       setDirty(false);
       setNotice(`已還原第 ${revision.version} 版並建立新的草稿版本；尚未重新發布。`);
-      await loadRevisions(restored.id);
+      await Promise.all([
+        loadRevisions(restored.id),
+        loadArticles({
+          query: articleAppliedQuery,
+          status: articleAppliedFilter,
+          page: articlePagination.page,
+          preferredId: restored.id,
+          selection: "preserve",
+        }),
+      ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文章版本還原失敗");
     } finally {
@@ -464,12 +611,19 @@ export default function AdminShell() {
     try {
       const response = await fetch(`${API_BASE}/api/admin/articles/${encodeURIComponent(draft.id)}?site=${SITE_CODE}`, {
         method: "DELETE",
-        headers: { accept: "application/json" },
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ expectedVersion: draft.version }),
       });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "文章封存失敗");
+      await loadArticles({
+        query: articleAppliedQuery,
+        status: articleAppliedFilter,
+        page: 1,
+        preferredId: draft.id,
+        selection: "force",
+      });
       setNotice("文章已封存");
-      await loadArticles();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文章封存失敗");
     } finally {
@@ -493,15 +647,8 @@ export default function AdminShell() {
   const seoDescription = draft.seoDescription || draft.excerpt || "文章摘要會顯示在這裡。";
   const articlePath = `/articles/${slugify(draft.slug || draft.title) || "article-slug"}/`;
   const selectedArticle = articles.find((article) => article.id === draft.id);
+  const articleListIsFiltered = Boolean(articleAppliedQuery) || articleAppliedFilter !== "all";
   const readingMinutes = Math.max(1, Math.ceil(wordCount / 500));
-  const filteredArticles = useMemo(() => {
-    const query = articleQuery.trim().toLocaleLowerCase("zh-TW");
-    return articles.filter((article) => {
-      if (articleFilter !== "all" && article.status !== articleFilter) return false;
-      if (!query) return true;
-      return `${article.title} ${article.slug} ${article.tag}`.toLocaleLowerCase("zh-TW").includes(query);
-    });
-  }, [articleFilter, articleQuery, articles]);
   const seoChecks = [
     { label: "標題", pass: Boolean(draft.title.trim()) },
     { label: "固定網址", pass: Boolean(draft.slug.trim()) },
@@ -532,17 +679,33 @@ export default function AdminShell() {
         refreshing={loading}
         hasUnsavedChanges={dirty}
         onRefresh={() => {
-          void loadArticles(draft.id || undefined);
+          if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
+          void loadArticles({
+            query: articleAppliedQuery,
+            status: articleAppliedFilter,
+            page: articlePagination.page,
+            preferredId: draft.id || undefined,
+            selection: "force",
+          });
         }}
       />
 
       <div className={styles.workspace}>
         <aside className={styles.sidebar}>
           <div className={styles.sidebarHead}>
-            <div><h1>文章</h1><span>{articles.length} 篇內容</span></div>
-            <button type="button" className={styles.newArticleButton} onClick={createArticle}><Plus size={15} />新增</button>
+            <div><h1>文章</h1><span>{articlePagination.total} 篇內容</span></div>
+            <button type="button" className={styles.newArticleButton} onClick={() => createArticle()}><Plus size={15} />新增</button>
           </div>
-          <div className={styles.sidebarControls}>
+          <form
+            className={styles.sidebarControls}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = articleQuery.trim();
+              setArticleAppliedQuery(query);
+              setArticleAppliedFilter(articleFilter);
+              void loadArticles({ query, status: articleFilter, page: 1, selection: "preserve" });
+            }}
+          >
             <label className={styles.searchField}>
               <Search size={14} aria-hidden="true" />
               <span className={styles.srOnly}>搜尋文章</span>
@@ -550,24 +713,35 @@ export default function AdminShell() {
             </label>
             <label>
               <span className={styles.srOnly}>依狀態篩選</span>
-              <select value={articleFilter} onChange={(event) => setArticleFilter(event.target.value as ArticleFilter)}>
+              <select
+                value={articleFilter}
+                onChange={(event) => {
+                  const status = event.target.value as ArticleFilter;
+                  setArticleFilter(status);
+                  const query = articleQuery.trim();
+                  setArticleAppliedQuery(query);
+                  setArticleAppliedFilter(status);
+                  void loadArticles({ query, status, page: 1, selection: "preserve" });
+                }}
+              >
                 <option value="all">全部狀態</option>
                 <option value="draft">草稿</option>
                 <option value="published">已發布</option>
                 <option value="archived">已封存</option>
               </select>
             </label>
-          </div>
+            <button type="submit" className={styles.sidebarSearchButton} disabled={loading}>搜尋</button>
+          </form>
           <nav className={styles.articleList} aria-label="文章清單">
             {loading && <p className={styles.muted}>正在讀取文章…</p>}
-            {!loading && filteredArticles.length === 0 && (
+            {!loading && articles.length === 0 && (
               <div className={styles.emptyList}>
                 <FileText size={20} />
-                <b>{articles.length ? "沒有符合條件的文章" : "還沒有文章"}</b>
-                <span>{articles.length ? "請調整搜尋文字或狀態。" : "按「新增」開始建立第一篇內容。"}</span>
+                <b>{articleListIsFiltered ? "沒有符合條件的文章" : articlePagination.total > 0 ? "此頁沒有文章" : "還沒有文章"}</b>
+                <span>{articleListIsFiltered ? "請調整搜尋文字或狀態。" : articlePagination.total > 0 ? "請返回上一頁查看內容。" : "按「新增」開始建立第一篇內容。"}</span>
               </div>
             )}
-            {filteredArticles.map((article) => (
+            {articles.map((article) => (
               <button
                 type="button"
                 key={article.id}
@@ -587,8 +761,30 @@ export default function AdminShell() {
             ))}
           </nav>
           <div className={styles.sidebarFoot}>
-            <span>已發布 {articles.filter((article) => article.status === "published").length}</span>
-            <span>草稿 {articles.filter((article) => article.status === "draft").length}</span>
+            <span>共 {articlePagination.total} 篇</span>
+            <span>第 {articlePagination.page} / {Math.max(1, articlePagination.totalPages)} 頁</span>
+            <span className={styles.sidebarPager}>
+              <button
+                type="button"
+                onClick={() => void loadArticles({
+                  query: articleAppliedQuery,
+                  status: articleAppliedFilter,
+                  page: articlePagination.page - 1,
+                  selection: "preserve",
+                })}
+                disabled={loading || articlePagination.page <= 1}
+              >上一頁</button>
+              <button
+                type="button"
+                onClick={() => void loadArticles({
+                  query: articleAppliedQuery,
+                  status: articleAppliedFilter,
+                  page: articlePagination.page + 1,
+                  selection: "preserve",
+                })}
+                disabled={loading || articlePagination.totalPages === 0 || articlePagination.page >= articlePagination.totalPages}
+              >下一頁</button>
+            </span>
           </div>
         </aside>
 
@@ -596,7 +792,7 @@ export default function AdminShell() {
           <AdminActionBar
             status={<AdminStatus tone={draft.status === "published" ? "success" : draft.status === "draft" ? "warning" : "neutral"}>{draft.status === "published" ? "已發布" : draft.status === "archived" ? "已封存" : "草稿"}</AdminStatus>}
             title={draft.title || "未命名文章"}
-            detail={dirty ? "有未儲存變更" : selectedArticle ? `最後儲存 ${formatUpdatedAt(selectedArticle.updatedAt)}` : "尚未儲存"}
+            detail={dirty ? "有未儲存變更" : selectedArticle ? `最後儲存 ${formatUpdatedAt(selectedArticle.updatedAt)}` : draft.id ? "目前文章不在此頁清單" : "尚未儲存"}
           >
             <AdminButton
               type="button"
@@ -606,7 +802,13 @@ export default function AdminShell() {
               title="重新整理文章"
               onClick={() => {
                 if (dirty && !window.confirm("目前文章還有未儲存變更，確定要重新整理嗎？")) return;
-                void loadArticles(draft.id || undefined);
+                void loadArticles({
+                  query: articleAppliedQuery,
+                  status: articleAppliedFilter,
+                  page: articlePagination.page,
+                  preferredId: draft.id || undefined,
+                  selection: "force",
+                });
               }}
               disabled={loading || saving}
             ><RefreshCw size={15} /></AdminButton>
@@ -618,7 +820,7 @@ export default function AdminShell() {
           {(error || notice) && (
             <div className={error ? styles.errorBanner : styles.noticeBanner} role="status">
               <span>{error || notice}</span>
-              {authRequired && <a href="/signin-with-chatgpt?return_to=%2Fadmin">登入後台</a>}
+              {authRequired && <a href="/admin/login/?return_to=%2Fadmin%2Farticles%2F">登入後台</a>}
             </div>
           )}
 
@@ -689,7 +891,7 @@ export default function AdminShell() {
                 <label className={styles.field}><span>SEO 標題 <small>{draft.seoTitle.length}/60</small></span><input value={draft.seoTitle} onChange={(event) => updateDraft("seoTitle", event.target.value)} placeholder={`發布前至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoTitleLength} 字`} /></label>
                 <label className={styles.field}><span>Meta 描述 <small>{draft.seoDescription.length}/160（建議）</small></span><textarea rows={4} value={draft.seoDescription} onChange={(event) => updateDraft("seoDescription", event.target.value)} placeholder={`發布前至少 ${ARTICLE_PUBLISH_REQUIREMENTS.seoDescriptionLength} 字`} /></label>
                 <div className={styles.searchPreview}>
-                  <span>taijuda.tw{articlePath}</span>
+                  <span>{articlePath}</span>
                   <h2>{seoTitle.slice(0, 70)}</h2>
                   <p>{seoDescription.slice(0, 180)}</p>
                 </div>

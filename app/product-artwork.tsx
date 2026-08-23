@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { useState, type CSSProperties, type ReactNode } from "react";
 import type { Product } from "./data";
+import { resolveSiteUrl } from "../shared/site-url";
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
 
@@ -55,7 +56,8 @@ export function SafePublicImage({
   loading?: "eager" | "lazy";
   fetchPriority?: "high" | "low" | "auto";
 }) {
-  const safeSrc = safePublicImageUrl(src, process.env.NEXT_PUBLIC_SITE_URL || "");
+  const publicSiteUrl = resolveSiteUrl().publicUrl?.toString() || "";
+  const safeSrc = safePublicImageUrl(src, publicSiteUrl);
   const [failedSrc, setFailedSrc] = useState("");
 
   if (!safeSrc || failedSrc === safeSrc) return fallback;
@@ -80,7 +82,6 @@ function PrototypeArtwork({ product }: { product: Product }) {
       <span className="amulet-line amulet-line--one" />
       <span className="amulet-line amulet-line--two" />
     </span>
-    <small>PROTOTYPE VISUAL</small>
   </>;
 }
 
@@ -101,7 +102,7 @@ export default function ProductArtwork({
     >
       <SafePublicImage
         src={product.imageUrl}
-        alt={imageAlt}
+        alt=""
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
         loading={large ? "eager" : "lazy"}
         fetchPriority={large ? "high" : "auto"}

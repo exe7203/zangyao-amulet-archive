@@ -58,7 +58,7 @@ export function extractTiptapText(value: unknown, depth = 0): string {
 
 export function estimateReadingTime(contentJson: unknown): string {
   const characterCount = extractTiptapText(contentJson).replace(/\s/g, "").length;
-  return `${String(Math.max(1, Math.ceil(characterCount / 350))).padStart(2, "0")} MIN READ`;
+  return `約 ${Math.max(1, Math.ceil(characterCount / 350))} 分鐘閱讀`;
 }
 
 function cleanString(value: unknown): string {

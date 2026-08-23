@@ -35,7 +35,10 @@ jobs:
         run: npm ci
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run typecheck
+
+      - name: Worker type check
+        run: npm run typecheck:worker
 
       - name: Lint
         run: npm run lint
@@ -45,6 +48,9 @@ jobs:
 
       - name: Core tests
         run: npm run test:core
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build static site
         env:

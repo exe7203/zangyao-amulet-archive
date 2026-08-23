@@ -16,7 +16,7 @@ export const DEFAULT_BRAND_PAGE = {
           id: "hero-brand-story",
           eyebrow: "品牌介紹",
           title: "認識泰聚達",
-          description: "我們專注於泰國佛牌與相關收藏品；正式上架前會整理商品照片、規格與來源說明。",
+          description: "我們專注於泰國佛牌與相關收藏品；商品照片、規格與來源說明確認後才會開放訂購。",
           primaryLabel: "閱讀佛牌專欄",
           primaryHref: "/articles/",
           secondaryLabel: "查看最新商品",

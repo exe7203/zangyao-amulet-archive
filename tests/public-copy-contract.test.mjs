@@ -96,7 +96,48 @@ test("unverified product facts stay behind an explicit publication gate", async 
   ]);
 
   assert.match(storefront, /const detailsConfirmed = catalogLive && product\.seoReady === true/);
+  assert.match(storefront, /const localCommerceDemo = orderReadiness\.localDemo && catalogLive/);
+  assert.match(storefront, /\(!localCommerceDemo && product\.seoReady !== true\)/);
   assert.match(storefront, /selected\.seoReady === true/);
   assert.match(productPage, /liveConfirmed && product\.seoReady === true/);
-  assert.match(productPage, /availabilityConfirmed=\{detailsConfirmed\}/);
+  assert.match(productPage, /const localTestDetails = liveConfirmed && localDemo/);
+  assert.match(productPage, /availabilityConfirmed=\{detailsConfirmed \|\| localTestDetails\}/);
+});
+
+test("public chrome and storefront controls share one accessible contract", async () => {
+  const [storefront, header, footer, journal, artwork, articleData, globalStyles] = await Promise.all([
+    source("app/storefront.tsx"),
+    source("app/public-header.tsx"),
+    source("app/public-footer.tsx"),
+    source("app/journal-section.tsx"),
+    source("app/product-artwork.tsx"),
+    source("app/article-data.ts"),
+    source("app/globals.css"),
+  ]);
+
+  assert.match(storefront, /<PublicHeader/);
+  assert.match(storefront, /<PublicFooter/);
+  assert.doesNotMatch(storefront, /className="site-header"/);
+  assert.match(storefront, /aria-pressed=\{resolvedActiveFilter === filter\}/);
+  assert.match(storefront, /setActiveFilter\(ALL_PRODUCTS_FILTER\)/);
+  assert.match(header, /aria-expanded=\{searchExpanded\}/);
+  assert.match(header, /aria-controls=\{searchControls\}/);
+  assert.match(header, /primaryLinks\.map/);
+  assert.match(header, /safeInternalNavigationHref/);
+  assert.match(footer, /mainLinks\.map/);
+  assert.match(footer, /\/service\/contact\//);
+  assert.match(footer, /\/service\/privacy\//);
+  for (const sectionId of ["hero", "collections", "products", "themes", "archive"]) {
+    assert.equal((storefront.match(new RegExp(`id="${sectionId}"`, "g")) || []).length, 1, `${sectionId} must render exactly once`);
+  }
+  assert.equal((journal.match(/id="journal"/g) || []).length, 1);
+  assert.equal((storefront.match(/<h1>/g) || []).length, 1);
+  assert.match(storefront, /homeSectionProps\("collections"\)/);
+  assert.match(storefront, /homeSectionProps\("journal"\)/);
+  assert.doesNotMatch(artwork, /PROTOTYPE VISUAL/);
+  assert.match(artwork, /alt=""/);
+  assert.match(articleData, /分鐘閱讀/);
+  assert.match(globalStyles, /scroll-margin-top/);
+  assert.match(globalStyles, /\.home-section-layout\s*\{[^}]*display:\s*flex/);
+  assert.doesNotMatch(globalStyles, /product-card:nth-child\(n\+7\)/);
 });

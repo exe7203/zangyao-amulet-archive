@@ -1,7 +1,8 @@
 import type { Product } from "./data";
+import { PUBLIC_SITE_CODE } from "../shared/site-context";
 
-export const CART_STORAGE_KEY = "taijuda-amulet-archive:cart:v1";
-export const CART_CHANGE_EVENT = "taijuda:cart-change";
+export const CART_STORAGE_KEY = `${PUBLIC_SITE_CODE}:cart:v1`;
+export const CART_CHANGE_EVENT = `${PUBLIC_SITE_CODE}:cart-change`;
 export const MAX_CART_DISTINCT_ITEMS = 10;
 const DEFAULT_PURCHASE_LIMIT = 10;
 

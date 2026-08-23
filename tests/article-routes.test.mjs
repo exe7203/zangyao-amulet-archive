@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import ArticleContent from "../app/article-content.tsx";
 import { SafePublicImage, safePublicImageUrl } from "../app/product-artwork.tsx";
+import { resolveSiteUrl } from "../shared/site-url.ts";
 
 const snapshot = JSON.parse(await readFile(
   new URL("../content/published-site.json", import.meta.url),
@@ -58,9 +60,13 @@ test("the article index renders a crawlable collection and links every snapshot 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /<h1[^>]*>泰聚達佛牌專欄<\/h1>/);
-  assert.match(html, /"@type":"CollectionPage"/);
-  assert.match(html, /"@type":"ItemList"/);
-  assert.match(html, /"@type":"BreadcrumbList"/);
+  if (resolveSiteUrl().publicUrl) {
+    assert.match(html, /"@type":"CollectionPage"/);
+    assert.match(html, /"@type":"ItemList"/);
+    assert.match(html, /"@type":"BreadcrumbList"/);
+  } else {
+    assert.doesNotMatch(html, /rel="canonical"|property="og:url"|127\.0\.0\.1|localhost/i);
+  }
   assert.match(html, /aria-label="麵包屑"/);
   for (const article of publishedArticles) {
     assert.ok(html.includes(article.title), `${article.slug} is missing from the article index`);
@@ -77,18 +83,24 @@ test("every published article route renders independent SEO and structured data"
     const html = await response.text();
     assert.ok(html.includes(article.title), `${article.slug} title is missing`);
     assert.ok(html.includes(article.seoDescription), `${article.slug} description is missing`);
-    assert.match(html, new RegExp(`rel="canonical"[^>]+articles/${article.slug}/`));
-    assert.match(
-      html,
-      article.noindex
+    const site = resolveSiteUrl();
+    if (site.publicUrl) {
+      assert.match(html, new RegExp(`rel="canonical"[^>]+articles/${article.slug}/`));
+      assert.match(html, /"@type":"Article"/);
+      assert.match(html, /"@type":"BreadcrumbList"/);
+      assert.ok(html.includes(`"datePublished":"${article.publishedAt}"`));
+      assert.ok(html.includes(`"dateModified":"${article.updatedAt}"`));
+    } else {
+      assert.doesNotMatch(html, /rel="canonical"|property="og:url"|127\.0\.0\.1|localhost/i);
+      assert.doesNotMatch(html, /"@type":"Article"/);
+    }
+    const robotsPattern = !site.indexable
+      ? /<meta[^>]+name="robots"[^>]+content="noindex, nofollow"/i
+      : article.noindex
         ? /<meta[^>]+name="robots"[^>]+content="noindex, follow"/i
-        : /<meta[^>]+name="robots"[^>]+content="index, follow"/i,
-    );
+        : /<meta[^>]+name="robots"[^>]+content="index, follow"/i;
+    assert.match(html, robotsPattern);
     assert.match(html, /<meta[^>]+property="og:type"[^>]+content="article"/i);
-    assert.match(html, /"@type":"Article"/);
-    assert.match(html, /"@type":"BreadcrumbList"/);
-    assert.ok(html.includes(`"datePublished":"${article.publishedAt}"`));
-    assert.ok(html.includes(`"dateModified":"${article.updatedAt}"`));
     assert.match(html, /aria-label="麵包屑"/);
     assert.match(html, /href="[^"]*\/articles\/"[^>]*>← 返回泰聚達佛牌專欄/);
   }
@@ -103,7 +115,60 @@ test("Tiptap renderer never inserts editor HTML directly", async () => {
   const source = await readFile(new URL("../app/article-content.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|innerHTML\s*=|javascript:/i);
   assert.match(source, /safeArticleLinkHref/);
+  assert.match(source, /safeArticleImageAttributes/);
+  assert.match(source, /validateArticleTableNode/);
+  assert.match(source, /<SafePublicImage/);
+  assert.match(source, /data-article-table-scroll/);
   assert.match(source, /MAX_DOCUMENT_DEPTH/);
+});
+
+test("inline article images and semantic tables render safely and fail closed", () => {
+  const cellAttrs = { colspan: 1, rowspan: 1, colwidth: null, align: null };
+  const document = {
+    type: "doc",
+    content: [
+      {
+        type: "image",
+        attrs: {
+          src: "https://cdn.example.com/detail.webp",
+          alt: "佛牌細節",
+          caption: '<script>alert("caption")</script>',
+          title: null,
+          width: null,
+          height: null,
+        },
+      },
+      {
+        type: "table",
+        content: [
+          { type: "tableRow", content: [{ type: "tableHeader", attrs: cellAttrs, content: [{ type: "paragraph", content: [{ type: "text", text: "欄位" }] }] }] },
+          { type: "tableRow", content: [{ type: "tableCell", attrs: cellAttrs, content: [{ type: "paragraph", content: [{ type: "text", text: '</td><img src=x onerror="alert(1)">' }] }] }] },
+        ],
+      },
+    ],
+  };
+  const html = renderToStaticMarkup(createElement(ArticleContent, { content: document }));
+  assert.match(html, /<figure[^>]+data-article-image="true"/);
+  assert.match(html, /<figcaption>&lt;script&gt;alert\(&quot;caption&quot;\)&lt;\/script&gt;<\/figcaption>/);
+  assert.match(html, /<div[^>]+data-article-table-scroll="true"[^>]+role="region"/);
+  assert.match(html, /<table><thead><tr><th scope="col">/);
+  assert.ok(html.includes("&lt;/td&gt;&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"));
+  assert.doesNotMatch(html, /<script|<img[^>]+onerror=/i);
+
+  const unsafeHtml = renderToStaticMarkup(createElement(ArticleContent, {
+    content: {
+      type: "doc",
+      content: [{ type: "image", attrs: { src: "javascript:alert(1)", alt: "惡意圖片", caption: "", title: null, width: null, height: null } }],
+    },
+  }));
+  assert.equal(unsafeHtml, "<div></div>");
+});
+
+test("article page styles provide responsive media and table overflow", async () => {
+  const css = await readFile(new URL("../app/article-page.module.css", import.meta.url), "utf8");
+  assert.match(css, /\[data-article-image="true"\][^{]*\{[\s\S]*?object-fit: contain/);
+  assert.match(css, /\[data-article-table-scroll="true"\][^{]*\{[^}]*overflow-x: auto/);
+  assert.match(css, /@media \(max-width: 620px\)[\s\S]*?\.content table \{ min-width: 500px/);
 });
 
 test("public image fields accept only safe HTTP sources and preserve a Pages base path", () => {

@@ -1,0 +1,6 @@
+{
+  "databaseName": "taijuda-prod",
+  "databaseId": "在此貼上 wrangler d1 create 回傳的 database_id",
+  "siteUrl": "https://taijuda-amulet-archive.你的帳號.workers.dev/",
+  "adminEmailAllowlist": "your-email@example.com,teammate@example.com"
+}

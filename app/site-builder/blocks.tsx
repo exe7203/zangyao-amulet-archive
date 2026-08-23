@@ -54,11 +54,12 @@ export function HeroBlock(props: PageComponents["Hero"]) {
         <span className={styles.amulet}><i /><b>{publishedBrandName}</b></span>
       </div>
     </div>
+    <span id="content" aria-hidden="true" />
   </section>;
 }
 
 export function TextBlock(props: PageComponents["Text"]) {
-  return <section className={sectionClass(props.tone)} id="content">
+  return <section className={sectionClass(props.tone)}>
     <div className={`${styles.textBlock} ${styles[`align_${props.alignment}`]}`}>
       <SectionHeading eyebrow={props.eyebrow} title={props.title} />
       <div className={styles.prose}>{props.body}</div>

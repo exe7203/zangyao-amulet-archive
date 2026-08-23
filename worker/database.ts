@@ -6,7 +6,10 @@ import type { DatabaseEnv } from "./api-utils";
 export const DEFAULT_SITE_CODE = "taijuda";
 export const DEFAULT_SITE_ID = "site_taijuda";
 const SEED_TIMESTAMP = "2026-08-04T00:00:00.000Z";
-const CURRENT_SCHEMA_VERSION = 7;
+// Production deploys must apply the checked-in Drizzle migrations before
+// traffic is switched. This idempotent bootstrap remains for local installs
+// and legacy compatibility; a migrated database short-circuits by version.
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export type { DatabaseEnv };
 
@@ -14,6 +17,430 @@ export type { DatabaseEnv };
 // JavaScript wrapper for that binding on every request, so keying readiness by
 // object identity would rerun every CREATE/seed statement repeatedly.
 let readiness: Promise<void> | null = null;
+
+const TENANT_RELATION_GUARDS = [
+  {
+    table: "products",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM categories p WHERE p.id = NEW.category_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "inventory",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM products p WHERE p.id = NEW.product_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "orders",
+    invalidWhen: "NEW.member_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM members p WHERE p.id = NEW.member_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "order_items",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM orders o JOIN products p ON p.id = NEW.product_id AND p.site_id = o.site_id WHERE o.id = NEW.order_id)",
+  },
+  {
+    table: "inventory_movements",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM products p WHERE p.id = NEW.product_id AND p.site_id = NEW.site_id) OR (NEW.order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = NEW.order_id AND o.site_id = NEW.site_id))",
+  },
+  {
+    table: "order_events",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM orders p WHERE p.id = NEW.order_id AND p.site_id = NEW.site_id)",
+  },
+  ...["member_identities", "member_sessions", "member_addresses", "member_consents"].map((table) => ({
+    table,
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM members p WHERE p.id = NEW.member_id AND p.site_id = NEW.site_id)",
+  })),
+  {
+    table: "carts",
+    invalidWhen: "(NEW.member_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM members m WHERE m.id = NEW.member_id AND m.site_id = NEW.site_id)) OR (NEW.converted_order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = NEW.converted_order_id AND o.site_id = NEW.site_id))",
+  },
+  {
+    table: "cart_items",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM carts c WHERE c.id = NEW.cart_id AND c.site_id = NEW.site_id) OR NOT EXISTS (SELECT 1 FROM products p WHERE p.id = NEW.product_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "order_customer_snapshots",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM orders p WHERE p.id = NEW.order_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "product_media",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM products p WHERE p.id = NEW.product_id AND p.site_id = NEW.site_id) OR NOT EXISTS (SELECT 1 FROM media_assets m WHERE m.id = NEW.media_asset_id AND m.site_id = NEW.site_id)",
+  },
+  {
+    table: "payment_transactions",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM orders p WHERE p.id = NEW.order_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "payment_events",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM payment_transactions p WHERE p.id = NEW.transaction_id AND p.site_id = NEW.site_id)",
+  },
+  {
+    table: "shipments",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = NEW.order_id AND o.site_id = NEW.site_id) OR (NEW.shipping_label_asset_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media_assets m WHERE m.id = NEW.shipping_label_asset_id AND m.site_id = NEW.site_id))",
+  },
+  {
+    table: "shipment_events",
+    invalidWhen: "NOT EXISTS (SELECT 1 FROM shipments p WHERE p.id = NEW.shipment_id AND p.site_id = NEW.site_id)",
+  },
+] as const;
+
+const TENANT_SITE_IMMUTABLE_TABLES = [
+  "categories",
+  "products",
+  "members",
+  "orders",
+  "carts",
+  "media_assets",
+  "payment_transactions",
+  "shipments",
+] as const;
+
+export const TENANT_INTEGRITY_TRIGGER_NAMES = Object.freeze([
+  ...TENANT_RELATION_GUARDS.flatMap(({ table }) => [
+    `tenant_guard_${table}_insert`,
+    `tenant_guard_${table}_update`,
+  ]),
+  ...TENANT_SITE_IMMUTABLE_TABLES.map((table) => `tenant_guard_${table}_site_immutable`),
+]);
+
+function tenantIntegrityStatements(db: D1Database) {
+  const relationTriggers = TENANT_RELATION_GUARDS.flatMap(({ table, invalidWhen }) => [
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS tenant_guard_${table}_insert
+      BEFORE INSERT ON ${table}
+      FOR EACH ROW WHEN (${invalidWhen})
+      BEGIN
+        SELECT RAISE(ABORT, 'tenant integrity violation: ${table}');
+      END`),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS tenant_guard_${table}_update
+      BEFORE UPDATE ON ${table}
+      FOR EACH ROW WHEN (${invalidWhen})
+      BEGIN
+        SELECT RAISE(ABORT, 'tenant integrity violation: ${table}');
+      END`),
+  ]);
+  const immutableSiteTriggers = TENANT_SITE_IMMUTABLE_TABLES.map((table) => db.prepare(
+    `CREATE TRIGGER IF NOT EXISTS tenant_guard_${table}_site_immutable
+      BEFORE UPDATE OF site_id ON ${table}
+      FOR EACH ROW WHEN NEW.site_id <> OLD.site_id
+      BEGIN
+        SELECT RAISE(ABORT, 'tenant site is immutable: ${table}');
+      END`,
+  ));
+  return [...relationTriggers, ...immutableSiteTriggers];
+}
+
+async function ensureTenantIntegrityTriggers(db: D1Database) {
+  const result = await db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'tenant_guard_%'",
+  ).all<{ name: string }>();
+  const installed = new Set(result.results.map(({ name }) => name));
+  if (TENANT_INTEGRITY_TRIGGER_NAMES.every((name) => installed.has(name))) return;
+  await db.batch(tenantIntegrityStatements(db));
+}
+
+function productionSchemaStatements(db: D1Database) {
+  return [
+    db.prepare(`CREATE TABLE IF NOT EXISTS members (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'active',
+      preferred_locale TEXT NOT NULL DEFAULT 'zh-Hant-TW',
+      last_signed_in_at TEXT,
+      deletion_requested_at TEXT,
+      purge_after TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_identities (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_subject_hash TEXT NOT NULL,
+      email_hash TEXT,
+      phone_hash TEXT,
+      verified_at TEXT,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT,
+      purge_after TEXT
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_auth_challenges (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      destination_hash TEXT,
+      challenge_hash TEXT,
+      oauth_state_hash TEXT,
+      pkce_verifier_hash TEXT,
+      nonce_hash TEXT,
+      requested_ip_hash TEXT NOT NULL DEFAULT '',
+      user_agent_hash TEXT NOT NULL DEFAULT '',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      purge_after TEXT NOT NULL,
+      CHECK (attempt_count >= 0 AND attempt_count <= max_attempts),
+      CHECK (max_attempts > 0),
+      CHECK (
+        (provider IN ('email_otp', 'phone_otp') AND destination_hash IS NOT NULL AND challenge_hash IS NOT NULL)
+        OR (provider IN ('line_oauth', 'google_oauth', 'apple_oauth') AND oauth_state_hash IS NOT NULL AND pkce_verifier_hash IS NOT NULL)
+      )
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_consents (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+      scope TEXT NOT NULL,
+      policy_version TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      source TEXT NOT NULL,
+      event_key_hash TEXT NOT NULL,
+      evidence_hash TEXT NOT NULL DEFAULT '',
+      ip_prefix_hash TEXT NOT NULL DEFAULT '',
+      user_agent_hash TEXT NOT NULL DEFAULT '',
+      recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      purge_after TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      session_token_hash TEXT NOT NULL,
+      csrf_secret_hash TEXT NOT NULL,
+      user_agent_hash TEXT NOT NULL DEFAULT '',
+      ip_prefix_hash TEXT NOT NULL DEFAULT '',
+      expires_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      rotated_at TEXT,
+      revoked_at TEXT,
+      purge_after TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS member_addresses (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      label_code TEXT NOT NULL DEFAULT 'other',
+      address_fingerprint_hash TEXT NOT NULL,
+      encrypted_payload TEXT NOT NULL,
+      encryption_key_version TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT,
+      purge_after TEXT
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS order_customer_snapshots (
+      order_id TEXT PRIMARY KEY NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      email_hash TEXT,
+      phone_hash TEXT NOT NULL,
+      encrypted_payload TEXT NOT NULL,
+      encryption_key_version TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      purge_after TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS carts (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      member_id TEXT REFERENCES members(id) ON DELETE SET NULL,
+      owner_key_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      currency TEXT NOT NULL DEFAULT 'TWD',
+      converted_order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS cart_items (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      cart_id TEXT NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      unit_price_snapshot INTEGER NOT NULL CHECK (unit_price_snapshot >= 0),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS media_assets (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      storage_key TEXT NOT NULL,
+      checksum_sha256 TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+      width INTEGER CHECK (width IS NULL OR width > 0),
+      height INTEGER CHECK (height IS NULL OR height > 0),
+      alt_text TEXT NOT NULL DEFAULT '',
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      uploaded_by_subject_hash TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      ready_at TEXT,
+      deleted_at TEXT,
+      purge_after TEXT
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS product_media (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      media_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
+      role TEXT NOT NULL DEFAULT 'gallery',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      alt_text_override TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS payment_transactions (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+      provider TEXT NOT NULL,
+      provider_transaction_hash TEXT NOT NULL,
+      related_transaction_hash TEXT,
+      idempotency_key_hash TEXT NOT NULL,
+      transaction_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      amount INTEGER NOT NULL CHECK (amount > 0),
+      currency TEXT NOT NULL DEFAULT 'TWD',
+      failure_code TEXT NOT NULL DEFAULT '',
+      provider_response_hash TEXT NOT NULL DEFAULT '',
+      processed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS payment_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      transaction_id TEXT NOT NULL REFERENCES payment_transactions(id) ON DELETE CASCADE,
+      provider_event_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      event_status TEXT NOT NULL DEFAULT 'received',
+      occurred_at TEXT,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      processed_at TEXT
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS shipments (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+      carrier_code TEXT NOT NULL,
+      tracking_number_hash TEXT,
+      tracking_payload_encrypted TEXT NOT NULL DEFAULT '',
+      encryption_key_version TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      shipping_label_asset_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
+      shipped_at TEXT,
+      delivered_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS shipment_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      shipment_id TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+      provider_event_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      occurred_at TEXT,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      actor_subject_hash TEXT NOT NULL,
+      actor_provider TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL DEFAULT '',
+      request_id_hash TEXT NOT NULL DEFAULT '',
+      ip_prefix_hash TEXT NOT NULL DEFAULT '',
+      user_agent_hash TEXT NOT NULL DEFAULT '',
+      before_hash TEXT NOT NULL DEFAULT '',
+      after_hash TEXT NOT NULL DEFAULT '',
+      outcome TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      purge_after TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS webhook_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      provider TEXT NOT NULL,
+      provider_event_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      signature_valid INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'received',
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      last_error_code TEXT NOT NULL DEFAULT '',
+      next_attempt_at TEXT,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      processed_at TEXT,
+      purge_after TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS members_site_status_updated_idx ON members (site_id, status, updated_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS members_purge_after_idx ON members (purge_after) WHERE purge_after IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_identities_site_provider_subject_unique ON member_identities (site_id, provider, provider_subject_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_identities_member_idx ON member_identities (member_id, deleted_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_identities_email_hash_idx ON member_identities (site_id, email_hash) WHERE email_hash IS NOT NULL AND deleted_at IS NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_identities_phone_hash_idx ON member_identities (site_id, phone_hash) WHERE phone_hash IS NOT NULL AND deleted_at IS NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_identities_purge_after_idx ON member_identities (purge_after) WHERE purge_after IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_auth_challenges_hash_unique ON member_auth_challenges (challenge_hash) WHERE challenge_hash IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_auth_challenges_oauth_state_unique ON member_auth_challenges (oauth_state_hash) WHERE oauth_state_hash IS NOT NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_auth_challenges_destination_idx ON member_auth_challenges (site_id, provider, destination_hash, created_at) WHERE destination_hash IS NOT NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_auth_challenges_expiry_idx ON member_auth_challenges (expires_at, consumed_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_auth_challenges_purge_after_idx ON member_auth_challenges (purge_after)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_consents_event_key_hash_unique ON member_consents (event_key_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_consents_site_member_scope_idx ON member_consents (site_id, member_id, scope, recorded_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_consents_purge_after_idx ON member_consents (purge_after)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_sessions_token_hash_unique ON member_sessions (session_token_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_sessions_member_active_idx ON member_sessions (member_id, revoked_at, expires_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_sessions_expiry_idx ON member_sessions (expires_at, revoked_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_sessions_purge_after_idx ON member_sessions (purge_after)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS member_addresses_member_fingerprint_unique ON member_addresses (member_id, address_fingerprint_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_addresses_member_active_idx ON member_addresses (member_id, deleted_at, is_default)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS member_addresses_purge_after_idx ON member_addresses (purge_after) WHERE purge_after IS NOT NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS order_customer_snapshots_site_phone_idx ON order_customer_snapshots (site_id, phone_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS order_customer_snapshots_site_email_idx ON order_customer_snapshots (site_id, email_hash) WHERE email_hash IS NOT NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS order_customer_snapshots_purge_after_idx ON order_customer_snapshots (purge_after)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS carts_site_active_owner_unique ON carts (site_id, owner_key_hash) WHERE status = 'active'"),
+    db.prepare("CREATE INDEX IF NOT EXISTS carts_member_status_updated_idx ON carts (member_id, status, updated_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS carts_expiry_idx ON carts (status, expires_at)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS carts_converted_order_unique ON carts (converted_order_id) WHERE converted_order_id IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS cart_items_cart_product_unique ON cart_items (cart_id, product_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS cart_items_site_cart_idx ON cart_items (site_id, cart_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS cart_items_product_idx ON cart_items (product_id)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS media_assets_site_storage_key_unique ON media_assets (site_id, storage_key)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS media_assets_site_status_created_idx ON media_assets (site_id, status, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS media_assets_checksum_idx ON media_assets (site_id, checksum_sha256)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS media_assets_purge_after_idx ON media_assets (purge_after) WHERE purge_after IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS product_media_product_asset_unique ON product_media (product_id, media_asset_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS product_media_site_product_sort_idx ON product_media (site_id, product_id, sort_order)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS product_media_product_sort_idx ON product_media (product_id, sort_order)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS product_media_asset_idx ON product_media (media_asset_id)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_provider_reference_unique ON payment_transactions (provider, provider_transaction_hash)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_idempotency_hash_unique ON payment_transactions (site_id, idempotency_key_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS payment_transactions_order_created_idx ON payment_transactions (order_id, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS payment_transactions_related_hash_idx ON payment_transactions (provider, related_transaction_hash) WHERE related_transaction_hash IS NOT NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS payment_transactions_site_status_updated_idx ON payment_transactions (site_id, status, updated_at)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS payment_events_site_provider_event_unique ON payment_events (site_id, provider_event_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS payment_events_transaction_received_idx ON payment_events (transaction_id, received_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS shipments_order_created_idx ON shipments (order_id, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS shipments_site_status_updated_idx ON shipments (site_id, status, updated_at)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS shipments_carrier_tracking_hash_unique ON shipments (carrier_code, tracking_number_hash) WHERE tracking_number_hash IS NOT NULL"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS shipment_events_site_provider_event_unique ON shipment_events (site_id, provider_event_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS shipment_events_shipment_received_idx ON shipment_events (shipment_id, received_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS admin_audit_log_site_created_idx ON admin_audit_log (site_id, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS admin_audit_log_entity_created_idx ON admin_audit_log (entity_type, entity_id, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS admin_audit_log_actor_created_idx ON admin_audit_log (actor_subject_hash, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS admin_audit_log_purge_after_idx ON admin_audit_log (purge_after)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS webhook_events_site_provider_event_unique ON webhook_events (site_id, provider, provider_event_hash)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS webhook_events_retry_idx ON webhook_events (status, next_attempt_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS webhook_events_purge_after_idx ON webhook_events (purge_after)"),
+  ];
+}
 
 function schemaStatements(db: D1Database) {
   return [
@@ -38,6 +465,15 @@ function schemaStatements(db: D1Database) {
       version INTEGER NOT NULL DEFAULT 1,
       updated_by TEXT NOT NULL DEFAULT 'system',
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS site_settings_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL,
+      theme_json TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      saved_by TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS site_pages (
       id TEXT PRIMARY KEY NOT NULL,
@@ -169,6 +605,7 @@ function schemaStatements(db: D1Database) {
     db.prepare(`CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY NOT NULL,
       site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
+      member_id TEXT REFERENCES members(id) ON DELETE SET NULL,
       order_number TEXT NOT NULL,
       idempotency_key TEXT NOT NULL,
       request_fingerprint TEXT NOT NULL DEFAULT '',
@@ -180,6 +617,10 @@ function schemaStatements(db: D1Database) {
       address TEXT NOT NULL DEFAULT '',
       note TEXT NOT NULL DEFAULT '',
       subtotal INTEGER NOT NULL,
+      shipping_fee INTEGER CHECK (shipping_fee IS NULL OR shipping_fee >= 0),
+      carrier TEXT NOT NULL DEFAULT '',
+      tracking_number TEXT NOT NULL DEFAULT '',
+      internal_note TEXT NOT NULL DEFAULT '',
       currency TEXT NOT NULL DEFAULT 'TWD',
       payment_status TEXT NOT NULL DEFAULT 'uncollected',
       order_status TEXT NOT NULL DEFAULT 'new',
@@ -225,6 +666,8 @@ function schemaStatements(db: D1Database) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS site_pages_site_slug_unique ON site_pages (site_id, slug)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS site_settings_revisions_site_version_unique ON site_settings_revisions (site_id, version)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS site_settings_revisions_site_created_idx ON site_settings_revisions (site_id, created_at DESC)"),
     db.prepare("CREATE INDEX IF NOT EXISTS site_pages_site_status_updated_idx ON site_pages (site_id, status, updated_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS site_page_revisions_page_created_idx ON site_page_revisions (page_id, created_at DESC)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS articles_site_slug_unique ON articles (site_id, slug)"),
@@ -250,6 +693,7 @@ function schemaStatements(db: D1Database) {
     db.prepare("CREATE INDEX IF NOT EXISTS inventory_movements_product_created_idx ON inventory_movements (product_id, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS inventory_movements_order_idx ON inventory_movements (order_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS order_events_order_created_idx ON order_events (order_id, created_at DESC)"),
+    ...productionSchemaStatements(db),
   ];
 }
 
@@ -293,10 +737,15 @@ async function upgradeLegacySchema(db: D1Database) {
     ["version", "version INTEGER NOT NULL DEFAULT 1"],
   ]);
   await addMissingColumns(db, "orders", [
+    ["member_id", "member_id TEXT REFERENCES members(id) ON DELETE SET NULL"],
     ["request_fingerprint", "request_fingerprint TEXT NOT NULL DEFAULT ''"],
     ["reserved_until", "reserved_until TEXT"],
     ["expired_at", "expired_at TEXT"],
     ["consent_version", "consent_version TEXT NOT NULL DEFAULT 'local-reservation-v1'"],
+    ["shipping_fee", "shipping_fee INTEGER CHECK (shipping_fee IS NULL OR shipping_fee >= 0)"],
+    ["carrier", "carrier TEXT NOT NULL DEFAULT ''"],
+    ["tracking_number", "tracking_number TEXT NOT NULL DEFAULT ''"],
+    ["internal_note", "internal_note TEXT NOT NULL DEFAULT ''"],
   ]);
   await db.batch([
     db.prepare(`UPDATE site_settings SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
@@ -326,6 +775,11 @@ async function upgradeLegacySchema(db: D1Database) {
       ON orders (order_status, payment_status, reserved_until)
       WHERE reserved_until IS NOT NULL`,
   ).run();
+  await db.prepare(
+    `CREATE INDEX IF NOT EXISTS orders_site_member_created_idx
+      ON orders (site_id, member_id, created_at)
+      WHERE member_id IS NOT NULL`,
+  ).run();
   // Older local databases could contain duplicate revision numbers from a
   // concurrent restore. Keep the newest copy before enforcing one immutable
   // revision per page/version.
@@ -335,6 +789,30 @@ async function upgradeLegacySchema(db: D1Database) {
     )`).run();
   await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS site_page_revisions_page_version_unique
     ON site_page_revisions (page_id, version)`).run();
+  // Article saves and restores use optimistic versions. Legacy local databases
+  // may contain duplicate version numbers from the old archive path, so retain
+  // the newest row before enforcing one immutable revision per version.
+  await db.prepare(`DELETE FROM article_revisions
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid) FROM article_revisions GROUP BY article_id, version
+    )`).run();
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS article_revisions_article_version_unique
+    ON article_revisions (article_id, version)`).run();
+  // Site settings predate immutable history. Backfill exactly one snapshot of
+  // the current version so a v10 local database can immediately save/restore.
+  await db.prepare(`DELETE FROM site_settings_revisions
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid) FROM site_settings_revisions GROUP BY site_id, version
+    )`).run();
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS site_settings_revisions_site_version_unique
+    ON site_settings_revisions (site_id, version)`).run();
+}
+
+async function backfillSiteSettingsRevisions(db: D1Database) {
+  await db.prepare(`INSERT OR IGNORE INTO site_settings_revisions (
+    id, site_id, settings_json, theme_json, version, saved_by, created_at
+  ) SELECT lower(hex(randomblob(16))), site_id, settings_json, theme_json,
+    version, updated_by, updated_at FROM site_settings`).run();
 }
 
 async function seedCatalog(db: D1Database) {
@@ -348,10 +826,19 @@ async function seedCatalog(db: D1Database) {
     .bind(
       DEFAULT_SITE_ID,
       JSON.stringify({
-        announcement: "泰國佛牌與收藏品網站建置中",
+        announcement: "商品資料整理中，確認後才開放訂購",
         brandName: "泰聚達",
         brandSubtitle: "THAI AMULET ARCHIVE",
-        footerNote: "網站內容建置中，商品資訊確認後才會開放訂購。",
+        footerNote: "商品資訊與客服管道確認後才會開放正式訂購。",
+        businessLegalName: "",
+        businessAddress: "",
+        contactEmail: "",
+        contactPhone: "",
+        contactHours: "",
+        lineOfficialUrl: "",
+        shippingPolicySummary: "台灣本島宅配為主；運費、偏遠加價與出貨時間於客服確認訂單後告知。網站小計不含運費。",
+        returnsPolicySummary: "退換貨申請管道與退貨地址將於正式開放訂購前公布；七日解除權適用範圍依實際商品與法規辦理。",
+        paymentPolicySummary: "目前不提供線上刷卡。訂單確認後由客服通知可使用的付款方式與期限。",
         homeHeroEyebrow: "泰國佛牌與收藏品",
         homeHeroTitlePrimary: "清楚的商品資訊，",
         homeHeroTitleSecondary: "讓選擇更有依據。",
@@ -364,8 +851,8 @@ async function seedCatalog(db: D1Database) {
       }),
       JSON.stringify({
         preset: "archive",
-        accent: "#b89048",
-        surface: "#f4efe4",
+        accent: "#c5a15a",
+        surface: "#fbf9f2",
         ink: "#171713",
       }),
       SEED_TIMESTAMP,
@@ -428,7 +915,18 @@ async function seedCatalog(db: D1Database) {
       category.status,
     )));
 
-  const categoryIds = new Map(catalogCategories.map((category) => [category.name, category.id]));
+  // Legacy local databases may already contain a category with the same name
+  // under a user-generated id. INSERT OR IGNORE keeps that row, so products
+  // must bind the persisted id instead of assuming the static seed id won.
+  const categoryRows = await db.prepare(
+    "SELECT id, name FROM categories WHERE site_id = ?",
+  ).bind(DEFAULT_SITE_ID).all<{ id: string; name: string }>();
+  const categoryIds = new Map(categoryRows.results.map(({ id, name }) => [name, id]));
+  for (const category of catalogCategories) {
+    if (!categoryIds.has(category.name)) {
+      throw new Error(`Catalog category was not persisted: ${category.name}`);
+    }
+  }
   await db.batch(products.map((product) => db.prepare(`INSERT OR IGNORE INTO products (
     id, site_id, category_id, sku, slug, name, short_name, description,
     origin, temple, buddhist_year, western_year, material, dimensions,
@@ -488,7 +986,10 @@ async function initializeDatabase(db: D1Database) {
     const versionRow = await db.prepare(
       "SELECT value FROM schema_metadata WHERE key = 'schema_version' LIMIT 1",
     ).first<Record<string, unknown>>();
-    if (Number(versionRow?.value || 0) >= CURRENT_SCHEMA_VERSION) return;
+    if (Number(versionRow?.value || 0) >= CURRENT_SCHEMA_VERSION) {
+      await ensureTenantIntegrityTriggers(db);
+      return;
+    }
   } catch {
     // Legacy databases do not have the metadata table yet. The idempotent
     // schema statements below create it without removing any existing data.
@@ -496,7 +997,9 @@ async function initializeDatabase(db: D1Database) {
 
   await db.batch(schemaStatements(db));
   await upgradeLegacySchema(db);
+  await ensureTenantIntegrityTriggers(db);
   await seedCatalog(db);
+  await backfillSiteSettingsRevisions(db);
   await db.prepare("PRAGMA optimize").run();
   await db.prepare(`INSERT INTO schema_metadata (key, value, updated_at)
     VALUES ('schema_version', ?, ?)

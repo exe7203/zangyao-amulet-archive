@@ -80,7 +80,7 @@ export type DeviceCheckoutProfile = {
 export type DeviceProfileEnvelope = {
   version: 1;
   scope: "device-only";
-  siteCode: "taijuda";
+  siteCode: string;
   consentVersion: "remember-checkout-v1";
   savedAt: string;
   expiresAt: string;

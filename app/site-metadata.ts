@@ -1,32 +1,30 @@
 import type { Metadata } from "next";
-import { publishedBrandName } from "../shared/published-site";
-import { isStaticPathIndexable } from "../shared/seo-indexing";
+import { publishedBrandName, publishedSiteAppearance } from "../shared/published-site";
+import { isStaticPathIndexable, staticPathIndexOptionsFromSettings } from "../shared/seo-indexing";
+import { resolveSiteUrl } from "../shared/site-url";
 
-function siteUrl(): URL {
-  try {
-    const value = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
-    if (value.protocol !== "http:" && value.protocol !== "https:") throw new Error("Unsupported URL");
-    value.search = "";
-    value.hash = "";
-    if (!value.pathname.endsWith("/")) value.pathname += "/";
-    return value;
-  } catch {
-    return new URL("http://127.0.0.1:3000/");
-  }
-}
-
-export function infoPageMetadata(title: string, description: string, path: string): Metadata {
-  const canonical = new URL(path.replace(/^\/+/, ""), siteUrl()).toString();
-  const indexable = isStaticPathIndexable(path);
+export function infoPageMetadata(
+  title: string,
+  description: string,
+  path: string,
+  siteUrlInput?: string | URL,
+): Metadata {
+  const site = resolveSiteUrl(siteUrlInput?.toString());
+  const canonical = site.publicUrl
+    ? new URL(path.replace(/^\/+/, ""), site.publicUrl).toString()
+    : null;
+  const indexOptions = staticPathIndexOptionsFromSettings(publishedSiteAppearance.settings);
+  const indexable = site.indexable && isStaticPathIndexable(path, indexOptions);
+  const fullTitle = title.includes(publishedBrandName) ? title : `${title}｜${publishedBrandName}`;
   return {
-    title,
+    title: title.includes(publishedBrandName) ? { absolute: fullTitle } : title,
     description,
-    alternates: { canonical },
-    robots: { index: indexable, follow: true },
+    ...(canonical ? { alternates: { canonical } } : {}),
+    robots: { index: indexable, follow: site.indexable },
     openGraph: {
       type: "website",
-      url: canonical,
-      title: `${title}｜${publishedBrandName}`,
+      ...(canonical ? { url: canonical } : {}),
+      title: fullTitle,
       description,
     },
   };

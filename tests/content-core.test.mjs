@@ -134,6 +134,39 @@ test("article editor saves, detects stale versions, lists history, and restores 
     { version: 2, status: "published" },
     { version: 3, status: "draft" },
   ]);
+
+  const staleArchiveResponse = await handleContentApi(
+    request(`/api/admin/articles/${encodeURIComponent(articleId)}?site=taijuda`, "DELETE", {
+      siteCode: "taijuda",
+      expectedVersion: 2,
+    }),
+    { DB: db },
+  );
+  assert.equal(staleArchiveResponse?.status, 409);
+
+  const archiveResponse = await handleContentApi(
+    request(`/api/admin/articles/${encodeURIComponent(articleId)}?site=taijuda`, "DELETE", {
+      siteCode: "taijuda",
+      expectedVersion: 3,
+    }),
+    { DB: db },
+  );
+  assert.equal(archiveResponse?.status, 200);
+  assert.deepEqual(await archiveResponse.json(), { ok: true, version: 4 });
+
+  const archivedArticle = await db.prepare(
+    "SELECT status, version FROM articles WHERE id = ?",
+  ).bind(articleId).first();
+  assert.deepEqual(archivedArticle, { status: "archived", version: 4 });
+  const archivedHistory = await db.prepare(
+    "SELECT version, status FROM article_revisions WHERE article_id = ? ORDER BY version",
+  ).bind(articleId).all();
+  assert.deepEqual(archivedHistory.results, [
+    { version: 1, status: "draft" },
+    { version: 2, status: "published" },
+    { version: 3, status: "draft" },
+    { version: 4, status: "archived" },
+  ]);
 });
 
 test("article publishing requires 300 body characters and keeps summary and SEO gates", async () => {
@@ -229,6 +262,36 @@ test("article API accepts the editor whitelist and rejects hidden public-rendere
       { type: "orderedList", attrs: { start: 1, type: null }, content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "步驟" }] }] }] },
       { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "引用" }] }] },
       { type: "codeBlock", attrs: { language: null }, content: [{ type: "text", text: "source: verified" }] },
+      {
+        type: "image",
+        attrs: {
+          src: "https://cdn.example.com/article-detail.webp",
+          alt: "佛牌背面印記細節",
+          caption: "公開來源圖片，館藏編號 TJD-01",
+          title: null,
+          width: null,
+          height: null,
+        },
+      },
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableHeader", attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null }, content: [{ type: "paragraph", content: [{ type: "text", text: "年代" }] }] },
+              { type: "tableHeader", attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null }, content: [{ type: "paragraph", content: [{ type: "text", text: "材質" }] }] },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null }, content: [{ type: "paragraph", content: [{ type: "text", text: "佛曆 2520" }] }] },
+              { type: "tableCell", attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null }, content: [{ type: "paragraph", content: [{ type: "text", text: "粉質" }] }] },
+            ],
+          },
+        ],
+      },
       { type: "horizontalRule" },
     ],
   };
@@ -256,13 +319,145 @@ test("article API accepts the editor whitelist and rejects hidden public-rendere
   });
   assert.equal(unsafeLink.response.status, 400);
 
-  const unsupportedImage = await saveArticle({
+  const missingImageAlt = await saveArticle({
     siteCode: "taijuda",
-    slug: "unsupported-image",
-    title: "尚未支援的圖片節點",
-    contentJson: { type: "doc", content: [{ type: "image", attrs: { src: "https://example.com/photo.jpg" } }] },
+    slug: "missing-image-alt",
+    title: "缺少圖片替代文字",
+    contentJson: { type: "doc", content: [{ type: "image", attrs: { src: "https://example.com/photo.jpg", alt: "", caption: null, title: null, width: null, height: null } }] },
     status: "draft",
     version: 0,
   });
-  assert.equal(unsupportedImage.response.status, 400);
+  assert.equal(missingImageAlt.response.status, 400);
+
+  const unsafeImage = await saveArticle({
+    siteCode: "taijuda",
+    slug: "unsafe-inline-image",
+    title: "不安全內文圖片",
+    contentJson: { type: "doc", content: [{ type: "image", attrs: { src: "https://user:secret@example.com/photo.jpg", alt: "不安全圖片", caption: null, title: null, width: null, height: null } }] },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(unsafeImage.response.status, 400);
+
+  const oversizedImage = await saveArticle({
+    siteCode: "taijuda",
+    slug: "oversized-inline-image",
+    title: "超出限制內文圖片",
+    contentJson: { type: "doc", content: [{ type: "image", attrs: { src: "https://example.com/photo.jpg", alt: "替".repeat(301), caption: null, title: null, width: null, height: null } }] },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(oversizedImage.response.status, 400);
+
+  const malformedTable = await saveArticle({
+    siteCode: "taijuda",
+    slug: "malformed-inline-table",
+    title: "結構錯誤表格",
+    contentJson: {
+      type: "doc",
+      content: [{
+        type: "table",
+        content: [
+          { type: "tableRow", content: [{ type: "tableHeader", content: [{ type: "paragraph" }] }, { type: "tableHeader", content: [{ type: "paragraph" }] }] },
+          { type: "tableRow", content: [{ type: "tableCell", content: [{ type: "paragraph" }] }] },
+        ],
+      }],
+    },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(malformedTable.response.status, 400);
+
+  const oversizedTable = await saveArticle({
+    siteCode: "taijuda",
+    slug: "oversized-inline-table",
+    title: "超出限制表格",
+    contentJson: {
+      type: "doc",
+      content: [{
+        type: "table",
+        content: [{
+          type: "tableRow",
+          content: [{ type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "字".repeat(2001) }] }] }],
+        }],
+      }],
+    },
+    status: "draft",
+    version: 0,
+  });
+  assert.equal(oversizedTable.response.status, 400);
+});
+
+test("admin article list searches, filters, paginates, and escapes LIKE wildcards", async () => {
+  const document = JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] });
+  const rows = [
+    ["list-audit-a", "list-audit-a", "稽核清單 LIST%_TOKEN", "draft", "2026-08-12T08:05:00.000Z"],
+    ["list-audit-b", "list-audit-b", "稽核清單 第二篇", "draft", "2026-08-12T08:04:00.000Z"],
+    ["list-audit-c", "list-audit-c", "稽核清單 第三篇", "draft", "2026-08-12T08:03:00.000Z"],
+    ["list-audit-d", "list-audit-d", "稽核清單 已發布", "published", "2026-08-12T08:02:00.000Z"],
+    ["list-audit-e", "list-audit-e", "稽核清單 已封存", "archived", "2026-08-12T08:01:00.000Z"],
+  ];
+  await db.batch(rows.map(([id, slug, title, status, updatedAt]) => db.prepare(`INSERT INTO articles (
+    id, site_id, slug, title, excerpt, content_json, status, tag, updated_at
+  ) VALUES (?, 'site_taijuda', ?, ?, '分頁測試摘要', ?, ?, '清單稽核', ?)`)
+    .bind(id, slug, title, document, status, updatedAt)));
+
+  const filteredResponse = await handleContentApi(
+    request("/api/admin/articles?site=taijuda&q=%E7%A8%BD%E6%A0%B8%E6%B8%85%E5%96%AE&status=draft&page=1&limit=2"),
+    { DB: db },
+  );
+  assert.equal(filteredResponse?.status, 200);
+  const filtered = await filteredResponse.json();
+  assert.equal(filtered.site.code, "taijuda");
+  assert.equal(filtered.articles.length, 2);
+  assert.ok(filtered.articles.every((article) => article.status === "draft"));
+  assert.deepEqual(filtered.pagination, {
+    page: 1,
+    limit: 2,
+    maxLimit: 100,
+    total: 3,
+    totalPages: 2,
+    returned: 2,
+  });
+
+  const secondPageResponse = await handleContentApi(
+    request("/api/admin/articles?site=taijuda&q=%E7%A8%BD%E6%A0%B8%E6%B8%85%E5%96%AE&status=draft&page=2&limit=2"),
+    { DB: db },
+  );
+  const secondPage = await secondPageResponse.json();
+  assert.equal(secondPage.articles.length, 1);
+  assert.equal(secondPage.pagination.returned, 1);
+
+  const outOfRangeResponse = await handleContentApi(
+    request("/api/admin/articles?site=taijuda&q=%E7%A8%BD%E6%A0%B8%E6%B8%85%E5%96%AE&status=draft&page=99&limit=2"),
+    { DB: db },
+  );
+  const outOfRange = await outOfRangeResponse.json();
+  assert.deepEqual(outOfRange.articles, []);
+  assert.equal(outOfRange.pagination.page, 99);
+  assert.equal(outOfRange.pagination.total, 3);
+  assert.equal(outOfRange.pagination.returned, 0);
+
+  const literalResponse = await handleContentApi(
+    request(`/api/admin/articles?site=taijuda&q=${encodeURIComponent("LIST%_TOKEN")}`),
+    { DB: db },
+  );
+  const literal = await literalResponse.json();
+  assert.equal(literal.pagination.limit, 40);
+  assert.equal(literal.pagination.total, 1);
+  assert.equal(literal.articles[0].id, "list-audit-a");
+
+  const cappedResponse = await handleContentApi(
+    request("/api/admin/articles?site=taijuda&q=%E7%A8%BD%E6%A0%B8%E6%B8%85%E5%96%AE&limit=999"),
+    { DB: db },
+  );
+  const capped = await cappedResponse.json();
+  assert.equal(capped.pagination.limit, 100);
+  assert.equal(capped.pagination.returned, 5);
+
+  const invalidStatusResponse = await handleContentApi(
+    request("/api/admin/articles?site=taijuda&status=unknown"),
+    { DB: db },
+  );
+  assert.equal(invalidStatusResponse?.status, 400);
 });

@@ -16,6 +16,19 @@ import {
   publicOrderAccess,
   reservationDeadline,
 } from "../worker/store-api.ts";
+import { resolveCheckoutIdempotencyAttempt } from "../app/checkout-dialog.tsx";
+
+test("checkout reuses an idempotency key only while the normalized payload is unchanged", () => {
+  let keyIndex = 0;
+  const createKey = () => `checkout-key-${++keyIndex}`;
+  const first = resolveCheckoutIdempotencyAttempt(null, "payload-a", createKey);
+  const retry = resolveCheckoutIdempotencyAttempt(first, "payload-a", createKey);
+  const changed = resolveCheckoutIdempotencyAttempt(retry, "payload-b", createKey);
+  assert.equal(first.key, "checkout-key-1");
+  assert.equal(retry, first);
+  assert.equal(changed.key, "checkout-key-2");
+  assert.notEqual(changed, first);
+});
 
 test("order size stays within the free D1 invocation query budget", () => {
   const accepted = Array.from({ length: MAX_ORDER_DISTINCT_ITEMS }, (_, index) => ({
@@ -30,7 +43,7 @@ let miniflare;
 let db;
 
 const siteId = "site_taijuda";
-const categoryId = "category_amulet";
+const categoryId = "category_taijuda_amulet";
 
 async function executeStatements(statements) {
   for (const statement of statements) await db.prepare(statement).run();
@@ -137,6 +150,19 @@ function adminProductRequest(body) {
   });
 }
 
+function adminCategoryRequest(method, body, categoryId = "") {
+  const suffix = categoryId ? `/${encodeURIComponent(categoryId)}` : "";
+  return new Request(`http://localhost/api/admin/categories${suffix}`, {
+    method,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      origin: "http://localhost",
+    },
+    body: JSON.stringify({ siteCode: "taijuda", ...body }),
+  });
+}
+
 before(async () => {
   miniflare = new Miniflare({
     modules: true,
@@ -151,7 +177,7 @@ before(async () => {
     "CREATE TABLE categories (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, slug TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE products (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, category_id TEXT NOT NULL, sku TEXT NOT NULL, slug TEXT NOT NULL, name TEXT NOT NULL, short_name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL DEFAULT '', temple TEXT NOT NULL DEFAULT '', buddhist_year TEXT NOT NULL DEFAULT '', western_year TEXT NOT NULL DEFAULT '', material TEXT NOT NULL DEFAULT '', dimensions TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL, badge TEXT NOT NULL DEFAULT '', tone TEXT NOT NULL DEFAULT 'sand', shape TEXT NOT NULL, theme TEXT NOT NULL DEFAULT '', purchase_limit INTEGER NOT NULL DEFAULT 1, stock INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft', seo_title TEXT NOT NULL DEFAULT '', seo_description TEXT NOT NULL DEFAULT '', image_url TEXT NOT NULL DEFAULT '', image_alt TEXT NOT NULL DEFAULT '', seo_ready INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE inventory (product_id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, on_hand INTEGER NOT NULL DEFAULT 0 CHECK (on_hand >= 0), reserved INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0 AND reserved <= on_hand), version INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-    "CREATE TABLE orders (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, order_number TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_fingerprint TEXT NOT NULL, customer_name TEXT NOT NULL, customer_phone TEXT NOT NULL, customer_email TEXT NOT NULL DEFAULT '', customer_line_id TEXT NOT NULL DEFAULT '', delivery_method TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', subtotal INTEGER NOT NULL, currency TEXT NOT NULL DEFAULT 'TWD', payment_status TEXT NOT NULL DEFAULT 'uncollected', order_status TEXT NOT NULL DEFAULT 'new', reserved_until TEXT, expired_at TEXT, consent_version TEXT NOT NULL DEFAULT 'local-reservation-v1', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE orders (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, order_number TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_fingerprint TEXT NOT NULL, customer_name TEXT NOT NULL, customer_phone TEXT NOT NULL, customer_email TEXT NOT NULL DEFAULT '', customer_line_id TEXT NOT NULL DEFAULT '', delivery_method TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', subtotal INTEGER NOT NULL, shipping_fee INTEGER CHECK (shipping_fee IS NULL OR shipping_fee >= 0), carrier TEXT NOT NULL DEFAULT '', tracking_number TEXT NOT NULL DEFAULT '', internal_note TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT 'TWD', payment_status TEXT NOT NULL DEFAULT 'uncollected', order_status TEXT NOT NULL DEFAULT 'new', reserved_until TEXT, expired_at TEXT, consent_version TEXT NOT NULL DEFAULT 'local-reservation-v1', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE order_items (id TEXT PRIMARY KEY NOT NULL, order_id TEXT NOT NULL, product_id TEXT NOT NULL, product_sku TEXT NOT NULL, product_name TEXT NOT NULL, unit_price INTEGER NOT NULL, quantity INTEGER NOT NULL, line_total INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE inventory_movements (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, product_id TEXT NOT NULL, order_id TEXT, movement_type TEXT NOT NULL, quantity INTEGER NOT NULL, on_hand_after INTEGER NOT NULL, reserved_after INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT 'system', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE order_events (id TEXT PRIMARY KEY NOT NULL, site_id TEXT NOT NULL, order_id TEXT NOT NULL, event_type TEXT NOT NULL, from_value TEXT NOT NULL DEFAULT '', to_value TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT 'system', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -162,7 +188,7 @@ before(async () => {
     "CREATE INDEX order_events_order_created_idx ON order_events (order_id, created_at)",
   ]);
   await db.batch([
-    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '7')"),
+    db.prepare("INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '8')"),
     db.prepare("INSERT INTO sites (id, code, name) VALUES (?, 'taijuda', '泰聚達')").bind(siteId),
     db.prepare("INSERT INTO categories (id, site_id, slug, name, sort_order, status) VALUES (?, ?, 'amulet', '佛牌', 1, 'active')").bind(categoryId, siteId),
   ]);
@@ -330,7 +356,7 @@ test("public products expose fail-closed order readiness and remote orders requi
   assert.equal(readyOrderPayload.order.items[0].productId, "product-public-ready");
 });
 
-test("admin product writes persist image SEO fields and advance product and inventory versions", async () => {
+test("admin product writes persist image SEO fields without inventing an inventory change", async () => {
   const productInput = {
     sku: "TJD-SEO-001",
     slug: "seo-ready-amulet",
@@ -382,8 +408,12 @@ test("admin product writes persist image SEO fields and advance product and inve
   const updatedPayload = await updated.json();
   assert.equal(updatedPayload.product.price, 2880);
   assert.equal(updatedPayload.product.version, 2);
-  assert.equal(updatedPayload.product.inventory.version, 1);
+  assert.equal(updatedPayload.product.inventory.version, 0);
   assert.equal(updatedPayload.product.seoReady, true);
+  const movementsAfterMetadataSave = await db.prepare(
+    "SELECT movement_type, quantity FROM inventory_movements WHERE product_id = ? ORDER BY rowid",
+  ).bind(updatedPayload.product.id).all();
+  assert.deepEqual(movementsAfterMetadataSave.results, [{ movement_type: "seed", quantity: 1 }]);
 
   const staleArchive = await handleStoreApi(new Request(
     `http://localhost/api/admin/products/${encodeURIComponent(updatedPayload.product.id)}?site=taijuda&version=1`,
@@ -428,6 +458,204 @@ test("admin product writes persist image SEO fields and advance product and inve
   assert.equal(inventoryAfterStaleSave.version, staleInventory.version);
 });
 
+test("admin categories support authenticated CRUD, archive CAS, and refuse deleting referenced rows", async () => {
+  const denied = await handleStoreApi(
+    new Request("https://shop.example/api/admin/categories?site=taijuda"),
+    { DB: db, ADMIN_EMAIL_ALLOWLIST: "owner@example.com" },
+  );
+  assert.equal(denied.status, 401);
+
+  const crossOrigin = await handleStoreApi(new Request("https://shop.example/api/admin/categories", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      origin: "https://evil.example",
+      "oai-authenticated-user-email": "owner@example.com",
+    },
+    body: JSON.stringify({ siteCode: "taijuda", name: "跨來源", slug: "cross-origin", sortOrder: 1, status: "active" }),
+  }), { DB: db, ADMIN_EMAIL_ALLOWLIST: "owner@example.com" });
+  assert.equal(crossOrigin.status, 403);
+
+  const wrongContentType = await handleStoreApi(new Request("https://shop.example/api/admin/categories", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "text/plain",
+      origin: "https://shop.example",
+      "oai-authenticated-user-email": "owner@example.com",
+    },
+    body: JSON.stringify({ siteCode: "taijuda", name: "錯誤格式", slug: "wrong-content-type", sortOrder: 1, status: "active" }),
+  }), { DB: db, ADMIN_EMAIL_ALLOWLIST: "owner@example.com" });
+  assert.equal(wrongContentType.status, 415);
+
+  const created = await handleStoreApi(adminCategoryRequest("POST", {
+    name: "供品與配件",
+    slug: "offerings-accessories",
+    description: "供品、配件與收藏用品",
+    sortOrder: 40,
+    status: "active",
+  }), { DB: db });
+  assert.equal(created.status, 201);
+  const createdPayload = await created.json();
+  assert.equal(createdPayload.category.productCount, 0);
+  assert.equal(createdPayload.category.status, "active");
+
+  const updated = await handleStoreApi(adminCategoryRequest("PATCH", {
+    name: "供品配件",
+    slug: "offerings-accessories",
+    description: "供品、配件、展示與收藏用品",
+    sortOrder: 45,
+    status: "archived",
+    expectedUpdatedAt: createdPayload.category.updatedAt,
+  }, createdPayload.category.id), { DB: db });
+  assert.equal(updated.status, 200);
+  const updatedPayload = await updated.json();
+  assert.equal(updatedPayload.category.status, "archived");
+  assert.notEqual(updatedPayload.category.updatedAt, createdPayload.category.updatedAt);
+
+  const stale = await handleStoreApi(adminCategoryRequest("PATCH", {
+    name: "不應覆蓋",
+    slug: "should-not-overwrite",
+    description: "",
+    sortOrder: 50,
+    status: "active",
+    expectedUpdatedAt: createdPayload.category.updatedAt,
+  }, createdPayload.category.id), { DB: db });
+  assert.equal(stale.status, 409);
+
+  const deleteWithoutJson = await handleStoreApi(new Request(
+    `http://localhost/api/admin/categories/${encodeURIComponent(createdPayload.category.id)}`,
+    { method: "DELETE", headers: { accept: "application/json", origin: "http://localhost" } },
+  ), { DB: db });
+  assert.equal(deleteWithoutJson.status, 415);
+
+  const removed = await handleStoreApi(new Request(
+    `http://localhost/api/admin/categories/${encodeURIComponent(createdPayload.category.id)}`,
+    { method: "DELETE", headers: { accept: "application/json", "content-type": "application/json", origin: "http://localhost" }, body: JSON.stringify({ siteCode: "taijuda", expectedUpdatedAt: updatedPayload.category.updatedAt }) },
+  ), { DB: db });
+  assert.equal(removed.status, 200);
+
+  const referencedCreated = await handleStoreApi(adminCategoryRequest("POST", {
+    name: "測試引用分類",
+    slug: "referenced-category",
+    description: "刪除保護測試",
+    sortOrder: 60,
+    status: "active",
+  }), { DB: db });
+  const referencedPayload = await referencedCreated.json();
+  await seedProduct({ id: "product-category-reference", slug: "category-reference", onHand: 1 });
+  await db.prepare("UPDATE products SET category_id = ? WHERE id = ?")
+    .bind(referencedPayload.category.id, "product-category-reference")
+    .run();
+  const referencedDelete = await handleStoreApi(new Request(
+    `http://localhost/api/admin/categories/${encodeURIComponent(referencedPayload.category.id)}`,
+    { method: "DELETE", headers: { accept: "application/json", "content-type": "application/json", origin: "http://localhost" }, body: JSON.stringify({ siteCode: "taijuda", expectedUpdatedAt: referencedPayload.category.updatedAt }) },
+  ), { DB: db });
+  assert.equal(referencedDelete.status, 409);
+  assert.match((await referencedDelete.json()).error, /仍有商品使用/);
+
+  const listed = await handleStoreApi(
+    new Request("http://localhost/api/admin/categories?site=taijuda&status=all"),
+    { DB: db },
+  );
+  const listedPayload = await listed.json();
+  const referencedCategory = listedPayload.categories.find((category) => category.id === referencedPayload.category.id);
+  assert.equal(referencedCategory.productCount, 1);
+});
+
+test("admin product listing is searched, filtered, and paginated by the server", async () => {
+  await seedProduct({ id: "product-filterbatch-a", slug: "filterbatch-a", onHand: 1 });
+  await seedProduct({ id: "product-filterbatch-b", slug: "filterbatch-b", onHand: 1 });
+  await seedProduct({ id: "product-filterbatch-c", slug: "filterbatch-c", onHand: 1 });
+  await db.prepare("UPDATE products SET status = 'archived' WHERE id = 'product-filterbatch-c'").run();
+
+  const pageTwo = await handleStoreApi(new Request(
+    "http://localhost/api/admin/products?site=taijuda&q=filterbatch&page=2&limit=1",
+  ), { DB: db });
+  assert.equal(pageTwo.status, 200);
+  const pageTwoPayload = await pageTwo.json();
+  assert.equal(pageTwoPayload.products.length, 1);
+  assert.deepEqual(pageTwoPayload.pagination, {
+    page: 2,
+    limit: 1,
+    maxLimit: 100,
+    total: 3,
+    totalPages: 3,
+    returned: 1,
+  });
+  assert.equal(pageTwoPayload.listing.total, 3);
+
+  const active = await handleStoreApi(new Request(
+    `http://localhost/api/admin/products?site=taijuda&q=filterbatch&status=active&category=${encodeURIComponent(categoryId)}&page=1&limit=10`,
+  ), { DB: db });
+  const activePayload = await active.json();
+  assert.equal(activePayload.pagination.total, 2);
+  assert.ok(activePayload.products.every((product) => product.status === "active" && product.categoryId === categoryId));
+
+  const invalid = await handleStoreApi(new Request(
+    "http://localhost/api/admin/products?site=taijuda&status=not-a-product-status",
+  ), { DB: db });
+  assert.equal(invalid.status, 400);
+});
+
+test("metadata saves preserve onHand and reserved without zero movements, while stock changes require a reason", async () => {
+  const id = "product-metadata-stock";
+  await seedProduct({ id, slug: "metadata-stock", onHand: 10, reserved: 2 });
+  const listed = await handleStoreApi(new Request(
+    "http://localhost/api/admin/products?site=taijuda&q=metadata-stock&page=1&limit=10",
+  ), { DB: db });
+  const listedPayload = await listed.json();
+  const product = listedPayload.products.find((candidate) => candidate.id === id);
+  assert.ok(product);
+  assert.equal(product.stock, 8, "public-compatible stock field remains available stock");
+  assert.deepEqual(product.inventory, { onHand: 10, reserved: 2, available: 8, version: 0 });
+
+  const { inventory, createdAt, updatedAt, ...fields } = product;
+  const metadataSave = await handleStoreApi(adminProductRequest({
+    ...fields,
+    description: "只修改商品說明，不調整庫存",
+    stock: inventory.onHand,
+    productVersion: fields.version,
+    inventoryVersion: inventory.version,
+  }), { DB: db });
+  assert.equal(metadataSave.status, 200);
+  const metadataPayload = await metadataSave.json();
+  assert.equal(metadataPayload.product.inventory.onHand, 10);
+  assert.equal(metadataPayload.product.inventory.reserved, 2);
+  assert.equal(metadataPayload.product.inventory.version, 0);
+  const afterMetadataMovements = await db.prepare(
+    "SELECT movement_type, quantity FROM inventory_movements WHERE product_id = ?",
+  ).bind(id).all();
+  assert.deepEqual(afterMetadataMovements.results, []);
+
+  const { inventory: currentInventory, createdAt: currentCreatedAt, updatedAt: currentUpdatedAt, ...currentFields } = metadataPayload.product;
+  assert.ok(createdAt && updatedAt && currentCreatedAt && currentUpdatedAt);
+  const missingReason = await handleStoreApi(adminProductRequest({
+    ...currentFields,
+    stock: 11,
+    productVersion: currentFields.version,
+    inventoryVersion: currentInventory.version,
+  }), { DB: db });
+  assert.equal(missingReason.status, 400);
+  assert.match((await missingReason.json()).error, /調整原因/);
+
+  const adjusted = await handleStoreApi(adminProductRequest({
+    ...currentFields,
+    stock: 11,
+    adjustmentReason: "年度盤點補入一件",
+    productVersion: currentFields.version,
+    inventoryVersion: currentInventory.version,
+  }), { DB: db });
+  assert.equal(adjusted.status, 200);
+  const adjustedPayload = await adjusted.json();
+  assert.deepEqual(adjustedPayload.product.inventory, { onHand: 11, reserved: 2, available: 9, version: 1 });
+  const movements = await db.prepare(
+    "SELECT movement_type, quantity, reason FROM inventory_movements WHERE product_id = ?",
+  ).bind(id).all();
+  assert.deepEqual(movements.results, [{ movement_type: "adjustment", quantity: 1, reason: "年度盤點補入一件" }]);
+});
+
 test("order creation persists a deadline, replays the same request, and rejects key collisions", async () => {
   await seedProduct({ id: "product-order", slug: "order-amulet", onHand: 2 });
   const body = {
@@ -436,7 +664,7 @@ test("order creation persists a deadline, replays the same request, and rejects 
     customer: { name: "王小明", phone: "0912345678", email: "a@example.com", lineId: "" },
     deliveryMethod: "appointment",
     address: "",
-    note: "",
+    note: "請晚間聯絡",
     items: [{ productId: "product-order", quantity: 1 }],
   };
 
@@ -448,13 +676,47 @@ test("order creation persists a deadline, replays the same request, and rejects 
   assert.match(createdPayload.order.createdAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(createdPayload.order.items[0].productId, "product-order");
   assert.equal(createdPayload.order.items[0].quantity, 1);
-  for (const privateField of ["customer", "customerName", "customerPhone", "customerEmail", "address", "note"]) {
+  for (const privateField of ["customer", "customerName", "customerPhone", "customerEmail", "address", "note", "shippingFee", "carrier", "trackingNumber", "internalNote"]) {
     assert.equal(Object.hasOwn(createdPayload.order, privateField), false, `public receipt leaked ${privateField}`);
   }
 
   const replay = await handleStoreApi(orderRequest(body), { DB: db });
   assert.equal(replay.status, 200);
   assert.equal((await replay.json()).replayed, true);
+
+  const pendingShipping = await handleStoreApi(adminPatch(createdPayload.order.id, {
+    shippingFee: null,
+    carrier: "中華郵政",
+    trackingNumber: "RR123456789TW",
+    internalNote: "僅內部：高價件雙層包裝",
+  }), { DB: db });
+  assert.equal(pendingShipping.status, 200);
+  const pendingShippingPayload = await pendingShipping.json();
+  assert.equal(pendingShippingPayload.order.shippingFee, null);
+  assert.equal(pendingShippingPayload.order.carrier, "中華郵政");
+  assert.equal(pendingShippingPayload.order.trackingNumber, "RR123456789TW");
+  assert.equal(pendingShippingPayload.order.internalNote, "僅內部：高價件雙層包裝");
+  assert.equal(pendingShippingPayload.order.note, "請晚間聯絡");
+
+  const zeroShipping = await handleStoreApi(adminPatch(createdPayload.order.id, { shippingFee: 0 }), { DB: db });
+  assert.equal(zeroShipping.status, 200);
+  assert.equal((await zeroShipping.json()).order.shippingFee, 0);
+
+  const replayAfterFulfillment = await handleStoreApi(orderRequest(body), { DB: db });
+  assert.equal(replayAfterFulfillment.status, 200);
+  const replayAfterFulfillmentPayload = await replayAfterFulfillment.json();
+  for (const privateField of ["shippingFee", "carrier", "trackingNumber", "internalNote"]) {
+    assert.equal(Object.hasOwn(replayAfterFulfillmentPayload.order, privateField), false, `public replay leaked ${privateField}`);
+  }
+
+  for (const invalidShippingFee of [-1, 1.5, "0"]) {
+    const invalid = await handleStoreApi(adminPatch(createdPayload.order.id, { shippingFee: invalidShippingFee }), { DB: db });
+    assert.equal(invalid.status, 400);
+  }
+  const customerNoteOverwrite = await handleStoreApi(adminPatch(createdPayload.order.id, { note: "不可覆蓋" }), { DB: db });
+  assert.equal(customerNoteOverwrite.status, 400);
+  const unknownField = await handleStoreApi(adminPatch(createdPayload.order.id, { logisticsSynced: true }), { DB: db });
+  assert.equal(unknownField.status, 400);
 
   const conflict = await handleStoreApi(orderRequest({
     ...body,
@@ -477,7 +739,9 @@ test("order creation persists a deadline, replays the same request, and rejects 
   assert.equal(paymentPaid.status, 200);
 
   const inventory = await db.prepare("SELECT reserved FROM inventory WHERE product_id = 'product-order'").first();
-  const order = await db.prepare("SELECT request_fingerprint, reserved_until, consent_version FROM orders WHERE idempotency_key = 'checkout-key-0001'").first();
+  const order = await db.prepare(`SELECT request_fingerprint, reserved_until, consent_version,
+    note, shipping_fee, carrier, tracking_number, internal_note
+    FROM orders WHERE idempotency_key = 'checkout-key-0001'`).first();
   const events = await db.prepare(`SELECT event_type, from_value, to_value, note, actor
     FROM order_events WHERE order_id = ? ORDER BY rowid`)
     .bind(createdPayload.order.id)
@@ -486,6 +750,11 @@ test("order creation persists a deadline, replays the same request, and rejects 
   assert.match(order.request_fingerprint, /^[a-f0-9]{64}$/);
   assert.equal(new Date(order.reserved_until).getTime() - new Date(createdPayload.order.reservedUntil).getTime(), 0);
   assert.equal(order.consent_version, ORDER_CONSENT_VERSION);
+  assert.equal(order.note, "請晚間聯絡");
+  assert.equal(order.shipping_fee, 0);
+  assert.equal(order.carrier, "中華郵政");
+  assert.equal(order.tracking_number, "RR123456789TW");
+  assert.equal(order.internal_note, "僅內部：高價件雙層包裝");
   assert.deepEqual(events.results.map((event) => ({
     type: event.event_type,
     from: event.from_value,
@@ -493,12 +762,14 @@ test("order creation persists a deadline, replays the same request, and rejects 
     actor: event.actor,
   })), [
     { type: "order_created", from: "", to: "new", actor: "store-api" },
+    { type: "fulfillment_updated", from: "", to: "", actor: "local-preview" },
+    { type: "fulfillment_updated", from: "", to: "", actor: "local-preview" },
     { type: "order_status_changed", from: "new", to: "confirmed", actor: "local-preview" },
     { type: "payment_status_changed", from: "uncollected", to: "pending", actor: "local-preview" },
     { type: "payment_status_changed", from: "pending", to: "paid", actor: "authenticated-admin" },
   ]);
   const eventMetadata = JSON.stringify(events.results);
-  assert.doesNotMatch(eventMetadata, /王小明|0912345678|a@example\.com|owner@example\.com/);
+  assert.doesNotMatch(eventMetadata, /王小明|0912345678|a@example\.com|owner@example\.com|高價件雙層包裝/);
 });
 
 test("expired reservations release inventory exactly once while pending payments remain held", async () => {
@@ -518,12 +789,13 @@ test("expired reservations release inventory exactly once while pending payments
 
   const first = await expireStaleReservations(db, "2026-08-07T00:00:00.000Z");
   assert.deepEqual(first, { expired: 1, skipped: 0 });
-  const expiredOrder = await db.prepare("SELECT order_status, expired_at, note FROM orders WHERE id = 'order-expired'").first();
+  const expiredOrder = await db.prepare("SELECT order_status, expired_at, note, internal_note FROM orders WHERE id = 'order-expired'").first();
   const expiredInventory = await db.prepare("SELECT reserved, version FROM inventory WHERE product_id = 'product-expired'").first();
   const pendingOrder = await db.prepare("SELECT order_status, expired_at FROM orders WHERE id = 'order-pending'").first();
   assert.equal(expiredOrder.order_status, "cancelled");
   assert.equal(expiredOrder.expired_at, "2026-08-07T00:00:00.000Z");
-  assert.match(expiredOrder.note, /保留逾 72 小時/);
+  assert.equal(expiredOrder.note, "");
+  assert.match(expiredOrder.internal_note, /保留逾 72 小時/);
   assert.deepEqual(expiredInventory, { reserved: 0, version: 1 });
   assert.deepEqual(pendingOrder, { order_status: "new", expired_at: null });
 

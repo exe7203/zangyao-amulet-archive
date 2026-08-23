@@ -9,6 +9,7 @@ import {
   readJsonObject,
   validateWriteRequest,
 } from "./api-utils";
+import { adminLoginDenied } from "./admin-auth-api";
 import {
   DEFAULT_SITE_CODE,
   ensureDatabase,
@@ -19,6 +20,7 @@ import {
   evaluateSiteThemeContrast,
   MIN_SITE_THEME_CONTRAST,
   normalizeSiteAppearance,
+  validateSiteSettingsStructure,
 } from "../shared/site-settings";
 import {
   isPublishedArticleIndexable,
@@ -26,6 +28,8 @@ import {
 } from "../shared/seo-indexing";
 
 const PAGE_STATUSES = new Set(["draft", "published", "archived"]);
+const ADMIN_PAGE_LIST_DEFAULT_LIMIT = 40;
+const ADMIN_PAGE_LIST_MAX_LIMIT = 100;
 const PAGE_BLOCK_TYPES = new Set([
   "Hero",
   "Text",
@@ -70,7 +74,7 @@ type PagePayload = {
 function cleanPageHref(value: string) {
   const candidate = value.trim();
   if (!candidate) return "";
-  if (candidate.length > 1000 || /[\u0000-\u001f\u007f]/u.test(candidate)) return "";
+  if (candidate.length > 1000 || /[\\\u0000-\u001f\u007f]/u.test(candidate)) return "";
   if (/^(?:https?:\/\/|mailto:|tel:)/i.test(candidate)) {
     try {
       const url = new URL(candidate);
@@ -81,7 +85,7 @@ function cleanPageHref(value: string) {
       return "";
     }
   }
-  if (/^(?:\/[^/]|#)[^\u0000-\u001f]*$/u.test(candidate) && !candidate.startsWith("//")) {
+  if (candidate === "/" || (/^(?:\/[^/]|#)[^\u0000-\u001f]*$/u.test(candidate) && !candidate.startsWith("//"))) {
     return candidate;
   }
   return "";
@@ -241,15 +245,94 @@ function parseSiteSettingsRow(row: Record<string, unknown> | null, site: Record<
   };
 }
 
+function parseSiteSettingsRevisionRow(row: Record<string, unknown>) {
+  const appearance = normalizeSiteAppearance(
+    parseJson(row.settings_json, {}),
+    parseJson(row.theme_json, {}),
+  );
+  return {
+    revisionId: String(row.id || ""),
+    siteId: String(row.site_id || ""),
+    settings: appearance.settings,
+    theme: appearance.theme,
+    version: Number(row.version || 1),
+    savedBy: String(row.saved_by || "system"),
+    createdAt: String(row.created_at || ""),
+  };
+}
+
+function boundedQueryInteger(value: string | null, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+}
+
+function adminPageListRequest(url: URL) {
+  const requestedPage = Number(url.searchParams.get("page") || 1);
+  const requestedLimit = Number(url.searchParams.get("limit") || ADMIN_PAGE_LIST_DEFAULT_LIMIT);
+  return {
+    page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, 10_000) : 1,
+    limit: Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, ADMIN_PAGE_LIST_MAX_LIMIT)
+      : ADMIN_PAGE_LIST_DEFAULT_LIMIT,
+  };
+}
+
+function escapePageLikeValue(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
 async function listAdminPages(request: Request, db: D1Database) {
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+
+  const query = cleanText(url.searchParams.get("q"), 200);
+  const status = cleanText(url.searchParams.get("status"), 30);
+  if (status && !PAGE_STATUSES.has(status)) {
+    return json({ error: "頁面篩選狀態不正確" }, { status: 400 });
+  }
+
+  const where = ["site_id = ?"];
+  const bindings: unknown[] = [site.id];
+  if (query) {
+    const pattern = `%${escapePageLikeValue(query)}%`;
+    where.push(`(title LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR slug LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR seo_title LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR seo_description LIKE ? ESCAPE '\\' COLLATE NOCASE)`);
+    bindings.push(pattern, pattern, pattern, pattern);
+  }
+  if (status) {
+    where.push("status = ?");
+    bindings.push(status);
+  }
+
+  const pageRequest = adminPageListRequest(url);
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM site_pages
+    WHERE ${where.join(" AND ")}`)
+    .bind(...bindings)
+    .first<Record<string, unknown>>();
+  const total = Number(countRow?.total || 0);
+  const totalPages = Math.ceil(total / pageRequest.limit);
+  const offset = (pageRequest.page - 1) * pageRequest.limit;
   const result = await db.prepare(`SELECT * FROM site_pages
-    WHERE site_id = ? ORDER BY updated_at DESC, created_at DESC LIMIT 200`)
-    .bind(site.id)
+    WHERE ${where.join(" AND ")}
+    ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .bind(...bindings, pageRequest.limit, offset)
     .all<Record<string, unknown>>();
-  return json({ site, pages: result.results.map(parsePageRow) });
+  return json({
+    site,
+    pages: result.results.map(parsePageRow),
+    pagination: {
+      page: pageRequest.page,
+      limit: pageRequest.limit,
+      maxLimit: ADMIN_PAGE_LIST_MAX_LIMIT,
+      total,
+      totalPages,
+      returned: result.results.length,
+    },
+  });
 }
 
 async function savePage(request: Request, db: D1Database, savedBy: string) {
@@ -373,7 +456,15 @@ async function savePage(request: Request, db: D1Database, savedBy: string) {
 }
 
 async function archivePage(request: Request, db: D1Database, pageId: string, savedBy: string) {
-  const siteCode = cleanSlug(new URL(request.url).searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const parsed = await readJsonObject(request, 16_000);
+  if (parsed.response) return parsed.response;
+  const expectedVersion = Number(parsed.value.expectedVersion);
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return json({ error: "請提供目前頁面版本" }, { status: 400 });
+  }
+  const siteCode = cleanSlug(
+    parsed.value.siteCode || new URL(request.url).searchParams.get("site"),
+  ) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
   const id = cleanText(pageId, 100);
@@ -381,22 +472,36 @@ async function archivePage(request: Request, db: D1Database, pageId: string, sav
     .bind(id, site.id)
     .first<Record<string, unknown>>();
   if (!existing) return json({ error: "找不到頁面" }, { status: 404 });
-  const nextVersion = Number(existing.version || 0) + 1;
+  if (Number(existing.version || 1) !== expectedVersion) {
+    return json({ error: "頁面已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+  }
+  const nextVersion = expectedVersion + 1;
   const now = new Date().toISOString();
-  await db.batch([
-    db.prepare("UPDATE site_pages SET status = 'archived', version = ?, updated_at = ? WHERE id = ? AND site_id = ?")
-      .bind(nextVersion, now, id, site.id),
-    db.prepare(`INSERT INTO site_page_revisions (
-      id, page_id, slug, title, data_json, status, seo_title, seo_description,
-      canonical_url, og_image_url, noindex, version, saved_by, created_at
-    ) VALUES (?, ?, ?, ?, ?, 'archived', ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(
-        crypto.randomUUID(), id, existing.slug, existing.title, existing.data_json,
-        existing.seo_title, existing.seo_description, existing.canonical_url,
-        existing.og_image_url, existing.noindex, nextVersion, savedBy, now,
-      ),
-  ]);
-  return json({ ok: true });
+  try {
+    const results = await db.batch([
+      db.prepare(`UPDATE site_pages SET status = 'archived', version = ?, updated_at = ?
+        WHERE id = ? AND site_id = ? AND version = ?`)
+        .bind(nextVersion, now, id, site.id, expectedVersion),
+      db.prepare(`INSERT INTO site_page_revisions (
+        id, page_id, slug, title, data_json, status, seo_title, seo_description,
+        canonical_url, og_image_url, noindex, version, saved_by, created_at
+      ) SELECT ?, id, slug, title, data_json, status, seo_title, seo_description,
+        canonical_url, og_image_url, noindex, version, ?, ?
+        FROM site_pages WHERE id = ? AND site_id = ? AND version = ? AND updated_at = ?`)
+        .bind(crypto.randomUUID(), savedBy, now, id, site.id, nextVersion, now),
+    ]);
+    if (Number(results[0]?.meta.changes || 0) !== 1 || Number(results[1]?.meta.changes || 0) !== 1) {
+      return json({ error: "頁面已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("site_page_revisions_page_version_unique") ||
+        message.includes("site_page_revisions.page_id")) {
+      return json({ error: "頁面已被其他操作更新，請重新整理後再封存" }, { status: 409 });
+    }
+    throw error;
+  }
+  return json({ ok: true, version: nextVersion });
 }
 
 async function listPageRevisions(request: Request, pathname: string, db: D1Database) {
@@ -516,8 +621,12 @@ async function saveSiteSettings(request: Request, db: D1Database, savedBy: strin
   const siteCode = cleanSlug(parsed.value.siteCode) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
   if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
-  if (!isRecord(parsed.value.settings) || !isRecord(parsed.value.theme) ||
-      !validatePageValue(parsed.value.settings, 0) || !validatePageValue(parsed.value.theme, 0)) {
+  if (!isRecord(parsed.value.settings) || !isRecord(parsed.value.theme)) {
+    return json({ error: "全站設定格式不正確" }, { status: 400 });
+  }
+  const structureError = validateSiteSettingsStructure(parsed.value.settings);
+  if (structureError) return json({ error: structureError }, { status: 400 });
+  if (!validatePageValue(parsed.value.settings, 0) || !validatePageValue(parsed.value.theme, 0)) {
     return json({ error: "全站設定格式不正確" }, { status: 400 });
   }
   const appearance = normalizeSiteAppearance(parsed.value.settings, parsed.value.theme);
@@ -539,7 +648,7 @@ async function saveSiteSettings(request: Request, db: D1Database, savedBy: strin
     return json({ error: "全站設定內容過大" }, { status: 413 });
   }
   const requestedVersion = Number(parsed.value.version);
-  const existing = await db.prepare("SELECT version FROM site_settings WHERE site_id = ? LIMIT 1")
+  const existing = await db.prepare("SELECT * FROM site_settings WHERE site_id = ? LIMIT 1")
     .bind(site.id)
     .first<Record<string, unknown>>();
   if (existing && (!Number.isSafeInteger(requestedVersion) || requestedVersion !== Number(existing.version))) {
@@ -547,22 +656,127 @@ async function saveSiteSettings(request: Request, db: D1Database, savedBy: strin
   }
   const now = new Date().toISOString();
   const nextVersion = Number(existing?.version || 0) + 1;
-  const result = await db.prepare(`INSERT INTO site_settings (
-    site_id, settings_json, theme_json, version, updated_by, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(site_id) DO UPDATE SET
-    settings_json = excluded.settings_json,
-    theme_json = excluded.theme_json,
-    version = excluded.version,
-    updated_by = excluded.updated_by,
-    updated_at = excluded.updated_at
-  WHERE site_settings.version = ?`)
-    .bind(site.id, settingsJson, themeJson, nextVersion, savedBy, now, Number(existing?.version || 0))
-    .run();
-  if (existing && Number(result.meta.changes || 0) !== 1) {
+  const expectedVersion = Number(existing?.version || 0);
+  const results = await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO site_settings_revisions (
+      id, site_id, settings_json, theme_json, version, saved_by, created_at
+    ) SELECT ?, site_id, settings_json, theme_json, version, updated_by, updated_at
+      FROM site_settings WHERE site_id = ? AND version = ?`)
+      .bind(crypto.randomUUID(), site.id, expectedVersion),
+    db.prepare(`INSERT INTO site_settings (
+      site_id, settings_json, theme_json, version, updated_by, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(site_id) DO UPDATE SET
+      settings_json = excluded.settings_json,
+      theme_json = excluded.theme_json,
+      version = excluded.version,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+    WHERE site_settings.version = ?`)
+      .bind(site.id, settingsJson, themeJson, nextVersion, savedBy, now, expectedVersion),
+    db.prepare(`INSERT OR IGNORE INTO site_settings_revisions (
+      id, site_id, settings_json, theme_json, version, saved_by, created_at
+    ) SELECT ?, site_id, settings_json, theme_json, version, updated_by, updated_at
+      FROM site_settings WHERE site_id = ? AND version = ?`)
+      .bind(crypto.randomUUID(), site.id, nextVersion),
+  ]);
+  if (Number(results[1]?.meta.changes || 0) !== 1 || Number(results[2]?.meta.changes || 0) !== 1) {
     return json({ error: "全站設定已被其他操作更新，請重新整理" }, { status: 409 });
   }
-  return getSiteSettings(request, db);
+  const row = await db.prepare("SELECT * FROM site_settings WHERE site_id = ? LIMIT 1")
+    .bind(site.id)
+    .first<Record<string, unknown>>();
+  return json({ site, siteSettings: parseSiteSettingsRow(row, site) });
+}
+
+async function listSiteSettingsRevisions(request: Request, db: D1Database) {
+  const url = new URL(request.url);
+  const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const limit = boundedQueryInteger(url.searchParams.get("limit"), 20, 1, 50);
+  const offset = boundedQueryInteger(url.searchParams.get("offset"), 0, 0, 100_000);
+  const [current, total, rows] = await Promise.all([
+    db.prepare("SELECT version FROM site_settings WHERE site_id = ? LIMIT 1")
+      .bind(site.id).first<Record<string, unknown>>(),
+    db.prepare("SELECT COUNT(*) AS count FROM site_settings_revisions WHERE site_id = ?")
+      .bind(site.id).first<Record<string, unknown>>(),
+    db.prepare(`SELECT * FROM site_settings_revisions
+      WHERE site_id = ? ORDER BY version DESC, id DESC LIMIT ? OFFSET ?`)
+      .bind(site.id, limit, offset).all<Record<string, unknown>>(),
+  ]);
+  const totalCount = Number(total?.count || 0);
+  return json({
+    siteId: String(site.id || ""),
+    version: Number(current?.version || 1),
+    revisions: rows.results.map(parseSiteSettingsRevisionRow),
+    pagination: { limit, offset, total: totalCount, hasMore: offset + rows.results.length < totalCount },
+  });
+}
+
+async function restoreSiteSettingsRevision(request: Request, db: D1Database, savedBy: string) {
+  const parsed = await readJsonObject(request, 16_000);
+  if (parsed.response) return parsed.response;
+  const siteCode = cleanSlug(parsed.value.siteCode) || DEFAULT_SITE_CODE;
+  const revisionId = cleanText(parsed.value.revisionId, 100);
+  const expectedVersion = Number(parsed.value.expectedVersion);
+  if (!revisionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return json({ error: "請提供設定版本 ID 與目前版本" }, { status: 400 });
+  }
+  const site = await findSite(db, siteCode);
+  if (!site) return json({ error: "找不到指定站台" }, { status: 404 });
+  const [current, revision] = await Promise.all([
+    db.prepare("SELECT * FROM site_settings WHERE site_id = ? LIMIT 1")
+      .bind(site.id).first<Record<string, unknown>>(),
+    db.prepare("SELECT * FROM site_settings_revisions WHERE id = ? AND site_id = ? LIMIT 1")
+      .bind(revisionId, site.id).first<Record<string, unknown>>(),
+  ]);
+  if (!current || !revision) return json({ error: "找不到全站設定版本" }, { status: 404 });
+  if (Number(current.version || 1) !== expectedVersion) {
+    return json({ error: "全站設定已被其他操作更新，請重新整理後再還原" }, { status: 409 });
+  }
+
+  const restoredAppearance = normalizeSiteAppearance(
+    parseJson(revision.settings_json, {}),
+    parseJson(revision.theme_json, {}),
+  );
+  const restoredContrast = evaluateSiteThemeContrast(restoredAppearance.theme);
+  if (!restoredContrast.ok) {
+    return json({ error: "這個舊版本的配色不符合目前的可讀性規則，無法直接還原" }, { status: 400 });
+  }
+  const restoredSettingsJson = JSON.stringify(restoredAppearance.settings);
+  const restoredThemeJson = JSON.stringify(restoredAppearance.theme);
+
+  const nextVersion = expectedVersion + 1;
+  const now = new Date().toISOString();
+  const results = await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO site_settings_revisions (
+      id, site_id, settings_json, theme_json, version, saved_by, created_at
+    ) SELECT ?, site_id, settings_json, theme_json, version, updated_by, updated_at
+      FROM site_settings WHERE site_id = ? AND version = ?`)
+      .bind(crypto.randomUUID(), site.id, expectedVersion),
+    db.prepare(`UPDATE site_settings SET settings_json = ?, theme_json = ?, version = ?,
+      updated_by = ?, updated_at = ? WHERE site_id = ? AND version = ?`)
+      .bind(
+        restoredSettingsJson, restoredThemeJson, nextVersion,
+        savedBy, now, site.id, expectedVersion,
+      ),
+    db.prepare(`INSERT OR IGNORE INTO site_settings_revisions (
+      id, site_id, settings_json, theme_json, version, saved_by, created_at
+    ) SELECT ?, site_id, settings_json, theme_json, version, updated_by, updated_at
+      FROM site_settings WHERE site_id = ? AND version = ?`)
+      .bind(crypto.randomUUID(), site.id, nextVersion),
+  ]);
+  if (Number(results[1]?.meta.changes || 0) !== 1 || Number(results[2]?.meta.changes || 0) !== 1) {
+    return json({ error: "全站設定已被其他操作更新，請重新整理後再還原" }, { status: 409 });
+  }
+  const row = await db.prepare("SELECT * FROM site_settings WHERE site_id = ? LIMIT 1")
+    .bind(site.id).first<Record<string, unknown>>();
+  return json({
+    site,
+    siteSettings: parseSiteSettingsRow(row, site),
+    restoredRevisionId: revisionId,
+  });
 }
 
 async function exportPublishedSite(request: Request, db: D1Database) {
@@ -637,6 +851,7 @@ async function exportPublishedSite(request: Request, db: D1Database) {
     seoTitle: String(row.seo_title || ""),
     seoDescription: String(row.seo_description || ""),
     version: Number(row.version || 1),
+    inventoryVersion: Number(row.inventory_version || 0),
     updatedAt: String(row.updated_at || ""),
   }));
 
@@ -691,15 +906,17 @@ async function getPublicSiteSettings(request: Request, db: D1Database) {
 
 function adminDenied(request: Request) {
   const hasAuthenticatedEmail = Boolean(request.headers.get("oai-authenticated-user-email"));
-  return hasAuthenticatedEmail
-    ? json({ error: "此帳號不在後台允許名單內" }, { status: 403 })
-    : json({ error: "請先登入後台再繼續", signInUrl: "/signin-with-chatgpt?return_to=%2Fadmin%2Fsite" }, { status: 401 });
+  if (hasAuthenticatedEmail) {
+    return json({ error: "此帳號不在後台允許名單內" }, { status: 403 });
+  }
+  return adminLoginDenied(request, "/admin/site/");
 }
 
 export async function handleSiteApi(request: Request, env: DatabaseEnv) {
   const url = new URL(request.url);
   const isAdminPages = url.pathname === "/api/admin/pages" || url.pathname.startsWith("/api/admin/pages/");
-  const isAdminSettings = url.pathname === "/api/admin/site-settings";
+  const isAdminSettings = url.pathname === "/api/admin/site-settings" ||
+    url.pathname === "/api/admin/site-settings/revisions";
   const isAdminExport = url.pathname === "/api/admin/site-export";
   const isPublicSettings = url.pathname === "/api/content/site-settings";
   const isPublicPage = url.pathname.startsWith("/api/content/pages/");
@@ -713,17 +930,17 @@ export async function handleSiteApi(request: Request, env: DatabaseEnv) {
     if (isPublicPage && request.method === "GET") return getPublicPage(request, env.DB);
     if (isPublicPage) return json({ error: "不支援的操作" }, { status: 405, headers: { allow: "GET" } });
 
-    const identity = adminIdentity(request, env);
+    const identity = await adminIdentity(request, env);
     if (!identity) return adminDenied(request);
     const invalidWrite = validateWriteRequest(request);
     if (invalidWrite) return invalidWrite;
 
     if (url.pathname === "/api/admin/pages" && request.method === "GET") return listAdminPages(request, env.DB);
     if (url.pathname === "/api/admin/pages" && request.method === "POST") return savePage(request, env.DB, identity);
-    if (url.pathname.endsWith("/revisions") && request.method === "GET") {
+    if (isAdminPages && url.pathname.endsWith("/revisions") && request.method === "GET") {
       return listPageRevisions(request, url.pathname, env.DB);
     }
-    if (url.pathname.endsWith("/revisions") && request.method === "POST") {
+    if (isAdminPages && url.pathname.endsWith("/revisions") && request.method === "POST") {
       return restorePageRevision(request, url.pathname, env.DB, identity);
     }
     if (url.pathname.startsWith("/api/admin/pages/") && request.method === "DELETE") {
@@ -734,8 +951,14 @@ export async function handleSiteApi(request: Request, env: DatabaseEnv) {
         identity,
       );
     }
-    if (isAdminSettings && request.method === "GET") return getSiteSettings(request, env.DB);
-    if (isAdminSettings && request.method === "POST") return saveSiteSettings(request, env.DB, identity);
+    if (url.pathname === "/api/admin/site-settings" && request.method === "GET") return getSiteSettings(request, env.DB);
+    if (url.pathname === "/api/admin/site-settings" && request.method === "POST") return saveSiteSettings(request, env.DB, identity);
+    if (url.pathname === "/api/admin/site-settings/revisions" && request.method === "GET") {
+      return listSiteSettingsRevisions(request, env.DB);
+    }
+    if (url.pathname === "/api/admin/site-settings/revisions" && request.method === "POST") {
+      return restoreSiteSettingsRevision(request, env.DB, identity);
+    }
     if (isAdminExport && request.method === "GET") return exportPublishedSite(request, env.DB);
     return json({ error: "不支援的操作" }, { status: 405, headers: { allow: "GET, POST, DELETE" } });
   } catch {

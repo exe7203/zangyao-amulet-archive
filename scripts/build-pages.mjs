@@ -81,6 +81,7 @@ type DemoCheckoutProps = {
   lines: unknown[];
   open: boolean;
   subtotal: number;
+  testingMode?: boolean;
   initialProfile?: import("../shared/member-contract").DeviceCheckoutProfile | null;
   onClose(): void;
   onCompleted(

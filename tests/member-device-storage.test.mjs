@@ -236,7 +236,8 @@ test("member-facing copy stays consumer-friendly instead of exposing storage int
   assert.match(accountClient, /LOCAL_DEMO_OTP_CODE/);
   assert.match(accountPage, /會員中心/);
   assert.match(publicHeader, /會員中心/);
-  assert.match(storefront, /會員中心/);
+  assert.match(storefront, /<PublicHeader/);
+  assert.match(storefront, /section="home"/);
 
   const memberCopy = [accountClient, accountPage, publicHeader, storefront].join("\n");
   assert.doesNotMatch(memberCopy, /你的收藏資料/);

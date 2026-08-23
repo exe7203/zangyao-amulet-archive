@@ -14,18 +14,21 @@ import { serializeJsonLd } from "../../../shared/json-ld";
 import { isPublishedPageIndexable } from "../../../shared/seo-indexing";
 import PublicFooter from "../../public-footer";
 import PublicHeader from "../../public-header";
+import { resolveSiteUrl } from "../../../shared/site-url";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
-const siteUrl = new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/");
+const resolvedSite = resolveSiteUrl();
+const publicSiteUrl = resolvedSite.publicUrl;
 
 function publicUrl(path: string) {
-  return new URL(path.replace(/^\/+/, ""), siteUrl).toString();
+  return publicSiteUrl ? new URL(path.replace(/^\/+/, ""), publicSiteUrl).toString() : null;
 }
 
 function absoluteUrl(value: string, fallbackPath: string) {
+  if (!publicSiteUrl) return null;
   try {
-    return new URL(value || fallbackPath, siteUrl).toString();
+    return new URL(value || fallbackPath, publicSiteUrl).toString();
   } catch {
     return publicUrl(fallbackPath);
   }
@@ -49,22 +52,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: { absolute: title.includes(publishedBrandName) ? title : `${title}｜${publishedBrandName}` },
     description: page.seoDescription,
-    alternates: { canonical },
-    robots: { index: isPublishedPageIndexable(page), follow: true },
+    ...(canonical ? { alternates: { canonical } } : {}),
+    robots: { index: resolvedSite.indexable && isPublishedPageIndexable(page), follow: resolvedSite.indexable },
     openGraph: {
       type: "website",
       locale: "zh_TW",
       siteName: publishedBrandName,
-      url: canonical,
+      ...(canonical ? { url: canonical } : {}),
       title,
       description: page.seoDescription,
-      images: [{ url: image, alt: page.title }],
+      ...(image ? { images: [{ url: image, alt: page.title }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title,
       description: page.seoDescription,
-      images: [image],
+      ...(image ? { images: [image] } : {}),
     },
   };
 }
@@ -84,7 +87,7 @@ export default async function PublishedPage({ params }: PageProps) {
       name: item.question,
       acceptedAnswer: { "@type": "Answer", text: item.answer },
     }));
-  const graph: Record<string, unknown>[] = [
+  const graph: Record<string, unknown>[] = canonical && publicSiteUrl ? [
     {
       "@type": "WebPage",
       "@id": `${canonical}#webpage`,
@@ -94,23 +97,27 @@ export default async function PublishedPage({ params }: PageProps) {
       inLanguage: "zh-Hant-TW",
       datePublished: page.publishedAt || page.createdAt,
       dateModified: page.updatedAt,
-      isPartOf: { "@type": "WebSite", name: publishedBrandName, url: siteUrl.toString() },
+      isPartOf: { "@type": "WebSite", name: publishedBrandName, url: publicSiteUrl.toString() },
     },
     {
       "@type": "BreadcrumbList",
       itemListElement: [
-        { "@type": "ListItem", position: 1, name: "首頁", item: siteUrl.toString() },
+        { "@type": "ListItem", position: 1, name: "首頁", item: publicSiteUrl.toString() },
         { "@type": "ListItem", position: 2, name: page.title, item: canonical },
       ],
     },
-  ];
-  if (faqItems.length > 0) graph.push({ "@type": "FAQPage", mainEntity: faqItems });
+  ] : [];
+  if (graph.length > 0 && faqItems.length > 0) {
+    graph.push({ "@type": "FAQPage", mainEntity: faqItems });
+  }
 
   return <div className={styles.page}>
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: serializeJsonLd({ "@context": "https://schema.org", "@graph": graph }) }}
-    />
+    {graph.length > 0 && (
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd({ "@context": "https://schema.org", "@graph": graph }) }}
+      />
+    )}
     <PublicHeader section="page" />
     <main id="main-content">
       <nav className={styles.breadcrumb} aria-label="麵包屑">

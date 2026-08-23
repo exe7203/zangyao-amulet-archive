@@ -64,6 +64,14 @@
 .navigation .navigationActive::after { background: var(--admin-accent); }
 
 .utilities { justify-self: end; display: flex; align-items: center; gap: 4px; }
+.adminIdentity {
+  max-width: 140px;
+  overflow: hidden;
+  color: #687069;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .utilities a,
 .utilities button {
   min-height: 36px;

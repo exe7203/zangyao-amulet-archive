@@ -58,6 +58,11 @@
 .separator { width: 1px; height: 22px; margin: 0 4px; background: #dfe3df; }
 .toolbarSpacer { flex: 1; }
 .linkGroup { position: relative; }
+.mediaGroup { position: relative; }
+.tableGroup { padding: 0 2px; border-radius: 4px; background: #f7f8f7; }
+.tableSize { min-width: 34px; padding: 0 4px; color: #667069; font-size: 9px; font-weight: 750; text-align: center; }
+.compoundIcon { position: relative; display: inline-grid; place-items: center; }
+.compoundIcon svg:last-child { position: absolute; right: -5px; bottom: -4px; padding: 1px; color: #fff; background: #214d3b; border-radius: 50%; stroke-width: 3; }
 
 .linkPopover {
   position: absolute;
@@ -100,6 +105,43 @@
   font-weight: 700;
 }
 
+.imagePopover {
+  position: absolute;
+  top: 39px;
+  left: 0;
+  z-index: 20;
+  width: min(400px, calc(100vw - 32px));
+  padding: 14px;
+  display: grid;
+  gap: 7px;
+  background: #fff;
+  border: 1px solid #ccd2ce;
+  border-radius: 6px;
+  box-shadow: 0 14px 38px rgba(22, 32, 26, .16);
+}
+.popoverHeading { margin-bottom: 2px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.popoverHeading > div { display: grid; gap: 2px; }
+.popoverHeading b { font-size: 12px; }
+.popoverHeading small { color: #7b827d; font-size: 9px; }
+.imagePopover .popoverHeading > button { width: 26px; height: 26px; }
+.imagePopover label { margin-top: 3px; display: flex; justify-content: space-between; gap: 8px; color: #38403a; font-size: 10px; font-weight: 700; }
+.imagePopover label span { color: #8c938e; font-size: 9px; font-weight: 500; }
+.imagePopover input, .imagePopover textarea {
+  width: 100%;
+  padding: 8px 10px;
+  color: #1f2521;
+  background: #fff;
+  border: 1px solid #bfc7c1;
+  border-radius: 4px;
+  outline: none;
+  resize: vertical;
+}
+.imagePopover input { height: 38px; }
+.imagePopover input:focus, .imagePopover textarea:focus { border-color: #2d694f; box-shadow: 0 0 0 2px rgba(45, 105, 79, .12); }
+.imagePopover p { margin: 0; color: #a33d35; font-size: 11px; }
+.imagePopover .externalImageNote { padding: 8px 9px; color: #665f51; background: #f6f2e8; border-left: 2px solid #b9934f; font-size: 9px; line-height: 1.55; }
+.imagePopover .applyImage { width: auto; height: 34px; padding: 0 12px; justify-self: end; color: #fff; background: #214d3b; font-size: 11px; font-weight: 700; }
+
 .srOnly {
   position: absolute;
   width: 1px;
@@ -130,4 +172,12 @@
     overflow-y: auto;
   }
   .linkPopover input { font-size: 16px; }
+  .imagePopover {
+    position: fixed;
+    inset: auto max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    width: auto;
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+  }
+  .imagePopover input, .imagePopover textarea { font-size: 16px; }
 }

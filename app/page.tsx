@@ -3,22 +3,25 @@ import Storefront from "./storefront";
 import { products } from "./data";
 import { publishedBrandName } from "../shared/published-site";
 import { serializeJsonLd } from "../shared/json-ld";
+import { resolveSiteUrl } from "../shared/site-url";
+
+const resolvedSite = resolveSiteUrl();
 
 export const metadata: Metadata = {
   title: "泰國佛牌與收藏品",
   description: `${publishedBrandName}提供泰國佛牌與相關收藏品資訊，整理年份、材質、尺寸、來源與保存狀況，方便查閱與比較。`,
   robots: {
-    index: true,
-    follow: true,
+    index: resolvedSite.indexable,
+    follow: resolvedSite.indexable,
   },
 };
 
 export default function Home() {
-  const siteUrl = new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000/",
-  );
+  const publicSiteUrl = resolvedSite.publicUrl;
   const catalogVerified = process.env.NEXT_PUBLIC_CATALOG_VERIFIED === "1";
-  const organizationId = new URL(catalogVerified ? "#store" : "#organization", siteUrl).toString();
+  const organizationId = publicSiteUrl
+    ? new URL(catalogVerified ? "#store" : "#organization", publicSiteUrl).toString()
+    : null;
   const structuredProducts = catalogVerified
     ? products.filter((product) =>
       (product.status === "active" || product.status === "sold_out") &&
@@ -26,13 +29,13 @@ export default function Home() {
       Boolean(product.imageUrl?.trim()) &&
       Boolean(product.imageAlt?.trim()))
     : [];
-  const structuredData = {
+  const structuredData = organizationId && publicSiteUrl ? {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": new URL("#website", siteUrl).toString(),
-        url: siteUrl.toString(),
+        "@id": new URL("#website", publicSiteUrl).toString(),
+        url: publicSiteUrl.toString(),
         name: publishedBrandName,
         description: "泰國佛牌與相關收藏品的商品資訊、文化文章與選購服務。",
         inLanguage: "zh-Hant-TW",
@@ -41,7 +44,7 @@ export default function Home() {
       {
         "@type": catalogVerified ? "OnlineStore" : "Organization",
         "@id": organizationId,
-        url: siteUrl.toString(),
+        url: publicSiteUrl.toString(),
         name: publishedBrandName,
         description: catalogVerified
           ? "提供泰國佛牌與相關收藏品資訊及線上選購服務。"
@@ -60,7 +63,7 @@ export default function Home() {
             category: product.category,
             material: product.material,
             image: product.imageUrl,
-            url: new URL(`products/${product.slug}/`, siteUrl).toString(),
+            url: new URL(`products/${product.slug}/`, publicSiteUrl).toString(),
             offers: {
               "@type": "Offer",
               priceCurrency: "TWD",
@@ -73,11 +76,11 @@ export default function Home() {
         })),
       }] : []),
     ],
-  };
+  } : null;
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />
+      {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }} />}
       <Storefront />
     </>
   );

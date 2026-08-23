@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Miniflare } from "miniflare";
-import { handleAdminSystemApi } from "../worker/admin-system-api.ts";
+import {
+  handleAdminSystemApi,
+  productVersionSignature,
+} from "../worker/admin-system-api.ts";
 
 let miniflare;
 let db;
@@ -29,7 +32,7 @@ test("admin status summarizes every shared CMS and commerce module without custo
   const payload = await response.json();
   assert.equal(payload.site.code, "taijuda");
   assert.equal(payload.runtime.mode, "local");
-  assert.equal(payload.runtime.schemaVersion, 7);
+  assert.equal(payload.runtime.schemaVersion, 11);
   assert.equal(payload.publishing.inSync, false);
   assert.match(payload.publishing.snapshotHash, /^[a-f0-9]{16,64}$/);
   assert.ok(payload.content.articles.total >= payload.content.articles.published);
@@ -46,4 +49,34 @@ test("admin status rejects unauthenticated non-local requests", async () => {
     { DB: db, ADMIN_EMAIL_ALLOWLIST: "owner@example.com" },
   );
   assert.equal(response?.status, 401);
+});
+
+test("publishing signature detects inventory-only stock changes", () => {
+  const snapshotProducts = [{
+    id: "product-versioned-stock",
+    version: 3,
+    inventoryVersion: 7,
+    stock: 2,
+  }];
+  const matchingLiveProducts = [{
+    id: "product-versioned-stock",
+    version: 3,
+    inventory_version: 7,
+    available_stock: 2,
+  }];
+  const reservedLiveProducts = [{
+    id: "product-versioned-stock",
+    version: 3,
+    inventory_version: 8,
+    available_stock: 1,
+  }];
+
+  assert.equal(
+    productVersionSignature(matchingLiveProducts),
+    productVersionSignature(snapshotProducts),
+  );
+  assert.notEqual(
+    productVersionSignature(reservedLiveProducts),
+    productVersionSignature(snapshotProducts),
+  );
 });

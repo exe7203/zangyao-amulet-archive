@@ -1,8 +1,10 @@
 "use client";
 
 import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, LogOut, RefreshCw } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { publishedBrandMark, publishedBrandName } from "../../shared/published-site";
 import styles from "./admin-chrome.module.css";
 
@@ -30,6 +32,9 @@ export function AdminTopbar({
   refreshing?: boolean;
   hasUnsavedChanges?: boolean;
 }) {
+  const router = useRouter();
+  const [adminUsername, setAdminUsername] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const confirmDiscard = () => !hasUnsavedChanges || window.confirm("目前有未儲存變更，確定要離開這個後台模組嗎？");
   const confirmNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
     if (!confirmDiscard()) event.preventDefault();
@@ -42,6 +47,30 @@ export function AdminTopbar({
     }
     window.location.reload();
   };
+
+  useEffect(() => {
+    void fetch("/api/admin/auth/session", { headers: { accept: "application/json" }, cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { username?: string | null; authenticated?: boolean }) => {
+        if (payload.authenticated && payload.username) setAdminUsername(payload.username);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await fetch("/api/admin/auth/logout", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+      });
+      router.replace("/admin/login/?return_to=%2Fadmin%2F");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }, [router, signingOut]);
 
   return (
     <header className={styles.topbar} data-admin-topbar>
@@ -66,12 +95,18 @@ export function AdminTopbar({
         ))}
       </nav>
       <div className={styles.utilities}>
+        {adminUsername && adminUsername !== "local-preview" && (
+          <span className={styles.adminIdentity} title={adminUsername}>{adminUsername}</span>
+        )}
         <a href={previewHref} target="_blank" rel="noreferrer">
           <span>查看前台</span>
           <ExternalLink size={14} aria-hidden="true" />
         </a>
         <button type="button" onClick={refresh} disabled={refreshing} aria-label="重新整理目前資料" title="重新整理目前資料">
           <RefreshCw size={15} aria-hidden="true" />
+        </button>
+        <button type="button" onClick={() => void signOut()} disabled={signingOut} aria-label="登出後台" title="登出後台">
+          <LogOut size={15} aria-hidden="true" />
         </button>
       </div>
     </header>

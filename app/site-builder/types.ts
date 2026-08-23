@@ -69,7 +69,7 @@ export type PageComponents = {
     eyebrow: string;
     title: string;
     intro: string;
-    category: "all" | "佛牌" | "神尊" | "符印";
+    category: string;
     limit: "3" | "4" | "6" | "8";
     viewAllLabel: string;
     viewAllHref: string;

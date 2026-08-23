@@ -1,6 +1,9 @@
 export type DatabaseEnv = {
   DB?: D1Database;
   ADMIN_EMAIL_ALLOWLIST?: string;
+  ADMIN_LOCAL_AUTH_REQUIRED?: string;
+  ADMIN_LOCAL_SESSION_SECRET?: string;
+  ADMIN_LOCAL_ACCOUNTS?: string;
   STORE_ORDERS_ENABLED?: string;
 };
 
@@ -58,8 +61,11 @@ export function isLocalRequest(request: Request) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
-export function adminIdentity(request: Request, env: DatabaseEnv) {
-  if (isLocalRequest(request)) return "local-preview";
+export async function adminIdentity(request: Request, env: DatabaseEnv) {
+  if (isLocalRequest(request)) {
+    const { resolveLocalAdminIdentity } = await import("./admin-auth");
+    return resolveLocalAdminIdentity(request, env);
+  }
 
   const email = cleanText(request.headers.get("oai-authenticated-user-email"), 320).toLowerCase();
   const configuredAllowlist = cleanText(env.ADMIN_EMAIL_ALLOWLIST, 4000);
@@ -76,8 +82,36 @@ export function validateWriteRequest(request: Request) {
   if (request.method === "GET" || request.method === "HEAD") return null;
 
   const requestUrl = new URL(request.url);
+  const requestOrigin = requestUrl.origin;
   const origin = request.headers.get("origin");
-  if (!origin || origin !== requestUrl.origin) {
+  const referer = request.headers.get("referer");
+
+  const localOriginsMatch = (left: string, right: string) => {
+    if (left === right) return true;
+    try {
+      const a = new URL(left);
+      const b = new URL(right);
+      if (a.protocol !== b.protocol || a.port !== b.port) return false;
+      const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+      return localHosts.has(a.hostname) && localHosts.has(b.hostname);
+    } catch {
+      return false;
+    }
+  };
+
+  const sourceOrigin = origin || (referer ? (() => {
+    try {
+      return new URL(referer).origin;
+    } catch {
+      return "";
+    }
+  })() : "");
+
+  if (!sourceOrigin) {
+    if (!isLocalRequest(request)) {
+      return json({ error: "拒絕跨來源的寫入請求" }, { status: 403 });
+    }
+  } else if (!localOriginsMatch(sourceOrigin, requestOrigin)) {
     return json({ error: "拒絕跨來源的寫入請求" }, { status: 403 });
   }
 
