@@ -71,5 +71,8 @@
     "vite": "8.2.0",
     "wrangler": "4.121.0"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "nanoid": "^3.3.18"
+  }
 }
