@@ -25,6 +25,7 @@ import PublicHeader from "./public-header";
 import { useModalFocus } from "./use-modal-focus";
 import { publishedSnapshot } from "../shared/published-content";
 import { PUBLIC_SITE_CODE } from "../shared/site-context";
+import { publicAssetPath } from "../shared/site-url";
 import { normalizeSiteAppearance } from "../shared/site-settings";
 import type { DeviceCheckoutProfile } from "../shared/member-contract";
 import {
@@ -448,7 +449,7 @@ export default function Storefront() {
       <section className="hero hero--photo" id="hero">
         <span className="legacy-home-anchor" id="top" aria-hidden="true" />
         <div className="hero-media" aria-hidden="true">
-          <img src="/media/atmosphere/hero-temple.jpg" alt="" />
+          <img src={publicAssetPath("/media/atmosphere/hero-temple.jpg")} alt="" />
           <div className="hero-media-shade" />
         </div>
         <div className="hero-copy">
@@ -503,9 +504,9 @@ export default function Storefront() {
         <div className="category-grid">
           {categorySummaries.map(({ name, detail, shape }, index) => {
             const covers = [
-              "/media/atmosphere/statue-close.jpg",
-              "/media/atmosphere/temple-interior.jpg",
-              "/media/atmosphere/pagoda.jpg",
+              publicAssetPath("/media/atmosphere/statue-close.jpg"),
+              publicAssetPath("/media/atmosphere/temple-interior.jpg"),
+              publicAssetPath("/media/atmosphere/pagoda.jpg"),
             ];
             return (
               <a
@@ -555,21 +556,21 @@ export default function Storefront() {
         <div className="events-grid">
           {[
             {
-              image: "/media/atmosphere/ceremony.jpg",
+              image: publicAssetPath("/media/atmosphere/ceremony.jpg"),
               tag: "講座",
               title: "第一次接觸佛牌：來源怎麼看",
               meta: "台北｜晚間場｜名額有限",
               blurb: "從年份、材質、寺院資訊開始，建立可查證的判斷方式。",
             },
             {
-              image: "/media/atmosphere/temple-interior.jpg",
+              image: publicAssetPath("/media/atmosphere/temple-interior.jpg"),
               tag: "參訪",
               title: "寺院參訪與開光相關活動",
               meta: "依檔期公告｜需事先報名",
               blurb: "以尊重信仰為前提，安排可核對行程與注意事項說明。",
             },
             {
-              image: "/media/atmosphere/monk-temple.jpg",
+              image: publicAssetPath("/media/atmosphere/monk-temple.jpg"),
               tag: "見面會",
               title: "藏家見面與實物說明會",
               meta: "小班制｜現場看件",
@@ -594,7 +595,7 @@ export default function Storefront() {
 
       <section className="archive-section archive-section--photo" id="archive" {...homeSectionProps("archive")}>
         <div className="archive-visual">
-          <img src="/media/atmosphere/incense-mood.jpg" alt="" />
+          <img src={publicAssetPath("/media/atmosphere/incense-mood.jpg")} alt="" />
         </div>
         <div className="archive-copy">
           <p className="eyebrow eyebrow--dark">典藏原則</p>

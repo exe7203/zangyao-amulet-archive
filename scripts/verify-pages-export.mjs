@@ -225,6 +225,14 @@ function serviceRouteIndexable(route, settings) {
 }
 
 const homeHtml = await readFile(routeFile(""), "utf8");
+if (basePath) {
+  assert.doesNotMatch(
+    homeHtml,
+    /src="\/media\/atmosphere\//,
+    "home page must not use root-relative atmosphere assets when a Pages base path is configured",
+  );
+  assert.match(homeHtml, new RegExp(`src="${escapeRegExp(basePath)}/media/atmosphere/hero-temple\\.jpg"`), "home hero image is missing the Pages base path");
+}
 assert.match(homeHtml, /<html[^>]*lang="zh-Hant-TW"/i);
 assert.match(
   homeHtml,

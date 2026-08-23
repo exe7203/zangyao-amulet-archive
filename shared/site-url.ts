@@ -58,3 +58,10 @@ export function resolveSiteUrl(value = process.env.NEXT_PUBLIC_SITE_URL) {
   const indexable = url.protocol === "https:" && !isPrivateOrReservedHostname(url.hostname);
   return { url, publicUrl: indexable ? url : null, indexable } as const;
 }
+
+/** Prefix a root-relative public asset path for GitHub Pages basePath deployments. */
+export function publicAssetPath(path: string, basePath = process.env.PAGES_BASE_PATH || "") {
+  if (!path.startsWith("/") || path.startsWith("//")) return path;
+  const normalizedBasePath = basePath.trim().replace(/^\/+|\/+$/g, "");
+  return normalizedBasePath ? `/${normalizedBasePath}${path}` : path;
+}
