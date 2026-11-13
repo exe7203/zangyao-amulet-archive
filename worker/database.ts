@@ -828,7 +828,7 @@ async function seedCatalog(db: D1Database) {
       JSON.stringify({
         announcement: "商品資料整理中，確認後才開放訂購",
         brandName: "泰聚達",
-        brandSubtitle: "THAI AMULET ARCHIVE",
+        brandSubtitle: "THAI AMULETS",
         footerNote: "商品資訊與客服管道確認後才會開放正式訂購。",
         businessLegalName: "",
         businessAddress: "",

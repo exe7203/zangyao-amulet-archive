@@ -22,7 +22,9 @@ const publicPaths = [
   "app/about/page.tsx",
   "app/account/account-client.tsx",
   "app/articles/page.tsx",
+  "app/articles/articles-index-live.tsx",
   "app/articles/[slug]/page.tsx",
+  "app/articles/[slug]/article-live-view.tsx",
   "app/journal-section.tsx",
   "app/public-header.tsx",
   "app/public-footer.tsx",
@@ -131,9 +133,13 @@ test("public chrome and storefront controls share one accessible contract", asyn
     assert.equal((storefront.match(new RegExp(`id="${sectionId}"`, "g")) || []).length, 1, `${sectionId} must render exactly once`);
   }
   assert.equal((journal.match(/id="journal"/g) || []).length, 1);
+  assert.match(journal, /publicContentArticlesPath/);
+  assert.match(journal, /resolveJournalApiResult/);
   assert.equal((storefront.match(/<h1>/g) || []).length, 1);
   assert.match(storefront, /homeSectionProps\("collections"\)/);
   assert.match(storefront, /homeSectionProps\("journal"\)/);
+  assert.match(storefront, /publicContentSiteSettingsPath/);
+  assert.match(storefront, /setAppearance/);
   assert.doesNotMatch(artwork, /PROTOTYPE VISUAL/);
   assert.match(artwork, /alt=""/);
   assert.match(articleData, /分鐘閱讀/);

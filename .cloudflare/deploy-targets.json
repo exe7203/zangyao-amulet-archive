@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "project": "taijuda-amulet-archive",
+  "siteCode": "taijuda",
+  "siteId": "site_taijuda",
+  "phase": "v2-cloudflare-free",
+  "primaryPlatform": "cloudflare-workers",
+  "demoPlatform": "github-pages",
+  "environments": {
+    "production": {
+      "label": "Cloudflare 正式（免費 workers.dev）",
+      "workerName": "taijuda-amulet-archive",
+      "urlTemplate": "https://taijuda-amulet-archive.{accountSubdomain}.workers.dev/",
+      "customDomain": null,
+      "d1": {
+        "binding": "DB",
+        "databaseName": "taijuda-prod"
+      },
+      "r2": {
+        "enabled": false,
+        "note": "Phase 2 再開媒體庫 bucket"
+      },
+      "flags": {
+        "STORE_ORDERS_ENABLED": "0",
+        "ADMIN_LOCAL_AUTH_REQUIRED": "0"
+      },
+      "adminProtection": "cloudflare-access",
+      "ordersDefault": "disabled"
+    },
+    "local": {
+      "label": "本機開發",
+      "url": "http://127.0.0.1:3000/",
+      "d1PersistPath": ".local-data",
+      "adminProtection": "local-account-password"
+    },
+    "githubPagesDemo": {
+      "label": "GitHub Pages 靜態展示",
+      "url": "https://exe7203.github.io/zangyao-amulet-archive/",
+      "note": "無後台、無 API、無接單；僅前台快照"
+    }
+  },
+  "dataFlow": {
+    "sourceOfTruth": "cloudflare-d1",
+    "publicSnapshot": "content/published-site.json",
+    "syncDirection": "D1 → export → published-site.json → static build"
+  },
+  "rebuildModules": [
+    { "id": "auth", "name": "帳號與權限", "priority": "P0" },
+    { "id": "dashboard", "name": "總覽", "priority": "P0" },
+    { "id": "catalog", "name": "商品與分類", "priority": "P0" },
+    { "id": "inventory", "name": "庫存", "priority": "P0" },
+    { "id": "orders", "name": "訂單與履約", "priority": "P0" },
+    { "id": "content", "name": "文章（Tiptap）", "priority": "P1" },
+    { "id": "site", "name": "網站設定與頁面", "priority": "P1" },
+    { "id": "media", "name": "媒體庫（R2）", "priority": "P2" },
+    { "id": "events", "name": "附加服務／活動", "priority": "P3" },
+    { "id": "members", "name": "會員", "priority": "P3" }
+  ]
+}

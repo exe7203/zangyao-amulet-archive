@@ -69,7 +69,12 @@ function adminDenied(request: Request) {
   return adminLoginDenied(request, "/admin/");
 }
 
-async function systemStatus(request: Request, db: D1Database) {
+async function systemStatus(
+  request: Request,
+  db: D1Database,
+  mediaConnected: boolean,
+  storeOrdersEnabled: boolean,
+) {
   const url = new URL(request.url);
   const siteCode = cleanSlug(url.searchParams.get("site")) || DEFAULT_SITE_CODE;
   const site = await findSite(db, siteCode);
@@ -83,18 +88,21 @@ async function systemStatus(request: Request, db: D1Database) {
     products,
     inventory,
     orders,
+    media,
     publishedArticleVersions,
     publishedPageVersions,
     publicProductVersions,
+    lowStockSamples,
   ] = await Promise.all([
     db.prepare("SELECT value, updated_at FROM schema_metadata WHERE key = 'schema_version' LIMIT 1")
       .first<Record<string, unknown>>(),
-    db.prepare("SELECT version, updated_at FROM site_settings WHERE site_id = ? LIMIT 1")
+    db.prepare("SELECT version, updated_at, settings_json FROM site_settings WHERE site_id = ? LIMIT 1")
       .bind(site.id).first<Record<string, unknown>>(),
     db.prepare(`SELECT COUNT(*) AS total,
         SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft,
         SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
         SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
+        SUM(CASE WHEN status = 'published' AND (TRIM(seo_title) = '' OR TRIM(seo_description) = '') THEN 1 ELSE 0 END) AS seo_gaps,
         MAX(updated_at) AS updated_at
       FROM articles WHERE site_id = ?`)
       .bind(site.id).first<Record<string, unknown>>(),
@@ -102,6 +110,7 @@ async function systemStatus(request: Request, db: D1Database) {
         SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft,
         SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
         SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
+        SUM(CASE WHEN status = 'published' AND (TRIM(seo_title) = '' OR TRIM(seo_description) = '') THEN 1 ELSE 0 END) AS seo_gaps,
         MAX(updated_at) AS updated_at
       FROM site_pages WHERE site_id = ?`)
       .bind(site.id).first<Record<string, unknown>>(),
@@ -111,6 +120,7 @@ async function systemStatus(request: Request, db: D1Database) {
         SUM(CASE WHEN status = 'sold_out' THEN 1 ELSE 0 END) AS sold_out,
         SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
         SUM(CASE WHEN seo_ready = 1 THEN 1 ELSE 0 END) AS seo_ready,
+        SUM(CASE WHEN status IN ('active', 'sold_out') AND seo_ready = 0 THEN 1 ELSE 0 END) AS public_seo_gaps,
         MAX(updated_at) AS updated_at
       FROM products WHERE site_id = ?`)
       .bind(site.id).first<Record<string, unknown>>(),
@@ -128,8 +138,15 @@ async function systemStatus(request: Request, db: D1Database) {
         SUM(CASE WHEN order_status = 'completed' THEN 1 ELSE 0 END) AS completed,
         SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
         SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid,
+        SUM(CASE WHEN order_status = 'new' AND payment_status != 'paid' THEN 1 ELSE 0 END) AS awaiting_payment,
         MAX(updated_at) AS updated_at
       FROM orders WHERE site_id = ?`)
+      .bind(site.id).first<Record<string, unknown>>(),
+    db.prepare(`SELECT COUNT(*) AS total,
+        SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS ready,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+        MAX(created_at) AS updated_at
+      FROM media_assets WHERE site_id = ? AND status != 'deleted'`)
       .bind(site.id).first<Record<string, unknown>>(),
     db.prepare("SELECT id, version FROM articles WHERE site_id = ? AND status = 'published' ORDER BY id")
       .bind(site.id).all<Record<string, unknown>>(),
@@ -141,7 +158,28 @@ async function systemStatus(request: Request, db: D1Database) {
       JOIN inventory i ON i.product_id = p.id AND i.site_id = p.site_id
       WHERE p.site_id = ? AND p.status IN ('active', 'sold_out') ORDER BY p.id`)
       .bind(site.id).all<Record<string, unknown>>(),
+    db.prepare(`SELECT p.name AS title, (i.on_hand - i.reserved) AS available
+      FROM inventory i
+      JOIN products p ON p.id = i.product_id AND p.site_id = i.site_id
+      WHERE i.site_id = ? AND p.status IN ('active', 'sold_out') AND (i.on_hand - i.reserved) <= 1
+      ORDER BY available ASC, p.updated_at DESC
+      LIMIT 5`)
+      .bind(site.id).all<{ title?: unknown; available?: unknown }>(),
   ]);
+
+  let settingsJson: Record<string, unknown> = {};
+  try {
+    settingsJson = typeof settings?.settings_json === "string"
+      ? JSON.parse(settings.settings_json) as Record<string, unknown>
+      : {};
+  } catch {
+    settingsJson = {};
+  }
+  const defaultSeoTitle = typeof settingsJson.defaultSeoTitle === "string" ? settingsJson.defaultSeoTitle.trim() : "";
+  const defaultSeoDescription = typeof settingsJson.defaultSeoDescription === "string"
+    ? settingsJson.defaultSeoDescription.trim()
+    : "";
+  const hasGlobalSeo = Boolean(defaultSeoTitle && defaultSeoDescription);
 
   const snapshotSettingsVersion = count(publishedSnapshot.siteSettings.version);
   const snapshotPageSignature = versionSignature(publishedSnapshot.pages);
@@ -162,10 +200,13 @@ async function systemStatus(request: Request, db: D1Database) {
       database: "Cloudflare D1 / SQLite",
       schemaVersion: count(schema?.value),
       schemaUpdatedAt: timestamp(schema?.updated_at),
+      mediaStorage: mediaConnected ? "connected" : "missing",
+      storeOrders: storeOrdersEnabled ? "enabled" : "disabled",
     },
     settings: {
       version: count(settings?.version),
       updatedAt: timestamp(settings?.updated_at),
+      hasGlobalSeo,
     },
     publishing: {
       inSync: publishingInSync,
@@ -182,6 +223,7 @@ async function systemStatus(request: Request, db: D1Database) {
         draft: count(articles?.draft),
         published: count(articles?.published),
         archived: count(articles?.archived),
+        seoGaps: count(articles?.seo_gaps),
         updatedAt: timestamp(articles?.updated_at),
       },
       pages: {
@@ -189,8 +231,15 @@ async function systemStatus(request: Request, db: D1Database) {
         draft: count(pages?.draft),
         published: count(pages?.published),
         archived: count(pages?.archived),
+        seoGaps: count(pages?.seo_gaps),
         updatedAt: timestamp(pages?.updated_at),
       },
+    },
+    media: {
+      total: count(media?.total),
+      ready: count(media?.ready),
+      pending: count(media?.pending),
+      updatedAt: timestamp(media?.updated_at),
     },
     commerce: {
       products: {
@@ -200,6 +249,7 @@ async function systemStatus(request: Request, db: D1Database) {
         soldOut: count(products?.sold_out),
         archived: count(products?.archived),
         seoReady: count(products?.seo_ready),
+        publicSeoGaps: count(products?.public_seo_gaps),
         updatedAt: timestamp(products?.updated_at),
       },
       inventory: {
@@ -209,6 +259,10 @@ async function systemStatus(request: Request, db: D1Database) {
         available: count(inventory?.available),
         lowStock: count(inventory?.low_stock),
         updatedAt: timestamp(inventory?.updated_at),
+        samples: (lowStockSamples.results || []).map((row) => ({
+          title: typeof row.title === "string" ? row.title : "未命名商品",
+          available: count(row.available),
+        })),
       },
       orders: {
         total: count(orders?.total),
@@ -217,13 +271,14 @@ async function systemStatus(request: Request, db: D1Database) {
         completed: count(orders?.completed),
         cancelled: count(orders?.cancelled),
         paid: count(orders?.paid),
+        awaitingPayment: count(orders?.awaiting_payment),
         updatedAt: timestamp(orders?.updated_at),
       },
     },
   });
 }
 
-export async function handleAdminSystemApi(request: Request, env: DatabaseEnv) {
+export async function handleAdminSystemApi(request: Request, env: DatabaseEnv & { MEDIA?: R2Bucket }) {
   const url = new URL(request.url);
   if (url.pathname !== SYSTEM_STATUS_PATH) return null;
   if (!env.DB) return json({ error: "營運資料庫尚未連線" }, { status: 503 });
@@ -234,7 +289,7 @@ export async function handleAdminSystemApi(request: Request, env: DatabaseEnv) {
   try {
     await ensureDatabase(env.DB);
     if (!(await adminIdentity(request, env))) return adminDenied(request);
-    return systemStatus(request, env.DB);
+    return systemStatus(request, env.DB, Boolean(env.MEDIA), env.STORE_ORDERS_ENABLED === "1");
   } catch {
     return json({ error: "後台狀態服務暫時無法使用" }, { status: 500 });
   }

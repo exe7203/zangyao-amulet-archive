@@ -1,4 +1,4 @@
-export const HOME_SECTION_IDS = ["hero", "collections", "products", "themes", "archive", "journal"] as const;
+export const HOME_SECTION_IDS = ["hero", "collections", "products", "archive", "themes", "journal"] as const;
 export type HomeSectionId = typeof HOME_SECTION_IDS[number];
 export type HomeSectionSetting = { id: HomeSectionId; visible: boolean };
 export type PrimaryNavigationItem = { label: string; href: string };
@@ -35,6 +35,12 @@ export type SiteIdentitySettings = {
   homeCollectionsTitle: string;
   homeCollectionsIntro: string;
   homeArrivalsTitle: string;
+  /** 全站預設 SEO 標題（首頁／缺省頁）；空白則用程式預設 */
+  defaultSeoTitle: string;
+  /** 全站預設 Meta 描述 */
+  defaultSeoDescription: string;
+  /** 全站預設 OG／社群圖公開網址；空白則用 /og.png */
+  defaultOgImageUrl: string;
   primaryNavigation: PrimaryNavigationItem[];
   homeSectionOrder: HomeSectionSetting[];
 };
@@ -69,9 +75,9 @@ export type SiteThemeContrast = {
 
 export const DEFAULT_SITE_APPEARANCE: SiteAppearance = {
   settings: {
-    announcement: "佛牌典藏與活動聚會｜商品資料陸續覆核中",
+    announcement: "佛牌與聖物選購｜商品資料陸續覆核中",
     brandName: "泰聚達",
-    brandSubtitle: "THAI AMULET ARCHIVE",
+    brandSubtitle: "THAI AMULETS",
     footerNote: "商品圖目前為氛圍示意；正式上架前會換成實物照片與可查證資料。",
     businessLegalName: "",
     businessAddress: "",
@@ -82,20 +88,23 @@ export const DEFAULT_SITE_APPEARANCE: SiteAppearance = {
     shippingPolicySummary: "台灣本島宅配為主；運費、偏遠加價與出貨時間於客服確認訂單後告知。網站小計不含運費。",
     returnsPolicySummary: "退換貨申請管道與退貨地址將於正式開放訂購前公布；七日解除權適用範圍依實際商品與法規辦理。",
     paymentPolicySummary: "目前不提供線上刷卡。訂單確認後由客服通知可使用的付款方式與期限。",
-    homeHeroEyebrow: "泰聚達 · 佛牌典藏與活動",
-    homeHeroTitlePrimary: "看懂來源，",
-    homeHeroTitleSecondary: "也走進現場。",
-    homeHeroLead: "我們整理可查證的佛牌資料，也籌辦講座、參訪與見面聚會，讓收藏不只停留在螢幕上。",
-    homePrimaryCtaLabel: "瀏覽典藏商品",
-    homeSecondaryCtaLabel: "了解近期活動",
-    homeCollectionsTitle: "依類型走進典藏",
+    homeHeroEyebrow: "泰聚達 · 佛牌與聖物",
+    homeHeroTitlePrimary: "選對來源，",
+    homeHeroTitleSecondary: "買得安心。",
+    homeHeroLead: "以佛牌、聖物選購為主；每件商品會整理來源、年份、材質與保存說明。講座與參訪等為附加服務。",
+    homePrimaryCtaLabel: "瀏覽商品",
+    homeSecondaryCtaLabel: "商品分類",
+    homeCollectionsTitle: "依類型選購",
     homeCollectionsIntro: "佛牌、神尊與符印分門別類；正式商品會附上實物照片與來源說明。",
-    homeArrivalsTitle: "近期典藏",
+    homeArrivalsTitle: "最新商品",
+    defaultSeoTitle: "",
+    defaultSeoDescription: "",
+    defaultOgImageUrl: "",
     primaryNavigation: [
       { href: "/", label: "首頁" },
       { href: "/#products", label: "最新商品" },
-      { href: "/#themes", label: "活動聚會" },
       { href: "/#collections", label: "商品分類" },
+      { href: "/#archive", label: "選購說明" },
       { href: "/articles/", label: "佛牌專欄" },
       { href: "/about/", label: "關於泰聚達" },
     ],
@@ -280,6 +289,9 @@ export function normalizeSiteAppearance(settingsValue: unknown, themeValue: unkn
       homeCollectionsTitle: boundedText(settings.homeCollectionsTitle, DEFAULT_SITE_APPEARANCE.settings.homeCollectionsTitle, 80),
       homeCollectionsIntro: boundedText(settings.homeCollectionsIntro, DEFAULT_SITE_APPEARANCE.settings.homeCollectionsIntro, 300),
       homeArrivalsTitle: boundedText(settings.homeArrivalsTitle, DEFAULT_SITE_APPEARANCE.settings.homeArrivalsTitle, 80),
+      defaultSeoTitle: optionalBoundedText(settings.defaultSeoTitle, 70),
+      defaultSeoDescription: optionalBoundedText(settings.defaultSeoDescription, 180),
+      defaultOgImageUrl: optionalBoundedText(settings.defaultOgImageUrl, 1000),
       primaryNavigation: parsePrimaryNavigation(settings.primaryNavigation) || DEFAULT_SITE_APPEARANCE.settings.primaryNavigation.map((item) => ({ ...item })),
       homeSectionOrder: parseHomeSectionOrder(settings.homeSectionOrder) || DEFAULT_SITE_APPEARANCE.settings.homeSectionOrder.map((section) => ({ ...section })),
     },

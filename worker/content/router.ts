@@ -1,0 +1,1 @@
+export { handleContentApi } from "./handlers";

@@ -40,6 +40,13 @@ test("admin status summarizes every shared CMS and commerce module without custo
   assert.ok(payload.commerce.products.total >= payload.commerce.products.active);
   assert.equal(payload.commerce.inventory.trackedProducts, payload.commerce.products.total);
   assert.equal(payload.commerce.orders.total, 0);
+  assert.equal(typeof payload.settings.hasGlobalSeo, "boolean");
+  assert.equal(typeof payload.commerce.products.publicSeoGaps, "number");
+  assert.equal(typeof payload.content.articles.seoGaps, "number");
+  assert.equal(typeof payload.content.pages.seoGaps, "number");
+  assert.ok(Array.isArray(payload.commerce.inventory.samples));
+  assert.equal(typeof payload.commerce.orders.awaitingPayment, "number");
+  assert.equal(payload.runtime.storeOrders, "disabled");
   assert.doesNotMatch(JSON.stringify(payload), /customer_name|customer_phone|customer_email|line_id/i);
 });
 

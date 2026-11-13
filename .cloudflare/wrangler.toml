@@ -10,8 +10,9 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "taijuda-prod"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "91359451-badf-4ba1-a439-96b7780fc2b4"
 migrations_dir = "../drizzle"
+
 
 [triggers]
 crons = ["* * * * *"]
@@ -20,7 +21,7 @@ crons = ["* * * * *"]
 NEXT_PUBLIC_SITE_CODE = "taijuda"
 STORE_ORDERS_ENABLED = "0"
 ADMIN_LOCAL_AUTH_REQUIRED = "0"
-ADMIN_EMAIL_ALLOWLIST = "REPLACE_WITH_ADMIN_EMAILS"
+ADMIN_EMAIL_ALLOWLIST = "exe7203@gmail.com"
 
 [observability]
 enabled = true

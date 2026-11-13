@@ -13,9 +13,9 @@
     "siteCode": "taijuda",
     "siteName": "泰聚達",
     "settings": {
-      "announcement": "佛牌典藏與活動聚會｜商品資料陸續覆核中",
+      "announcement": "佛牌與聖物選購｜商品資料陸續覆核中",
       "brandName": "泰聚達",
-      "brandSubtitle": "THAI AMULET ARCHIVE",
+      "brandSubtitle": "THAI AMULETS",
       "footerNote": "商品圖目前為氛圍示意；正式上架前會換成實物照片與可查證資料。",
       "businessLegalName": "",
       "businessAddress": "",
@@ -26,15 +26,15 @@
       "shippingPolicySummary": "台灣本島宅配為主；運費、偏遠加價與出貨時間於客服確認訂單後告知。網站小計不含運費。",
       "returnsPolicySummary": "退換貨申請管道與退貨地址將於正式開放訂購前公布；七日解除權適用範圍依實際商品與法規辦理。",
       "paymentPolicySummary": "目前不提供線上刷卡。訂單確認後由客服通知可使用的付款方式與期限。",
-      "homeHeroEyebrow": "泰聚達 · 佛牌典藏與活動",
-      "homeHeroTitlePrimary": "看懂來源，",
-      "homeHeroTitleSecondary": "也走進現場。",
-      "homeHeroLead": "我們整理可查證的佛牌資料，也籌辦講座、參訪與見面聚會，讓收藏不只停留在螢幕上。",
-      "homePrimaryCtaLabel": "瀏覽典藏商品",
-      "homeSecondaryCtaLabel": "了解近期活動",
-      "homeCollectionsTitle": "依類型走進典藏",
+      "homeHeroEyebrow": "泰聚達 · 佛牌與聖物",
+      "homeHeroTitlePrimary": "選對來源，",
+      "homeHeroTitleSecondary": "買得安心。",
+      "homeHeroLead": "以佛牌、聖物選購為主；每件商品會整理來源、年份、材質與保存說明。講座與參訪等為附加服務。",
+      "homePrimaryCtaLabel": "瀏覽商品",
+      "homeSecondaryCtaLabel": "商品分類",
+      "homeCollectionsTitle": "依類型選購",
       "homeCollectionsIntro": "佛牌、神尊與符印分門別類；正式商品會附上實物照片與來源說明。",
-      "homeArrivalsTitle": "近期典藏",
+      "homeArrivalsTitle": "最新商品",
       "primaryNavigation": [
         {
           "href": "/",
@@ -45,12 +45,12 @@
           "label": "最新商品"
         },
         {
-          "href": "/#themes",
-          "label": "活動聚會"
-        },
-        {
           "href": "/#collections",
           "label": "商品分類"
+        },
+        {
+          "href": "/#archive",
+          "label": "選購說明"
         },
         {
           "href": "/articles/",
@@ -75,11 +75,11 @@
           "visible": true
         },
         {
-          "id": "themes",
+          "id": "archive",
           "visible": true
         },
         {
-          "id": "archive",
+          "id": "themes",
           "visible": true
         },
         {
@@ -112,11 +112,11 @@
             "type": "Hero",
             "props": {
               "id": "hero-brand-story",
-              "eyebrow": "TAIJUDA ARCHIVE",
-              "title": "把來源說清楚，才值得長久收藏。",
-              "description": "從文化、工藝與可查證資料開始，建立每件聖物可閱讀的收藏履歷。",
-              "primaryLabel": "閱讀佛牌專欄",
-              "primaryHref": "/articles/",
+              "eyebrow": "TAIJUDA",
+              "title": "把來源說清楚，再安心選購。",
+              "description": "以佛牌與聖物買賣為主；從來源、材質與保存狀況開始，讓每件商品資訊可查、可讀。",
+              "primaryLabel": "瀏覽商品",
+              "primaryHref": "/#products",
               "secondaryLabel": "聯絡我們",
               "secondaryHref": "/service/contact/",
               "tone": "ink"
@@ -127,8 +127,8 @@
             "props": {
               "id": "text-brand-story",
               "eyebrow": "OUR APPROACH",
-              "title": "來源可讀，收藏可久",
-              "body": "我們記錄年份、材質、尺寸、來源與保存狀況，也會把尚待確認的資訊清楚標示。",
+              "title": "來源可讀，選購有據",
+              "body": "我們記錄年份、材質、尺寸、來源與保存狀況，也會把尚待確認的資訊清楚標示，方便你比較與決定。",
               "alignment": "left",
               "tone": "paper"
             }
@@ -137,8 +137,8 @@
         "zones": {}
       },
       "status": "published",
-      "seoTitle": "泰聚達品牌故事｜泰國佛牌收藏履歷",
-      "seoDescription": "認識泰聚達如何以年份、材質、尺寸、來源與保存紀錄整理泰國佛牌和聖物，從可查證資料開始建立可閱讀的收藏履歷。",
+      "seoTitle": "泰聚達品牌故事｜泰國佛牌與聖物選購",
+      "seoDescription": "認識泰聚達如何以佛牌與聖物選購為主，整理年份、材質、尺寸、來源與保存紀錄，協助你在下單前先看懂商品內容與購買流程。",
       "canonicalUrl": "",
       "ogImageUrl": "",
       "noindex": true,
@@ -690,5 +690,5 @@
       "updatedAt": "2026-08-02T14:01:58.000Z"
     }
   ],
-  "snapshotHash": "2d0b639969ec8e6e"
+  "snapshotHash": "aa03a181785a9064"
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "@puckeditor/core/puck.css";
 import { publishedBrandName } from "../../../shared/published-site";
 import SiteEditorLoader from "./site-editor-loader";
@@ -10,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function SiteEditorPage() {
-  return <SiteEditorLoader />;
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>載入網站編輯…</div>}>
+      <SiteEditorLoader />
+    </Suspense>
+  );
 }

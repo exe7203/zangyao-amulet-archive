@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { publishedBrandName } from "../../shared/published-site";
-import AdminDashboard from "./admin-dashboard";
+import AdminDashboard from "./dashboard/admin-dashboard";
 
 export const metadata: Metadata = {
   title: { absolute: `營運總覽｜${publishedBrandName}` },

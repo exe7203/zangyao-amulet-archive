@@ -17,11 +17,11 @@
 .shell button, .shell input, .shell textarea, .shell select { font: inherit; }
 .shell button, .shell a { -webkit-tap-highlight-color: transparent; }
 
-.workspace { min-height: calc(100vh - 72px); display: grid; grid-template-columns: 270px minmax(0, 1fr); }
+.workspace { min-height: calc(100dvh - 58px); display: grid; grid-template-columns: 270px minmax(0, 1fr); }
 .sidebar {
   position: sticky;
-  top: 72px;
-  height: calc(100vh - 72px);
+  top: 0;
+  height: calc(100dvh - 58px);
   min-width: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
@@ -334,8 +334,8 @@
 }
 
 @media (max-width: 1100px) {
-  .workspace { min-height: calc(100vh - 112px); }
-  .sidebar { top: 112px; height: calc(100vh - 112px); }
+  .workspace { min-height: calc(100dvh - 58px); }
+  .sidebar { top: 0; height: calc(100dvh - 58px); }
 }
 
 @media (max-width: 780px) {

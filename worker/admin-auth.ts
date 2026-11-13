@@ -108,6 +108,22 @@ export async function verifyAdminSessionToken(token: string, secret: string) {
   return username;
 }
 
+export async function resolveSessionAdminIdentity(request: Request, env: AdminAuthEnv) {
+  const secret = sessionSecret(env);
+  if (!secret || localAdminAccountMap(env).size === 0) return null;
+
+  const token = parseCookies(request.headers.get("cookie"))[ADMIN_SESSION_COOKIE];
+  if (!token) return null;
+
+  const username = await verifyAdminSessionToken(token, secret);
+  if (!username || !localAdminAccountMap(env).has(username)) return null;
+  return username;
+}
+
+export function sessionAdminAuthReady(env: AdminAuthEnv) {
+  return Boolean(sessionSecret(env) && localAdminAccountMap(env).size > 0);
+}
+
 export async function resolveLocalAdminIdentity(request: Request, env: AdminAuthEnv) {
   if (!localAdminAuthRequired(env)) return "local-preview";
 

@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { fallbackArticles } from "./article-data";
+import { useEffect, useState } from "react";
+import {
+  fallbackArticles,
+  resolveJournalApiResult,
+  type JournalArticle,
+} from "./article-data";
+import { publicContentArticlesPath } from "../shared/admin/api-paths";
+import { PUBLIC_SITE_CODE } from "../shared/site-context";
 
 type JournalSectionProps = {
   onOpenChange?: (open: boolean) => void;
@@ -9,7 +16,34 @@ type JournalSectionProps = {
 
 export default function JournalSection({ onOpenChange }: JournalSectionProps) {
   void onOpenChange;
-  const articles = fallbackArticles;
+  const [articles, setArticles] = useState<JournalArticle[]>(fallbackArticles);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(publicContentArticlesPath(PUBLIC_SITE_CODE), {
+          headers: { accept: "application/json" },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = undefined;
+        }
+        const result = resolveJournalApiResult(response.status, payload);
+        if (result.state === "error") return;
+        setArticles(result.articles);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // 靜態公開版或 API 不可用時，保留快照文章。
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, []);
 
   return (
     <section className="journal-section" id="journal">

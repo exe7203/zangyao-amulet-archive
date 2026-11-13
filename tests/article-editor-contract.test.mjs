@@ -235,9 +235,10 @@ test("image captions and table text render as escaped text instead of executable
 });
 
 test("Tiptap 3.29.2 image and TableKit controls are wired without pretending to upload files", async () => {
-  const [packageSource, editorSource, toolbarSource, editorStyles] = await Promise.all([
+  const [packageSource, editorSource, imageExtensionSource, toolbarSource, editorStyles] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readFile(new URL("../app/admin/admin-shell.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/articles/article-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/articles/article-image-extension.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/article-editor-toolbar.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/admin.module.css", import.meta.url), "utf8"),
   ]);
@@ -246,8 +247,8 @@ test("Tiptap 3.29.2 image and TableKit controls are wired without pretending to 
   assert.equal(dependencies["@tiptap/extension-table"], dependencies["@tiptap/core"]);
   assert.equal(dependencies["@tiptap/core"], "^3.29.2");
 
-  assert.match(editorSource, /Image\.extend\(/);
-  assert.match(editorSource, /caption:[\s\S]*rendered: false/);
+  assert.match(imageExtensionSource, /Image\.extend\(/);
+  assert.match(imageExtensionSource, /caption:[\s\S]*rendered: false/);
   assert.match(editorSource, /allowBase64: false/);
   assert.match(editorSource, /TableKit\.configure\(/);
   assert.match(editorSource, /renderWrapper: true/);
@@ -301,18 +302,23 @@ test("admin image fields reject unsafe or overlong values before submission", ()
 });
 
 test("product and article editors wire safe previews, limits, and pre-save errors", async () => {
-  const [productSource, articleSource] = await Promise.all([
-    readFile(new URL("../app/admin/store-manager.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/admin/admin-shell.tsx", import.meta.url), "utf8"),
+  const [productForm, productWorkspace, articleWorkspace, articleInspector, articleImageSource] = await Promise.all([
+    readFile(new URL("../app/admin/catalog/product-form.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/catalog/product-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/articles/article-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/articles/article-inspector.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/articles/article-image-extension.tsx", import.meta.url), "utf8"),
   ]);
+  const productSource = `${productForm}\n${productWorkspace}`;
+  const articleSource = `${articleWorkspace}\n${articleInspector}`;
 
   assert.match(productSource, /<ProductArtwork/);
   assert.match(productSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
   assert.match(productSource, /maxLength=\{ADMIN_IMAGE_ALT_MAX_LENGTH\}/);
-  assert.match(productSource, /if \(productImageError\) \{ setError\(productImageError\); return; \}/);
+  assert.match(productSource, /if \(productImageError\) \{[\s\S]*setError\(productImageError\)/);
 
-  assert.match(articleSource, /function ArticleMediaPreview/);
-  assert.match(articleSource, /<SafePublicImage/);
+  assert.match(articleImageSource, /function ArticleMediaPreview/);
+  assert.match(articleImageSource, /<SafePublicImage/);
   assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
   assert.match(articleSource, /maxLength=\{ADMIN_IMAGE_ALT_MAX_LENGTH\}/);
   assert.match(articleSource, /const mediaFieldError = heroImageError \|\| ogImageError \|\| canonicalUrlError/);

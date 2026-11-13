@@ -2,15 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import {
-  publishedBrandMark,
-  publishedBrandName,
-  publishedBrandSubtitle,
-  publishedSiteAppearance,
-} from "../shared/published-site";
 import { safeInternalNavigationHref } from "../shared/site-settings";
 import DeviceCartLink from "./device-cart-link";
 import styles from "./public-chrome.module.css";
+import { useLiveSiteAppearance } from "./use-live-site-appearance";
 import { useModalFocus } from "./use-modal-focus";
 
 export type PublicHeaderLink = {
@@ -20,10 +15,11 @@ export type PublicHeaderLink = {
 
 export type PublicSection = "home" | "collection" | "journal" | "account" | "info" | "page";
 
-const FALLBACK_PRIMARY_LINKS: PublicHeaderLink[] = publishedSiteAppearance.settings.primaryNavigation;
-
-function safePrimaryLinks(value: readonly PublicHeaderLink[] | undefined) {
-  if (!value || value.length < 2 || value.length > 6) return FALLBACK_PRIMARY_LINKS;
+function safePrimaryLinks(
+  value: readonly PublicHeaderLink[] | undefined,
+  fallback: readonly PublicHeaderLink[],
+) {
+  if (!value || value.length < 2 || value.length > 6) return fallback;
   const links = value.flatMap((item) => {
     const href = safeInternalNavigationHref(item.href);
     const label = typeof item.label === "string" ? item.label.trim() : "";
@@ -34,7 +30,7 @@ function safePrimaryLinks(value: readonly PublicHeaderLink[] | undefined) {
   const uniqueHrefs = new Set(links.map((link) => link.href));
   return links.length === value.length && uniqueHrefs.size === links.length && hasHome && hasProducts
     ? links
-    : FALLBACK_PRIMARY_LINKS;
+    : fallback;
 }
 
 function ariaCurrent(active: boolean) {
@@ -51,9 +47,9 @@ export default function PublicHeader({
   onCartOpen,
   cartCount = 0,
   cartReady = true,
-  brandName = publishedBrandName,
-  brandSubtitle = publishedBrandSubtitle,
-  brandMark = publishedBrandMark,
+  brandName,
+  brandSubtitle,
+  brandMark,
   primaryNavigation,
 }: {
   section?: PublicSection;
@@ -70,6 +66,11 @@ export default function PublicHeader({
   brandMark?: string;
   primaryNavigation?: readonly PublicHeaderLink[];
 }) {
+  const { appearance } = useLiveSiteAppearance();
+  const settings = appearance.settings;
+  const resolvedBrandName = brandName ?? settings.brandName;
+  const resolvedBrandSubtitle = brandSubtitle ?? settings.brandSubtitle;
+  const resolvedBrandMark = brandMark ?? (Array.from(settings.brandName)[0] || "T");
   const [menuOpen, setMenuOpen] = useState(false);
   const [memberSurfaceEnabled, setMemberSurfaceEnabled] = useState(
     process.env.NEXT_PUBLIC_STORE_MODE === "live",
@@ -92,7 +93,10 @@ export default function PublicHeader({
 
   const closeMenu = () => setMenuOpen(false);
   const cartLabel = cartReady ? `購物車，共 ${cartCount} 件商品` : "購物車";
-  const primaryLinks = safePrimaryLinks(primaryNavigation);
+  const primaryLinks = safePrimaryLinks(
+    primaryNavigation ?? settings.primaryNavigation,
+    settings.primaryNavigation,
+  );
   const cartControl = onCartOpen ? (
     <button className={styles.cartLink} type="button" onClick={onCartOpen} aria-label={cartLabel}>
       購物車{cartReady && cartCount > 0 ? `（${cartCount}）` : ""}
@@ -102,9 +106,9 @@ export default function PublicHeader({
   return <>
     <a className={styles.skipLink} href={`#${mainId}`}>跳至主要內容</a>
     <header className={styles.header}>
-      <Link className={styles.brand} href="/" aria-label={`${brandName}首頁`}>
-        <span className={styles.brandMark} aria-hidden="true">{brandMark}</span>
-        <span className={styles.brandCopy}><b>{brandName}</b><small>{brandSubtitle}</small></span>
+      <Link className={styles.brand} href="/" aria-label={`${resolvedBrandName}首頁`}>
+        <span className={styles.brandMark} aria-hidden="true">{resolvedBrandMark}</span>
+        <span className={styles.brandCopy}><b>{resolvedBrandName}</b><small>{resolvedBrandSubtitle}</small></span>
       </Link>
 
       <nav className={styles.primaryNavigation} aria-label="主要導覽">

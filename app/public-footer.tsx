@@ -1,16 +1,19 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
-  publishedBrandMark,
-  publishedBrandName,
-  publishedBrandSubtitle,
-  publishedSiteAppearance,
-} from "../shared/published-site";
-import { safeInternalNavigationHref, type PrimaryNavigationItem } from "../shared/site-settings";
+  safeInternalNavigationHref,
+  type PrimaryNavigationItem,
+  type SiteIdentitySettings,
+} from "../shared/site-settings";
 import styles from "./public-chrome.module.css";
+import { useLiveSiteAppearance } from "./use-live-site-appearance";
 
-function safeFooterNavigation(value: readonly PrimaryNavigationItem[] | undefined) {
-  const fallback = publishedSiteAppearance.settings.primaryNavigation;
+function safeFooterNavigation(
+  value: readonly PrimaryNavigationItem[] | undefined,
+  fallback: readonly PrimaryNavigationItem[],
+) {
   if (!value || value.length < 2 || value.length > 6) return fallback;
   const links = value.flatMap((item) => {
     const href = safeInternalNavigationHref(item.href);
@@ -25,21 +28,33 @@ function safeFooterNavigation(value: readonly PrimaryNavigationItem[] | undefine
 
 export default function PublicFooter({
   note,
-  brandName = publishedBrandName,
-  brandSubtitle = publishedBrandSubtitle,
-  brandMark = publishedBrandMark,
+  brandName,
+  brandSubtitle,
+  brandMark,
   primaryNavigation,
+  settings: settingsOverride,
 }: {
   note?: ReactNode;
   brandName?: string;
   brandSubtitle?: string;
   brandMark?: string;
   primaryNavigation?: readonly PrimaryNavigationItem[];
+  settings?: Partial<SiteIdentitySettings>;
 }) {
-  const mainLinks = safeFooterNavigation(primaryNavigation);
+  const { appearance } = useLiveSiteAppearance();
+  const settings: SiteIdentitySettings = {
+    ...appearance.settings,
+    ...settingsOverride,
+  };
+  const resolvedBrandName = brandName ?? settings.brandName;
+  const resolvedBrandSubtitle = brandSubtitle ?? settings.brandSubtitle;
+  const resolvedBrandMark = brandMark ?? (Array.from(settings.brandName)[0] || "T");
+  const mainLinks = safeFooterNavigation(
+    primaryNavigation ?? settings.primaryNavigation,
+    appearance.settings.primaryNavigation,
+  );
   const navigationSplit = Math.ceil(mainLinks.length / 2);
   const mainLinkNodes = mainLinks.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>);
-  const settings = publishedSiteAppearance.settings;
   const contactLines = [
     settings.businessLegalName,
     settings.contactPhone ? `電話 ${settings.contactPhone}` : "",
@@ -49,9 +64,9 @@ export default function PublicFooter({
 
   return <footer className={styles.footer}>
     <div className={styles.footerBrand}>
-      <Link className={styles.brand} href="/" aria-label={`${brandName}首頁`}>
-        <span className={styles.footerBrandMark} aria-hidden="true">{brandMark}</span>
-        <span className={styles.brandCopy}><b>{brandName}</b><small>{brandSubtitle}</small></span>
+      <Link className={styles.brand} href="/" aria-label={`${resolvedBrandName}首頁`}>
+        <span className={styles.footerBrandMark} aria-hidden="true">{resolvedBrandMark}</span>
+        <span className={styles.brandCopy}><b>{resolvedBrandName}</b><small>{resolvedBrandSubtitle}</small></span>
       </Link>
       <p>泰國佛牌與相關收藏品。<br />提供商品資訊、文化文章與選購說明。</p>
       {contactLines.length > 0 ? (
@@ -66,8 +81,8 @@ export default function PublicFooter({
       <div><b>服務</b><Link href="/service/shipping/">配送與付款</Link><Link href="/service/returns/">退換貨說明</Link><Link href="/service/contact/">聯絡客服</Link><Link href="/service/privacy/">隱私權政策</Link></div>
     </nav>
     <div className={styles.footerBottom}>
-      <span>© 2026 {brandName}</span>
-      <span>{note || publishedSiteAppearance.settings.footerNote}</span>
+      <span>© 2026 {resolvedBrandName}</span>
+      <span>{note || settings.footerNote}</span>
     </div>
   </footer>;
 }

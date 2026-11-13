@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import PageRenderer from "../../site-builder/page-renderer";
+import PageLiveView from "./page-live-view";
 import {
   getPublishedPage,
-  publishedArticles,
   publishedPages,
-  publishedProducts,
 } from "../../../shared/published-content";
 import { publishedBrandName } from "../../../shared/published-site";
 import styles from "./page.module.css";
@@ -34,16 +30,23 @@ function absoluteUrl(value: string, fallbackPath: string) {
   }
 }
 
+// Snapshot pages stay prerendered for SEO. Newly published D1 slugs resolve
+// at Worker runtime via dynamicParams + PageLiveView.
 export function generateStaticParams() {
   return publishedPages.map((page) => ({ slug: page.slug }));
 }
 
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const page = getPublishedPage(slug);
-  if (!page) return { title: "找不到頁面", robots: { index: false, follow: false } };
+  if (!page) {
+    return {
+      title: "頁面",
+      robots: { index: false, follow: false },
+    };
+  }
 
   const canonical = absoluteUrl(page.canonicalUrl, `pages/${page.slug}/`);
   const image = absoluteUrl(page.ogImageUrl, "og.png");
@@ -74,20 +77,21 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PublishedPage({ params }: PageProps) {
   const { slug } = await params;
-  const page = getPublishedPage(slug);
-  if (!page) notFound();
+  const page = getPublishedPage(slug) ?? null;
 
-  const canonical = absoluteUrl(page.canonicalUrl, `pages/${page.slug}/`);
-  const faqItems = page.data.content
-    .filter((block) => block.type === "FAQ" && Array.isArray(block.props.items))
-    .flatMap((block) => block.props.items as Array<{ question?: unknown; answer?: unknown }>)
-    .filter((item) => typeof item.question === "string" && typeof item.answer === "string")
-    .map((item) => ({
-      "@type": "Question",
-      name: item.question,
-      acceptedAnswer: { "@type": "Answer", text: item.answer },
-    }));
-  const graph: Record<string, unknown>[] = canonical && publicSiteUrl ? [
+  const canonical = page ? absoluteUrl(page.canonicalUrl, `pages/${page.slug}/`) : null;
+  const faqItems = page
+    ? page.data.content
+      .filter((block) => block.type === "FAQ" && Array.isArray(block.props.items))
+      .flatMap((block) => block.props.items as Array<{ question?: unknown; answer?: unknown }>)
+      .filter((item) => typeof item.question === "string" && typeof item.answer === "string")
+      .map((item) => ({
+        "@type": "Question",
+        name: item.question,
+        acceptedAnswer: { "@type": "Answer", text: item.answer },
+      }))
+    : [];
+  const graph: Record<string, unknown>[] = page && canonical && publicSiteUrl ? [
     {
       "@type": "WebPage",
       "@id": `${canonical}#webpage`,
@@ -120,10 +124,7 @@ export default async function PublishedPage({ params }: PageProps) {
     )}
     <PublicHeader section="page" />
     <main id="main-content">
-      <nav className={styles.breadcrumb} aria-label="麵包屑">
-        <Link href="/">首頁</Link><span>/</span><span aria-current="page">{page.title}</span>
-      </nav>
-      <PageRenderer data={page.data} products={publishedProducts} articles={publishedArticles} />
+      <PageLiveView slug={slug} initialPage={page} />
     </main>
     <PublicFooter />
   </div>;

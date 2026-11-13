@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { publishedBrandName } from "../../../shared/published-site";
-import AdminShell from "../admin-shell";
+import ArticleEditor from "./article-editor";
 
 export const metadata: Metadata = {
   title: { absolute: `文章管理｜${publishedBrandName}` },
@@ -9,5 +10,9 @@ export const metadata: Metadata = {
 };
 
 export default function ArticlesAdminPage() {
-  return <AdminShell />;
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>載入文章管理…</div>}>
+      <ArticleEditor />
+    </Suspense>
+  );
 }

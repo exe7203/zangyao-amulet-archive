@@ -88,7 +88,9 @@ function AdminLoginForm() {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "登入失敗，請稍後再試。";
       if (/failed to fetch|network|load failed/i.test(message)) {
-        setError("無法連線到本機後台，請確認網站有在運行後再試一次。");
+        setError("無法連線到後台，請確認網站有在運行後再試一次。");
+      } else if (/cloudflare access|404/i.test(message)) {
+        setError("雲端後台登入尚未設定。請重新部署，或聯絡管理員設定 Cloudflare Access。");
       } else {
         setError(message);
       }
@@ -111,7 +113,7 @@ function AdminLoginForm() {
         <div className={styles.intro}>
           <p>後台登入</p>
           <h1 id="admin-login-title">請輸入帳號與密碼</h1>
-          <span className={styles.lead}>此頁面供內容、商品、訂單與網站設定管理使用。</span>
+          <span className={styles.lead}>本機與線上後台共用帳密；商品與文章圖片請貼公開網址（媒體上傳暫不啟用）。</span>
         </div>
 
         <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>

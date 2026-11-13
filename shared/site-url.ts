@@ -1,5 +1,12 @@
 const LOCAL_SITE_FALLBACK = "http://127.0.0.1:3000/";
 
+function isPreviewDeploymentHostname(hostname: string) {
+  const host = hostname.toLowerCase();
+  return host.endsWith(".workers.dev") ||
+    host.endsWith(".pages.dev") ||
+    host.endsWith(".github.io");
+}
+
 function isPrivateOrReservedHostname(hostname: string) {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (
@@ -24,7 +31,8 @@ function isPrivateOrReservedHostname(hostname: string) {
     /^fe[89ab]:/.test(host) ||
     host.startsWith("ff") ||
     host.startsWith("2001:db8:") ||
-    host.startsWith("::ffff:")
+    host.startsWith("::ffff:") ||
+    isPreviewDeploymentHostname(host)
   ) return true;
 
   // A production SEO origin should be a reviewed hostname. Raw IP literals

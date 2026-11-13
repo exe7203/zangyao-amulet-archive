@@ -27,6 +27,7 @@ import { publishedSnapshot } from "../shared/published-content";
 import { PUBLIC_SITE_CODE } from "../shared/site-context";
 import { publicAssetPath } from "../shared/site-url";
 import { normalizeSiteAppearance } from "../shared/site-settings";
+import { publicContentSiteSettingsPath } from "../shared/admin/api-paths";
 import type { DeviceCheckoutProfile } from "../shared/member-contract";
 import {
   DEVICE_PROFILE_STORAGE_KEY,
@@ -130,7 +131,7 @@ export default function Storefront() {
   const [deviceProfile, setDeviceProfile] = useState<DeviceCheckoutProfile | null>(null);
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null);
   const [notice, setNotice] = useState("");
-  const appearance = snapshotAppearance;
+  const [appearance, setAppearance] = useState(snapshotAppearance);
   const cartPanelRef = useRef<HTMLElement>(null);
   const cartCloseRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -163,6 +164,33 @@ export default function Storefront() {
     const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [searchOpen]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadSiteAppearance() {
+      try {
+        const response = await fetch(publicContentSiteSettingsPath(PUBLIC_SITE_CODE), {
+          headers: { accept: "application/json" },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = await response.json() as {
+          siteSettings?: { settings?: unknown; theme?: unknown };
+        };
+        if (!payload.siteSettings) return;
+        setAppearance(normalizeSiteAppearance(
+          payload.siteSettings.settings,
+          payload.siteSettings.theme,
+        ));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // 靜態公開版沒有動態 API，沿用快照外觀。
+      }
+    }
+    void loadSiteAppearance();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -468,7 +496,7 @@ export default function Storefront() {
             <a className="button button--gold" href="#products">
               {appearance.settings.homePrimaryCtaLabel} <span>→</span>
             </a>
-            <a className="text-link" href="#themes">
+            <a className="text-link" href="#collections">
               {appearance.settings.homeSecondaryCtaLabel} ↗
             </a>
           </div>
@@ -477,10 +505,10 @@ export default function Storefront() {
 
       <section className="trust-strip" aria-label="服務特色">
         {[
-          ["典藏", "佛牌與聖物", "來源、年份、材質與保存說明"],
-          ["活動", "講座與聚會", "參訪、開光相關活動與見面會"],
+          ["選品", "佛牌與聖物", "精選泰國佛牌、神尊與相關聖物"],
+          ["來源", "資訊可查", "年份、材質、尺寸與保存說明"],
           ["確認", "半手工接單", "確認庫存後再通知付款配送"],
-          ["尊重", "信仰與文化", "提供資訊，不保證特定效果"],
+          ["配送", "台灣本島", "運費與出貨時間於確認後告知"],
         ].map(([number, title, text]) => (
           <div key={title}>
             <span>{number}</span>
@@ -528,7 +556,7 @@ export default function Storefront() {
 
       <section className="products-section" id="products" {...homeSectionProps("products")}>
         <span className="legacy-home-anchor" id="new" aria-hidden="true" />
-        <div className="section-heading section-heading--products"><div><p className="eyebrow eyebrow--dark">近期典藏</p><h2>{appearance.settings.homeArrivalsTitle}</h2></div><div className="filters" role="group" aria-label="商品分類">{filterOptions.map((filter) => <button key={filter} className={resolvedActiveFilter === filter ? "active" : ""} aria-pressed={resolvedActiveFilter === filter} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div></div>
+        <div className="section-heading section-heading--products"><div><p className="eyebrow eyebrow--dark">精選聖物</p><h2>{appearance.settings.homeArrivalsTitle}</h2></div><div className="filters" role="group" aria-label="商品分類">{filterOptions.map((filter) => <button key={filter} className={resolvedActiveFilter === filter ? "active" : ""} aria-pressed={resolvedActiveFilter === filter} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div></div>
         {query && <p className="search-result-copy" role="status" aria-live="polite">搜尋「{query}」— 找到 {visibleProducts.length} 件商品</p>}
         <div className="product-grid">{visibleProducts.map((product) => {
           const detailsConfirmed = catalogLive && product.seoReady === true;
@@ -543,14 +571,34 @@ export default function Storefront() {
         <div className="section-footer"><a href="#products" onClick={() => { setQuery(""); setActiveFilter(ALL_PRODUCTS_FILTER); }}>查看全部商品 →</a></div>
       </section>
 
+      <section className="archive-section archive-section--photo" id="archive" {...homeSectionProps("archive")}>
+        <div className="archive-visual">
+          <img src={publicAssetPath("/media/atmosphere/incense-mood.jpg")} alt="" />
+        </div>
+        <div className="archive-copy">
+          <p className="eyebrow eyebrow--dark">選購說明</p>
+          <h2>商品資訊怎麼看</h2>
+          <p>
+            每件正式商品會整理名稱、來源說明、年份、材質、尺寸、保存狀況與實物照片。目前首頁圖片為氛圍示意，確認後會換成該件實拍。
+          </p>
+          <ul>
+            <li><span>01</span>來源與發行資訊</li>
+            <li><span>02</span>尺寸、材質與保存狀況</li>
+            <li><span>03</span>正反面及細節照片</li>
+            <li><span>04</span>確認庫存、付款與配送說明</li>
+          </ul>
+          <a className="button button--dark" href={journalHref}>閱讀選購指南 →</a>
+        </div>
+      </section>
+
       <section className="events-section" id="themes" {...homeSectionProps("themes")}>
         <div className="section-heading">
           <div>
-            <p className="eyebrow eyebrow--dark">活動聚會</p>
-            <h2>不只選物，也走進現場</h2>
+            <p className="eyebrow eyebrow--dark">附加服務</p>
+            <h2>選購之外，也可參加</h2>
           </div>
           <p>
-            泰聚達除了整理佛牌典藏，也會安排講座、寺院參訪與藏家見面會。以下為近期活動方向示意，正式檔期公布後可在此報名或留下聯絡。
+            本業為佛牌與聖物買賣；講座、寺院參訪與見面會為不定期附加服務。以下為方向示意，正式檔期公布後可留下聯絡。
           </p>
         </div>
         <div className="events-grid">
@@ -574,7 +622,7 @@ export default function Storefront() {
               tag: "見面會",
               title: "藏家見面與實物說明會",
               meta: "小班制｜現場看件",
-              blurb: "針對單件典藏做實物說明，協助比對照片與保存狀況。",
+              blurb: "針對單件商品做實物說明，協助比對照片與保存狀況。",
             },
           ].map((event) => (
             <article className="event-card" key={event.title}>
@@ -586,30 +634,10 @@ export default function Storefront() {
                 <small>{event.meta}</small>
                 <h3>{event.title}</h3>
                 <p>{event.blurb}</p>
-                <a href="/service/contact/">留下活動意向 →</a>
+                <a href="/service/contact/">留下意向 →</a>
               </div>
             </article>
           ))}
-        </div>
-      </section>
-
-      <section className="archive-section archive-section--photo" id="archive" {...homeSectionProps("archive")}>
-        <div className="archive-visual">
-          <img src={publicAssetPath("/media/atmosphere/incense-mood.jpg")} alt="" />
-        </div>
-        <div className="archive-copy">
-          <p className="eyebrow eyebrow--dark">典藏原則</p>
-          <h2>商品資訊怎麼看</h2>
-          <p>
-            每件正式商品會整理名稱、來源說明、年份、材質、尺寸、保存狀況與實物照片。目前首頁圖片為氛圍示意，確認後會換成該件實拍。
-          </p>
-          <ul>
-            <li><span>01</span>來源與發行資訊</li>
-            <li><span>02</span>尺寸、材質與保存狀況</li>
-            <li><span>03</span>正反面及細節照片</li>
-            <li><span>04</span>活動與現場說明機會</li>
-          </ul>
-          <a className="button button--dark" href={journalHref}>閱讀相關文章 →</a>
         </div>
       </section>
 

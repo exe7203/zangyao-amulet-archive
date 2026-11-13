@@ -4,51 +4,50 @@
   place-items: center;
   padding: 32px 20px;
   background:
-    radial-gradient(circle at top, rgba(33, 77, 59, 0.08), transparent 42%),
-    #ecefed;
+    linear-gradient(135deg, #14241c 0%, #1f3a2d 42%, #f3f5f2 42%, #f3f5f2 100%);
   color: #1f2521;
   font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
 }
 
 .card {
-  width: min(440px, 100%);
-  padding: 28px 28px 24px;
+  width: min(460px, 100%);
+  padding: 32px 32px 26px;
   border: 1px solid #d4d9d5;
-  border-radius: 14px;
+  border-radius: 18px;
   background: #fff;
-  box-shadow: 0 18px 44px rgba(33, 49, 40, 0.08);
+  box-shadow: 0 24px 60px rgba(20, 36, 28, 0.18);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding-bottom: 18px;
+  gap: 14px;
+  margin-bottom: 26px;
+  padding-bottom: 20px;
   border-bottom: 1px solid #e6ebe7;
 }
 
 .brand > span:first-child {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   color: #fff;
-  background: #214d3b;
-  border-radius: 50%;
+  background: #2f6b52;
+  border-radius: 14px;
   font-family: Georgia, "Noto Serif TC", serif;
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .brand div {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .brand b {
-  font-size: 14px;
-  letter-spacing: 0.06em;
+  font-size: 15px;
+  letter-spacing: 0.04em;
 }
 
 .brand small {
@@ -69,13 +68,13 @@
 .intro h1 {
   margin: 0 0 8px;
   font-family: Georgia, "Noto Serif TC", serif;
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 500;
 }
 
 .lead {
   display: block;
-  margin: 0 0 20px;
+  margin: 0 0 22px;
   color: #687069;
   font-size: 13px;
   line-height: 1.7;
@@ -95,10 +94,10 @@
 }
 
 .form input {
-  height: 44px;
-  padding: 0 13px;
+  height: 46px;
+  padding: 0 14px;
   border: 1px solid #cfd4d0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: #fff;
   font: inherit;
   font-size: 14px;
@@ -109,9 +108,9 @@
 }
 
 .form input:focus {
-  outline: 2px solid #b89048;
+  outline: 2px solid #2f6b52;
   outline-offset: 1px;
-  border-color: #b89048;
+  border-color: #2f6b52;
 }
 
 .error {
@@ -126,11 +125,11 @@
 }
 
 .submit {
-  height: 46px;
+  height: 48px;
   margin-top: 2px;
   border: 0;
-  border-radius: 9px;
-  background: #214d3b;
+  border-radius: 10px;
+  background: #2f6b52;
   color: #fff;
   font: inherit;
   font-size: 14px;
@@ -139,7 +138,7 @@
 }
 
 .submit:hover:not(:disabled) {
-  background: #173a2c;
+  background: #255a44;
 }
 
 .submit:disabled {
@@ -148,14 +147,14 @@
 }
 
 .footer {
-  margin-top: 18px;
+  margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid #ecefed;
   text-align: center;
 }
 
 .footer a {
-  color: #214d3b;
+  color: #2f6b52;
   font-size: 12px;
   font-weight: 650;
   text-decoration: none;
@@ -166,6 +165,10 @@
 }
 
 @media (max-width: 520px) {
+  .page {
+    background: #f3f5f2;
+  }
+
   .card {
     padding: 24px 20px 20px;
   }

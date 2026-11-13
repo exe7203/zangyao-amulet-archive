@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import ArticleContent from "../../article-content";
-import { SafePublicImage } from "../../product-artwork";
 import {
   fallbackArticles,
   getFallbackArticle,
   type JournalArticle,
 } from "../../article-data";
 import {
-  publishedBrandMark,
   publishedBrandName,
   publishedEditorName,
 } from "../../../shared/published-site";
@@ -19,12 +14,11 @@ import styles from "../../article-page.module.css";
 import PublicFooter from "../../public-footer";
 import PublicHeader from "../../public-header";
 import { resolveSiteUrl } from "../../../shared/site-url";
+import ArticleLiveView from "./article-live-view";
 
 type ArticlePageProps = {
   params: Promise<{ slug: string }>;
 };
-
-const journalName = `${publishedBrandName}佛牌專欄`;
 
 function resolveHttpUrl(value: string, baseUrl: URL, fallbackPath: string): string {
   try {
@@ -48,32 +42,20 @@ function getOgImageUrl(article: JournalArticle, siteUrl: URL): string {
   return resolveHttpUrl(article.ogImageUrl, siteUrl, "og.png");
 }
 
-function formatPublishedDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("zh-TW", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(date);
-}
-
-// The project currently exports static HTML, while D1 is only available to the
-// Worker at runtime. These three snapshot articles are therefore the reliable SEO
-// routes. A future publish workflow should sync D1 content before triggering build.
+// Snapshot articles stay prerendered for SEO. Newly published D1 slugs resolve
+// at Worker runtime via dynamicParams + ArticleLiveView.
 export function generateStaticParams() {
   return fallbackArticles.map((article) => ({ slug: article.slug }));
 }
 
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {
   const { slug } = await params;
   const article = getFallbackArticle(slug);
   if (!article) {
     return {
-      title: "文章不存在",
+      title: "文章",
       robots: { index: false, follow: false },
     };
   }
@@ -118,14 +100,12 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
 
 export default async function ArticlePage({ params }: ArticlePageProps) {
   const { slug } = await params;
-  const article = getFallbackArticle(slug);
-  if (!article) notFound();
+  const article = getFallbackArticle(slug) ?? null;
 
   const publicSiteUrl = resolveSiteUrl().publicUrl;
-  const canonicalUrl = publicSiteUrl ? getCanonicalUrl(article, publicSiteUrl) : null;
-  const ogImageUrl = publicSiteUrl ? getOgImageUrl(article, publicSiteUrl) : null;
-  const publishedLabel = formatPublishedDate(article.publishedAt);
-  const structuredData = canonicalUrl && ogImageUrl && publicSiteUrl ? {
+  const canonicalUrl = article && publicSiteUrl ? getCanonicalUrl(article, publicSiteUrl) : null;
+  const ogImageUrl = article && publicSiteUrl ? getOgImageUrl(article, publicSiteUrl) : null;
+  const structuredData = article && canonicalUrl && ogImageUrl && publicSiteUrl ? {
     "@context": "https://schema.org",
     "@graph": [
       {
@@ -166,59 +146,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
       <PublicHeader section="journal" mainId="article-content" contextLinks={[{ href: "/articles/", label: "返回佛牌專欄 →" }]} />
 
       <main className={styles.shell} id="article-content">
-        <nav className={styles.breadcrumb} aria-label="麵包屑">
-          <ol>
-            <li><Link href="/">首頁</Link></li>
-            <li aria-hidden="true">/</li>
-            <li><Link href="/articles/">佛牌專欄</Link></li>
-            <li aria-hidden="true">/</li>
-            <li><span aria-current="page">{article.title}</span></li>
-          </ol>
-        </nav>
-
-        <article>
-          <header className={styles.articleHeader}>
-            <p className={styles.kicker}>{article.tag} · {article.time}</p>
-            <h1>{article.title}</h1>
-            <p className={styles.lead}>{article.excerpt}</p>
-            <p className={styles.byline}>
-              <span>{publishedEditorName}</span>
-              {publishedLabel && article.publishedAt && (
-                <><span aria-hidden="true">·</span><time dateTime={article.publishedAt}>{publishedLabel}</time></>
-              )}
-            </p>
-          </header>
-
-          {article.heroImageUrl && (
-            <figure className={styles.heroMedia}>
-              <SafePublicImage
-                src={article.heroImageUrl}
-                alt={article.heroImageAlt || `${article.title}文章首圖`}
-                className={styles.heroImage}
-                loading="eager"
-                fetchPriority="high"
-                fallback={(
-                  <div
-                    className={styles.heroFallback}
-                    role="img"
-                    aria-label={`${article.title}首圖暫時無法顯示`}
-                  >
-                    <span aria-hidden="true">{publishedBrandMark}</span>
-                    <p>文章首圖暫時無法顯示</p>
-                  </div>
-                )}
-              />
-              <figcaption>{article.heroImageAlt || article.title}</figcaption>
-            </figure>
-          )}
-
-          <ArticleContent className={styles.content} content={article.contentJson} />
-
-          <div className={styles.returnBlock}>
-            <p>查看更多佛牌文化、商品資料與保存方式相關文章。</p>
-            <Link href="/articles/">{`← 返回${journalName}`}</Link>
-          </div>
-        </article>
+        <ArticleLiveView slug={slug} initialArticle={article} />
       </main>
 
       <PublicFooter />

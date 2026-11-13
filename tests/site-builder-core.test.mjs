@@ -458,13 +458,16 @@ test("Puck product showcase renders stored product artwork through the safe imag
 });
 
 test("stable homepage copy, navigation, layout, and page social image controls are wired to published settings", async () => {
-  const [storefrontSource, editorSource, headerSource, footerSource, accountStyles] = await Promise.all([
+  const [storefrontSource, workspaceSource, pageSettingsSource, settingsPanelSource, headerSource, footerSource, accountStyles] = await Promise.all([
     readFile(new URL("../app/storefront.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/admin/site/site-editor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/site/site-workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/site/page-settings.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/site/settings-panel.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/public-header.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/public-footer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/account/account.module.css", import.meta.url), "utf8"),
   ]);
+  const editorSource = `${workspaceSource}\n${pageSettingsSource}`;
   assert.match(storefrontSource, /appearance\.settings\.homeHeroTitlePrimary/);
   assert.match(storefrontSource, /appearance\.settings\.homeCollectionsIntro/);
   assert.match(storefrontSource, /appearance\.settings\.homeArrivalsTitle/);
@@ -472,18 +475,18 @@ test("stable homepage copy, navigation, layout, and page social image controls a
   assert.match(storefrontSource, /homeSectionProps\("hero"\)/);
   assert.match(storefrontSource, /homeSectionProps\("products"\)/);
   assert.match(storefrontSource, /primaryNavigation=\{appearance\.settings\.primaryNavigation\}/);
-  assert.match(editorSource, /updateIdentitySetting\("homeHeroTitlePrimary"/);
-  assert.match(editorSource, /updateIdentitySetting\("homeCollectionsIntro"/);
+  assert.match(settingsPanelSource, /updateIdentitySetting\("homeHeroTitlePrimary"/);
+  assert.match(settingsPanelSource, /updateIdentitySetting\("homeCollectionsIntro"/);
   assert.match(editorSource, /updateIdentitySetting\("primaryNavigation"/);
   assert.match(editorSource, /updateIdentitySetting\("homeSectionOrder"/);
-  assert.match(editorSource, /主視覺與最新商品為商店必備/);
+  assert.match(settingsPanelSource, /主視覺與最新商品為商店必備/);
   assert.match(headerSource, /primaryLinks\.map/);
   assert.match(headerSource, /safeInternalNavigationHref/);
   assert.match(footerSource, /mainLinks\.map/);
   assert.match(footerSource, /\/service\/privacy\//);
-  assert.match(editorSource, /<SafePublicImage src=\{draft\.ogImageUrl\}/);
+  assert.match(editorSource, /<SafePublicImage[\s\S]*src=\{draft\.ogImageUrl\}/);
   assert.match(editorSource, /maxLength=\{ADMIN_IMAGE_URL_MAX_LENGTH\}/);
-  assert.match(editorSource, /api\/admin\/site-settings\/revisions/);
+  assert.match(editorSource, /adminSiteSettingsRevisionsPath/);
   assert.match(editorSource, /expectedVersion: siteSettingsVersion/);
   assert.match(editorSource, /siteSettingsDirty && !window\.confirm/);
   assert.match(accountStyles, /var\(--site-surface\)/);

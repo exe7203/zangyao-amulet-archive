@@ -106,9 +106,11 @@ test("every published article route renders independent SEO and structured data"
   }
 });
 
-test("an unknown article slug returns a real 404", async () => {
+test("an unknown article slug renders a live shell instead of a hard 404", async () => {
   const response = await renderRoute("/articles/not-a-published-article/");
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /正在載入文章|找不到這篇文章|返回佛牌專欄/);
 });
 
 test("Tiptap renderer never inserts editor HTML directly", async () => {
@@ -206,7 +208,7 @@ test("public image fields accept only safe HTTP sources and preserve a Pages bas
 });
 
 test("article routes connect hero image fields to the safe image fallback", async () => {
-  const source = await readFile(new URL("../app/articles/[slug]/page.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("../app/articles/[slug]/article-live-view.tsx", import.meta.url), "utf8");
   assert.match(source, /article\.heroImageUrl/);
   assert.match(source, /article\.heroImageAlt/);
   assert.match(source, /<SafePublicImage/);

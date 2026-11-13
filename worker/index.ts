@@ -3,9 +3,11 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { handleAdminAuthApi } from "./admin-auth-api";
 import { handleAdminSystemApi, handlePublicHealthApi } from "./admin-system-api";
-import { handleContentApi } from "./content-api";
-import { handleSiteApi } from "./site-api";
-import { expireStaleReservations, handleStoreApi } from "./store-api";
+import { handleContentApi } from "./content/router";
+import { handleSiteApi } from "./site/router";
+import { handleMediaApi } from "./media/router";
+import { expireStaleReservations } from "./store-api";
+import { handleStoreApi } from "./store/router";
 import { ensureDatabase } from "./database";
 import { handleSeoMetadata } from "./seo-metadata";
 import { withSecurityHeaders } from "./security-headers";
@@ -13,6 +15,7 @@ import { withSecurityHeaders } from "./security-headers";
 interface Env {
   ASSETS: Fetcher;
   DB?: D1Database;
+  MEDIA?: R2Bucket;
   ADMIN_EMAIL_ALLOWLIST?: string;
   ADMIN_LOCAL_AUTH_REQUIRED?: string;
   ADMIN_LOCAL_SESSION_SECRET?: string;
@@ -68,6 +71,9 @@ const worker = {
 
     const storeResponse = await handleStoreApi(request, env);
     if (storeResponse) return storeResponse;
+
+    const mediaResponse = await handleMediaApi(request, env);
+    if (mediaResponse) return mediaResponse;
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

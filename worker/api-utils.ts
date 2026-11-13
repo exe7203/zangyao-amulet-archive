@@ -69,16 +69,19 @@ export async function adminIdentity(request: Request, env: DatabaseEnv) {
 
   const email = cleanText(request.headers.get("oai-authenticated-user-email"), 320).toLowerCase();
   const configuredAllowlist = cleanText(env.ADMIN_EMAIL_ALLOWLIST, 4000);
-  if (!email || !configuredAllowlist) return null;
+  if (email && configuredAllowlist) {
+    const allowedEmails = new Set(configuredAllowlist
+      .split(/[\s,;]+/)
+      .map((candidate) => candidate.trim().toLowerCase())
+      .filter(Boolean));
+    if (allowedEmails.has(email)) return email;
+  }
 
-  const allowedEmails = new Set(configuredAllowlist
-    .split(/[\s,;]+/)
-    .map((candidate) => candidate.trim().toLowerCase())
-    .filter(Boolean));
-  return allowedEmails.has(email) ? email : null;
+  const { resolveSessionAdminIdentity } = await import("./admin-auth");
+  return resolveSessionAdminIdentity(request, env);
 }
 
-export function validateWriteRequest(request: Request) {
+export function validateWriteRequest(request: Request, options?: { allowMultipart?: boolean }) {
   if (request.method === "GET" || request.method === "HEAD") return null;
 
   const requestUrl = new URL(request.url);
@@ -115,9 +118,14 @@ export function validateWriteRequest(request: Request) {
     return json({ error: "拒絕跨來源的寫入請求" }, { status: 403 });
   }
 
-  if (["POST", "PUT", "PATCH"].includes(request.method) &&
-      !request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
-    return json({ error: "寫入操作只接受 application/json" }, { status: 415 });
+  if (["POST", "PUT", "PATCH"].includes(request.method)) {
+    const contentType = request.headers.get("content-type")?.toLowerCase() || "";
+    if (options?.allowMultipart && contentType.startsWith("multipart/form-data")) {
+      return null;
+    }
+    if (!contentType.startsWith("application/json")) {
+      return json({ error: "寫入操作只接受 application/json" }, { status: 415 });
+    }
   }
 
   return null;

@@ -7,6 +7,7 @@ import { serializeJsonLd } from "../../shared/json-ld";
 import PublicFooter from "../public-footer";
 import PublicHeader from "../public-header";
 import { resolveSiteUrl } from "../../shared/site-url";
+import ArticlesIndexLive from "./articles-index-live";
 
 const resolvedSite = resolveSiteUrl();
 const publicSiteUrl = resolvedSite.publicUrl;
@@ -76,16 +77,7 @@ export default function ArticlesIndexPage() {
           <h1>{journalName}</h1>
           <span>提供年份、材質、來源與保存方式等入門資訊，方便讀者查閱與比較。</span>
         </header>
-        <section className={styles.grid} aria-label="佛牌文章">
-          {fallbackArticles.map((article, index) => (
-            <article key={article.id}>
-              <p>{String(index + 1).padStart(2, "0")} · {article.tag}</p>
-              <h2><Link href={`/articles/${article.slug}/`}>{article.title}</Link></h2>
-              <span>{article.excerpt}</span>
-              <small>{article.time}</small>
-            </article>
-          ))}
-        </section>
+        <ArticlesIndexLive initialArticles={fallbackArticles} />
       </main>
       <PublicFooter />
     </div>

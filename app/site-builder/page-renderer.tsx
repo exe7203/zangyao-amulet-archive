@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Render } from "@puckeditor/core/rsc";
+import { Render } from "@puckeditor/core";
 import { pageBuilderConfig } from "./puck-config";
 import type { PageRenderMetadata } from "./types";
 import { validatePageData } from "./validation";

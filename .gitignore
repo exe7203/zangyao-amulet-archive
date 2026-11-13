@@ -46,4 +46,6 @@ next-env.d.ts
 /work/
 /.pages-build-excluded/
 /.pages-build-work/
+/.cursor/
+/.playwright-cli/
 *.tsbuildinfo

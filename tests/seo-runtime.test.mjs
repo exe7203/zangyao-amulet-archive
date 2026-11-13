@@ -19,6 +19,9 @@ test("SEO configuration fails closed without a reviewed HTTPS public origin", ()
     "https://intranet/",
     "https://192.168.1.5/",
     "https://[::1]/",
+    "https://taijuda-amulet-archive.exe7203.workers.dev/",
+    "https://preview.pages.dev/",
+    "https://exe7203.github.io/zangyao-amulet-archive/",
   ];
   for (const value of invalidOrigins) {
     const resolved = resolveSiteUrl(value);

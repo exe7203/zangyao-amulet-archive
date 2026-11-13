@@ -784,7 +784,9 @@ async function validateBuild() {
       worker.includes("/api/admin/products") &&
       worker.includes("/api/store/orders") &&
       worker.includes("/api/admin/pages") &&
-      worker.includes("/api/admin/site-export");
+      worker.includes("/api/admin/site-export") &&
+      worker.includes("/api/admin/media") &&
+      worker.includes("/api/media/");
   } catch {
     return false;
   }
